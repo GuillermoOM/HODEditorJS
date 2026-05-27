@@ -26,24 +26,23 @@
 - [x] Make the node spheres slightly bigger for improve visuals, same with axis helpers. It is hard to see in bigger ships. Should increase in size more if highlighted
 - [x] Target Boxing editor (for adding to .ship files, DAEnerys had this, it is a separate tool that adds a viewable box that outputs the piece of code it represents, this isn't related to modifying the HOD at all)
 - [x] Fix shaders for HOD 2.0 materials. I notice now that we load materials for HOD 1.0 properly, the shaders work correctly, so the shaders might be setup for those old material setups and not for HOD 2.0 materials? Something to investigate deeper here.
+- [x] Collission box renderer hides navlights for some reason.
+- [x] ter_elysium.hod created by editor fails to load in game, gives error log: `Unknown basich mesh version (2013593600)-- FATAL EXIT --basicmesh/489:!--stack trace--`.
 
+- [ ] Remove auto creation of collision mesh.
+- [ ] Repair auto loading and assignment of Texture mappings on materials (TEAM must align to TEAM mapping, GLOW to GLOW, NORM to NORM, etc.)
 - [ ] Creation and Loading of Animations and proper inspector / editor (ter_orion and hgn_mothership are examples that use this) - Added Create Animation, Add Track, and Add Keyframe controls.
 - [ ] HOD 1.0 File animation proper loading (able to be later saved on to HOD 2.0 file), Animations aren't detected when loading them currently.
 - [ ] Full Test migrating a HOD 1.0 ship to HOD 2.0 with the editor and running it in game
-
 - [ ] GLOW textures are rendering wrong in the texture shaded mode, shader is interpreting wrong the colors
-
-- [ ] ter_elysium.hod created by editor fails to load in game, gives error log: `Unknown basich mesh version (2013593600)-- FATAL EXIT --basicmesh/489:!--stack trace--`.
-- [ ] We need to fix the editor alerts for missing components in assemblies of repair, salvage, capture, etc.
-- [ ] Collission box renderer hides navlights for some reason.
-- [ ] Grid has overlapping axis lines with grid lines, fix this overlap.
+        see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`
+- [ ] We need to fix the editor alerts for missing components in assemblies, overall alerts in HOD being edited isn't following spec
 
 ## As a final test for HOD modifying:
 
 - [x] Open HOD 2.0, "save it", compare with original HOD 2.0 file loaded to see if it similar
 - [x] Open HOD 1.0, test how it loads and which nodes are incorrectly assigned or unknown to HOD 2.0 template (need a template for 2.0 based on all knowledge we gathered on nodes).
 - [x] Create a new HOD and save it, test it in game.
-
 
 For all of the above, have as reference:
 

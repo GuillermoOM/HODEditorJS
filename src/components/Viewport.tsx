@@ -667,24 +667,41 @@ export const Viewport: React.FC<ViewportProps> = ({
 
       // 3. Add Grid and Axis Helpers (Adaptive Infinite Grids with Gray Slate lines)
       const gridFine = new THREE.GridHelper(200, 200, "#16a0ff", "#384e6e");
-      const fineMat = gridFine.material as THREE.LineBasicMaterial;
-      fineMat.transparent = true;
-      fineMat.opacity = 0.45;
-      gridFine.position.y = -0.01;
+      // Safely duplicate the material properties without breaking the internal shader
+      const fineMat = new THREE.LineBasicMaterial({
+        color: 0xffffff, // GridHelper uses vertex colors, so keep this white
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.45,
+        depthTest: false // Stops lines from fighting and clipping each other
+      });
+      gridFine.material = fineMat;
+      gridFine.renderOrder = 3; // Highest number = rendered last (on top)
+      gridFine.position.y = 0;
       scene.add(gridFine);
 
       const gridCoarse = new THREE.GridHelper(2000, 200, "#16a0ff", "#25344a");
-      const coarseMat = gridCoarse.material as THREE.LineBasicMaterial;
-      coarseMat.transparent = true;
-      coarseMat.opacity = 0.5;
-      gridCoarse.position.y = -0.02;
+      const coarseMat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.5,
+        depthTest: false
+      });
+      gridCoarse.material = coarseMat;
+      gridCoarse.renderOrder = 2; // Middle layer
+      gridCoarse.position.y = 0;
       scene.add(gridCoarse);
 
       const gridMega = new THREE.GridHelper(20000, 200, "#16a0ff", "#182333");
-      const megaMat = gridMega.material as THREE.LineBasicMaterial;
-      megaMat.transparent = true;
-      megaMat.opacity = 0.0;
-      gridMega.position.y = -0.03;
+      const megaMat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.0,
+        depthTest: false
+      });
+      gridMega.material = megaMat;
+      gridMega.renderOrder = 1; // Bottom layer
+      gridMega.position.y = 0;
       scene.add(gridMega);
 
       const axes = new THREE.AxesHelper(5);
@@ -767,27 +784,32 @@ export const Viewport: React.FC<ViewportProps> = ({
         if (camera && fineMat && coarseMat && megaMat) {
           const dist = camera.position.distanceTo(orbitControls.target);
           
-          // Fine grid: visible when close, fades out as we zoom out past dist 80
+          // 1. Fine Grid Logic
           if (dist < 40) {
             fineMat.opacity = 0.45;
           } else if (dist < 150) {
+            // Smoothly fades from 0.45 down to 0
             fineMat.opacity = 0.45 * (1 - (dist - 40) / 110);
           } else {
             fineMat.opacity = 0;
           }
 
-          // Coarse grid: visible from dist 20 up to 1200
-          if (dist < 20) {
-            coarseMat.opacity = 0.1 + 0.4 * (dist / 20);
+          // 2. Coarse Grid Logic
+          if (dist < 5) {
+            coarseMat.opacity = 0; // Fully invisible when microscopic
+          } else if (dist < 40) {
+            // Fade in from 0 to 0.5 as we pull away from microscopic view
+            coarseMat.opacity = 0.5 * ((dist - 5) / 35);
           } else if (dist < 400) {
-            coarseMat.opacity = 0.5;
+            coarseMat.opacity = 0.5; // Solid holding zone
           } else if (dist < 1500) {
+            // Smoothly fades out to the mega grid
             coarseMat.opacity = 0.5 * (1 - (dist - 400) / 1100);
           } else {
             coarseMat.opacity = 0;
           }
 
-          // Mega grid: fades in as we go past 300, and extends out infinitely
+          // 3. Mega Grid Logic
           if (dist < 300) {
             megaMat.opacity = 0;
           } else if (dist < 1200) {
@@ -1564,9 +1586,12 @@ export const Viewport: React.FC<ViewportProps> = ({
             color: color,
             transparent: true,
             opacity: 0.8,
+            depthTest: false,
+            depthWrite: false,
           });
            const navMesh = new THREE.Mesh(navGeo, navMat);
           navMesh.name = `navlight:${nav.name}`;
+          navMesh.renderOrder = 20;
           navMesh.userData = {
             parentJointName: nav.name,
             baseMatrix: new THREE.Matrix4()
@@ -1588,9 +1613,11 @@ export const Viewport: React.FC<ViewportProps> = ({
               wireframe: true,
               transparent: true,
               opacity: 0.12,
+              depthTest: false,
               depthWrite: false,
             });
             const rangeMesh = new THREE.Mesh(rangeGeo, rangeMat);
+            rangeMesh.renderOrder = 19;
             navMesh.add(rangeMesh);
           }
 
@@ -1896,6 +1923,7 @@ export const Viewport: React.FC<ViewportProps> = ({
 
           const colGroup = new THREE.Group();
           colGroup.name = `collision:${col.name}`;
+          colGroup.renderOrder = 1;
 
           // Semi-transparent red box
           const sizeX = col.max_extents.x - col.min_extents.x;
@@ -1907,13 +1935,16 @@ export const Viewport: React.FC<ViewportProps> = ({
             transparent: true,
             opacity: 0.15,
             wireframe: false,
+            depthWrite: false,
           });
           const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+          boxMesh.renderOrder = 1;
 
           const boxWire = new THREE.LineSegments(
             new THREE.EdgesGeometry(boxGeo),
-            new THREE.LineBasicMaterial({ color: "#ff1744", transparent: true, opacity: 0.6 })
+            new THREE.LineBasicMaterial({ color: "#ff1744", transparent: true, opacity: 0.6, depthWrite: false })
           );
+          boxWire.renderOrder = 2;
           boxMesh.add(boxWire);
 
           const boxCenter = new THREE.Vector3(
@@ -1931,8 +1962,10 @@ export const Viewport: React.FC<ViewportProps> = ({
             wireframe: true,
             transparent: true,
             opacity: 0.25,
+            depthWrite: false,
           });
           const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+          sphereMesh.renderOrder = 1;
           sphereMesh.position.set(col.center.x, col.center.y, col.center.z);
           colGroup.add(sphereMesh);
 
@@ -2175,4 +2208,3 @@ export const Viewport: React.FC<ViewportProps> = ({
     </div>
   );
 };
-

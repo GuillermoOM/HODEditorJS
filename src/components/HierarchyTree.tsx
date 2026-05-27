@@ -1132,6 +1132,11 @@ const handleDeleteNode = (name: string, type: string) => {
         if (mrk.parent_joint === name) return { ...mrk, parent_joint: parentJointName || "Root" };
         return mrk;
       });
+      updatedModel.engine_burns = model.engine_burns.filter(b => b.parent_name !== name);
+      updatedModel.engine_glows = model.engine_glows.filter(g => g.parent_name !== name);
+      updatedModel.engine_shapes = model.engine_shapes.filter(s => s.parent_name !== name);
+      updatedModel.dockpaths = model.dockpaths.filter(dp => dp.parent_name !== name);
+      updatedModel.nav_lights = model.nav_lights.filter(nav => nav.name !== name);
       invoke("log_event", { level: "INFO", message: `Deleted joint bone: ${name}. Children re-parented to: ${parentJointName}` }).catch(console.error);
     } else if (type.endsWith("_group")) {
       const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(name.toLowerCase() + "_") || j.name.toLowerCase() === name.toLowerCase());
@@ -1146,6 +1151,11 @@ const handleDeleteNode = (name: string, type: string) => {
         if (jointNames.includes(mrk.parent_joint)) return { ...mrk, parent_joint: "Root" };
         return mrk;
       });
+      updatedModel.engine_burns = model.engine_burns.filter(b => !jointNames.includes(b.parent_name));
+      updatedModel.engine_glows = model.engine_glows.filter(g => !jointNames.includes(g.parent_name));
+      updatedModel.engine_shapes = model.engine_shapes.filter(s => !jointNames.includes(s.parent_name));
+      updatedModel.dockpaths = model.dockpaths.filter(dp => !jointNames.includes(dp.parent_name));
+      updatedModel.nav_lights = model.nav_lights.filter(nav => !jointNames.includes(nav.name));
       invoke("log_event", { level: "INFO", message: `Deleted weapon group: ${name} (entire joint family removed).` }).catch(console.error);
     } else if (type === "marker") {
       updatedModel.markers = model.markers.filter(mrk => mrk.name !== name);
@@ -1407,27 +1417,97 @@ const handleDeleteNode = (name: string, type: string) => {
     const warnings: { type: "warning" | "info"; message: string }[] = [];
     if (!model) return warnings;
 
+    const assemblyRequirements: Record<string, {
+      label: string;
+      required: { key: string; suffix: string; allowPrefix?: boolean }[];
+    }> = {
+      weapon_group: {
+        label: "Weapon group",
+        required: [
+          { key: "Position", suffix: "_Position" },
+          { key: "Direction", suffix: "_Direction" },
+          { key: "Muzzle", suffix: "_Muzzle", allowPrefix: true },
+          { key: "Rest", suffix: "_Rest" },
+        ],
+      },
+      turret_group: {
+        label: "Turret group",
+        required: [
+          { key: "Position", suffix: "_Position" },
+          { key: "Direction", suffix: "_Direction" },
+          { key: "Latitude", suffix: "_Latitude" },
+          { key: "Barrel", suffix: "_Barrel" },
+          { key: "Muzzle", suffix: "_Muzzle", allowPrefix: true },
+          { key: "Rest", suffix: "_Rest" },
+        ],
+      },
+      hardpoint_group: {
+        label: "Hardpoint group",
+        required: [
+          { key: "Position", suffix: "_Position" },
+          { key: "Direction", suffix: "_Direction" },
+          { key: "Rest", suffix: "_Rest" },
+        ],
+      },
+      capture_point_group: {
+        label: "Capture point group",
+        required: [
+          { key: "Base", suffix: "" },
+          { key: "Heading", suffix: "_Heading" },
+          { key: "Left", suffix: "_Left" },
+          { key: "Up", suffix: "_Up" },
+        ],
+      },
+      repair_point_group: {
+        label: "Repair point group",
+        required: [
+          { key: "Base", suffix: "" },
+          { key: "Heading", suffix: "_Heading" },
+          { key: "Left", suffix: "_Left" },
+          { key: "Up", suffix: "_Up" },
+        ],
+      },
+      salvage_point_group: {
+        label: "Salvage point group",
+        required: [
+          { key: "Base", suffix: "" },
+          { key: "Heading", suffix: "_Heading" },
+          { key: "Left", suffix: "_Left" },
+          { key: "Up", suffix: "_Up" },
+        ],
+      },
+    };
+
     const uniqueGroups = getUniqueAssemblyGroups();
     uniqueGroups.forEach(baseName => {
-      const required = ["Position", "Direction", "Muzzle", "Rest"];
+      const groupInfo =
+        getWeaponGroupInfo(baseName) ||
+        getWeaponGroupInfo(`${baseName}_Position`) ||
+        getWeaponGroupInfo(`${baseName}_Direction`) ||
+        getWeaponGroupInfo(`${baseName}_Heading`);
+      if (!groupInfo) return;
+
+      const requirement = assemblyRequirements[groupInfo.type as keyof typeof assemblyRequirements];
+      if (!requirement) return;
+
       const missing: string[] = [];
-      required.forEach(suffix => {
+      requirement.required.forEach(({ key, suffix, allowPrefix }) => {
         const hasJoint = model.joints.some(j => {
           const nameLower = j.name.toLowerCase();
-          const targetLower = `${baseName}_${suffix}`.toLowerCase();
-          if (suffix === "Muzzle") {
+          const targetLower = `${baseName}${suffix}`.toLowerCase();
+          if (allowPrefix) {
             return nameLower.startsWith(targetLower);
           }
           return nameLower === targetLower;
         });
         if (!hasJoint) {
-          missing.push(suffix);
+          missing.push(key);
         }
       });
       if (missing.length > 0) {
         warnings.push({
           type: "warning",
-          message: `Weapon group "${baseName}" is missing required joints: ${missing.join(", ")}.`
+          message: `${requirement.label} "${baseName}" is missing required joints: ${missing.join(", ")}.`
         });
       }
     });

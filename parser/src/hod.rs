@@ -1028,7 +1028,6 @@ impl HODModel {
         }
 
         model.clean_hierarchy();
-        model.deduplicate_names();
 
         Ok(model)
     }
@@ -2416,7 +2415,7 @@ fn base64_encode(data: &[u8]) -> String {
     result
 }
 
-fn write_vertex<W: Write>(writer: &mut W, vertex: &HODVertex, vertex_mask: u32, version: u32, stride: u32) -> Result<(), String> {
+pub fn write_vertex<W: Write>(writer: &mut W, vertex: &HODVertex, vertex_mask: u32, version: u32, stride: u32) -> Result<(), String> {
     let mut bytes_written = 0;
     if (vertex_mask & 0x1) != 0 {
         writer.write_f32::<LittleEndian>(vertex.position.x).map_err(|e| e.to_string())?;
@@ -2808,18 +2807,20 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         }
     }
     
-    let mut tex_buf = Vec::new();
+    let mut comp_tex_buf = Vec::new();
+    let mut decomp_tex_len_val = 0;
+    let mut extracted_pool_type = if model.is_v2 { 3 } else { 0 };
     for chunk in &original_chunks {
         if chunk.id == "POOL" {
             let mut pool_cursor = Cursor::new(&chunk.data);
-            if let Ok(_pool_type) = pool_cursor.read_u32::<LittleEndian>() {
+            if let Ok(pool_type) = pool_cursor.read_u32::<LittleEndian>() {
+                extracted_pool_type = pool_type;
                 if let Ok(comp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
                     if let Ok(decomp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
+                        decomp_tex_len_val = decomp_tex_len;
                         let mut comp_tex = vec![0u8; comp_tex_len as usize];
                         if pool_cursor.read_exact(&mut comp_tex).is_ok() {
-                            if let Ok(decomp_tex) = xpress::decompress(&comp_tex, decomp_tex_len as usize) {
-                                tex_buf = decomp_tex;
-                            }
+                            comp_tex_buf = comp_tex;
                         }
                     }
                 }
@@ -2827,7 +2828,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         }
     }
 
-    let pool_data = crate::compiler::generate_pool_data(&compiled, &tex_buf).map_err(|e| e.to_string())?;
+    let pool_data = crate::compiler::generate_pool_data(&compiled, &comp_tex_buf, decomp_tex_len_val, extracted_pool_type).map_err(|e| e.to_string())?;
     let mut hvmd_children = Vec::new();
 
     // Add preserved HVMD children (EXCEPT MULT)
@@ -3158,6 +3159,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
 
     let is_v2 = chunks.iter().any(|c| c.id == "POOL") || updated_model.version >= 0x200;
 
+    let mut original_pool_type = 0;
     let mut original_comp_tex = Vec::new();
     let mut original_decomp_tex_len = 0;
     let mut original_comp_mesh = Vec::new();
@@ -3174,7 +3176,8 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
             if chunk.id == "POOL" {
                 if !chunk.data.is_empty() {
                     let mut pool_cursor = Cursor::new(&chunk.data);
-                    if let Ok(_pool_type) = pool_cursor.read_u32::<LittleEndian>() {
+                    if let Ok(pool_type) = pool_cursor.read_u32::<LittleEndian>() {
+                        original_pool_type = pool_type;
                         if let Ok(comp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
                             if let Ok(decomp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
                                 let mut comp_tex = vec![0u8; comp_tex_len as usize];
@@ -3252,7 +3255,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
 
     if is_v2 {
         let mut pool_data = Vec::new();
-        pool_data.write_u32::<LittleEndian>(0).map_err(|e| e.to_string())?;
+        pool_data.write_u32::<LittleEndian>(original_pool_type).map_err(|e| e.to_string())?;
 
         pool_data.write_u32::<LittleEndian>(original_comp_tex.len() as u32).map_err(|e| e.to_string())?;
         pool_data.write_u32::<LittleEndian>(original_decomp_tex_len).map_err(|e| e.to_string())?;
@@ -3616,7 +3619,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                 }
             }
 
-            if is_v2 && !mrks_written {
+            if is_v2 && !mrks_written && !updated_model.markers.is_empty() {
                 new_children.push(IffChunk {
                     id: "MRKS".to_string(),
                     chunk_type: crate::iff::ChunkType::Default,

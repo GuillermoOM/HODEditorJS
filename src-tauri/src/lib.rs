@@ -205,24 +205,17 @@ fn save_hod(file_path: String, mut model: HODModel) -> Result<(), String> {
 
     write_log("INFO", &format!("Original HOD size: {} bytes. Patching chunks...", original_bytes.len()));
 
-    hwr_hod_parser::hod::generate_collision_mesh(&mut model);
+    // generate_collision_mesh(&mut model); // Removed per user request
 
-    // 2. Patch HIER and MRKR chunks or generate full v2 in-memory
-    let patched_bytes = if model.is_v2 {
-        hwr_hod_parser::hod::generate_v2_from_model(&original_bytes, &model)
-            .map_err(|e| {
-                let err_msg = format!("Failed to generate HOD v2: {}", e);
-                write_log("ERROR", &err_msg);
-                err_msg
-            })?
-    } else {
-        hwr_hod_parser::hod::save_edits(&original_bytes, &model)
-            .map_err(|e| {
-                let err_msg = format!("Failed to serialize HOD edits: {}", e);
-                write_log("ERROR", &err_msg);
-                err_msg
-            })?
-    };
+    // 2. Patch HIER and MRKR chunks, and MULT chunks using save_edits
+    // Always use save_edits to preserve the exact original chunk structure, including
+    // skipping CFHodEd-specific NRML wrappers that generate_v2_from_model produces.
+    let patched_bytes = hwr_hod_parser::hod::save_edits(&original_bytes, &model)
+        .map_err(|e| {
+            let err_msg = format!("Failed to serialize HOD edits: {}", e);
+            write_log("ERROR", &err_msg);
+            err_msg
+        })?;
 
     write_log("INFO", &format!("Successfully serialized edited HOD stream ({} bytes). Writing back to disk...", patched_bytes.len()));
 
@@ -296,23 +289,14 @@ fn save_hod_as(source_path: String, target_path: String, mut model: HODModel) ->
         })?
     };
 
-    hwr_hod_parser::hod::generate_collision_mesh(&mut model);
+    // generate_collision_mesh(&mut model); // Removed per user request
 
-    let patched_bytes = if model.is_v2 {
-        hwr_hod_parser::hod::generate_v2_from_model(&original_bytes, &model)
-            .map_err(|e| {
-                let err_msg = format!("Failed to generate HOD v2: {}", e);
-                write_log("ERROR", &err_msg);
-                err_msg
-            })?
-    } else {
-        hwr_hod_parser::hod::save_edits(&original_bytes, &model)
-            .map_err(|e| {
-                let err_msg = format!("Failed to serialize HOD edits: {}", e);
-                write_log("ERROR", &err_msg);
-                err_msg
-            })?
-    };
+    let patched_bytes = hwr_hod_parser::hod::save_edits(&original_bytes, &model)
+        .map_err(|e| {
+            let err_msg = format!("Failed to serialize HOD edits: {}", e);
+            write_log("ERROR", &err_msg);
+            err_msg
+        })?;
 
     fs::write(&target_path, &patched_bytes)
         .map_err(|e| {
@@ -549,8 +533,7 @@ fn import_dae_file(path: String) -> Result<hwr_hod_parser::hod::HODModel, String
     model.clean_hierarchy();
     model.deduplicate_names();
         
-    // Generate collision mesh and bounds like load_hod
-    hwr_hod_parser::hod::generate_collision_mesh(&mut model);
+    // hwr_hod_parser::hod::generate_collision_mesh(&mut model); // Removed per user request
     
     write_log("INFO", &format!("Successfully imported DAE as HOD 2.0 ({} meshes, {} joints)", model.meshes.len(), model.joints.len()));
     Ok(model)

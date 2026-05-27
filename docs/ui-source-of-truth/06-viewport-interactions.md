@@ -48,6 +48,8 @@ Viewport sanitizes invalid or extreme vertex values before use. Non-finite or ou
 
 Render mode, helper layers, and viewport overlays are controlled by app state and passed into Viewport. Agents should not introduce independent duplicate toggles inside Viewport when the behavior is global.
 
+Navlight markers are expected to remain visible when collision hull helpers are enabled. Collision helpers should render as lower-order transparent overlays that do not write depth, while navlight marker/range helpers should render above them without depth testing or depth writes.
+
 ## Animation Display
 
 Loaded animations can influence joint transforms and attached mesh deltas for playback/preview. Animation editing and compilation are owned by `AnimationDock.tsx`; viewport should consume app animation state rather than own animation CRUD.

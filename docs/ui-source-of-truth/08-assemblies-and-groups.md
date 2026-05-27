@@ -36,6 +36,13 @@ Agents must not assume point-group subnodes have the same tree context-menu prot
 
 Required components vary by assembly type. Inspector is the canonical source for each group's required and optional components.
 
+Current Inspector-backed required component keys are:
+
+- Weapon group: `Position`, `Direction`, `Muzzle`, `Rest`.
+- Turret group: `Position`, `Direction`, `Latitude`, `Barrel`, `Muzzle`, `Rest`.
+- Hardpoint group: `Position`, `Direction`, `Rest`.
+- Capture point, repair point, and salvage point groups: `Base`, `Heading`, `Left`, `Up`.
+
 If hierarchy diagnostics and Inspector disagree on required components, do not guess. Read both implementations and either reconcile docs to source or ask for a behavior decision.
 
 ## Rename Boundaries

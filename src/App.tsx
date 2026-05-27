@@ -373,8 +373,8 @@ function App() {
         };
 
         const sanitizedModel = sanitizeNavLightChildren(processedModel);
-        const finalizedModel = autoCreateCollisionMesh(sanitizedModel);
-        setModel(finalizedModel);
+        // const finalizedModel = autoCreateCollisionMesh(sanitizedModel);
+        setModel(sanitizedModel);
         setIsDirty(false);
         setSelectedNode(null);
         setSelectedAnimIdx(0);
@@ -382,12 +382,12 @@ function App() {
         
         // Initialize only LOD 0 as visible by default, hiding lower-poly LOD 1, 2, 3 overlays
         const initialVisibility: Record<string, boolean> = {};
-        finalizedModel.meshes.forEach((m) => {
+        sanitizedModel.meshes.forEach((m) => {
           initialVisibility[`${m.name}_lod_${m.lod}`] = m.lod === 0;
         });
         setVisibleMeshes(initialVisibility);
 
-        setStatusMsg(`HOD ${finalizedModel.name} loaded successfully | Meshes: ${finalizedModel.meshes.length} | Joints: ${finalizedModel.joints.length} | Markers: ${finalizedModel.markers.length}`);
+        setStatusMsg(`HOD ${sanitizedModel.name} loaded successfully | Meshes: ${sanitizedModel.meshes.length} | Joints: ${sanitizedModel.joints.length} | Markers: ${sanitizedModel.markers.length}`);
       } catch (e: any) {
         const err = `Frontend failed to load HOD from path ${path}: ${e.toString()}`;
         invoke("log_event", { level: "ERROR", message: err }).catch(console.error);

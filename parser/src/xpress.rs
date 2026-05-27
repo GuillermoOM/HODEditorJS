@@ -152,8 +152,8 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
                 }
 
                 if len >= 3 && len > best_length {
-                    best_length = len;
-                    best_offset = offset;
+                    // best_length = len;
+                    // best_offset = offset;
                 }
 
                 start = prev[start_idx];

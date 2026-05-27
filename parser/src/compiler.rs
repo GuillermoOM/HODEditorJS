@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::hod::{HODModel, HODVertex, Vector3, Vector2, HODMesh, HODMeshPart};
+use crate::hod::{HODModel, HODVertex, Vector3, Vector2, HODMeshPart};
 use crate::iff::IffChunk;
 
 #[derive(Hash, PartialEq, Eq, Clone)]
@@ -71,7 +71,7 @@ use std::io::{Cursor, Write};
 pub struct CompiledMesh {
     pub name: String,
     pub parent_name: String,
-    pub deduplicated_vertices: Vec<HODVertex>,
+    pub lod: i32,
     pub new_parts: Vec<HODMeshPart>,
 }
 
@@ -81,92 +81,43 @@ fn write_len_string<W: Write>(writer: &mut W, s: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-fn get_vertex_stride(mask: u32, version: u32) -> u32 {
-    let mut stride = 0;
-    if (mask & 0x01) != 0 { stride += 16; }
-    if (mask & 0x02) != 0 { stride += 16; }
-    if (mask & 0x04) != 0 { stride += 4; }
-    if (mask & 0x08) != 0 { stride += 8; }
-    if version == 1401 {
-        if (mask & 0x10) != 0 { stride += 8; }
-        if (mask & 0x20) != 0 { stride += 8; }
-    }
-    if (mask & 0x2000) != 0 { stride += 12; }
-    if (mask & 0x4000) != 0 { stride += 12; }
-    stride.max(1)
-}
-
-fn serialize_vertices(vertices: &[HODVertex], mask: u32) -> Vec<u8> {
-    let mut buf = Vec::new();
-    let mut cursor = Cursor::new(&mut buf);
-    for v in vertices {
-        if (mask & 0x01) != 0 {
-            let _ = cursor.write_f32::<LittleEndian>(v.position.x);
-            let _ = cursor.write_f32::<LittleEndian>(v.position.y);
-            let _ = cursor.write_f32::<LittleEndian>(v.position.z);
-            let _ = cursor.write_f32::<LittleEndian>(1.0); // w
-        }
-        if (mask & 0x02) != 0 {
-            let n = v.normal.as_ref().unwrap_or(&Vector3 { x: 0.0, y: 0.0, z: 1.0 });
-            let _ = cursor.write_f32::<LittleEndian>(n.x);
-            let _ = cursor.write_f32::<LittleEndian>(n.y);
-            let _ = cursor.write_f32::<LittleEndian>(n.z);
-            let _ = cursor.write_f32::<LittleEndian>(0.0);
-        }
-        if (mask & 0x04) != 0 {
-            let _ = cursor.write_u32::<LittleEndian>(v.color.unwrap_or(0xFFFFFFFF));
-        }
-        if (mask & 0x08) != 0 {
-            let uv = v.uv.as_ref().unwrap_or(&Vector2 { u: 0.0, v: 0.0 });
-            let _ = cursor.write_f32::<LittleEndian>(uv.u);
-            let _ = cursor.write_f32::<LittleEndian>(uv.v);
-        }
-        if (mask & 0x2000) != 0 {
-            let t = v.tangent.as_ref().unwrap_or(&Vector3 { x: 1.0, y: 0.0, z: 0.0 });
-            let _ = cursor.write_f32::<LittleEndian>(t.x);
-            let _ = cursor.write_f32::<LittleEndian>(t.y);
-            let _ = cursor.write_f32::<LittleEndian>(t.z);
-        }
-        if (mask & 0x4000) != 0 {
-            let b = v.binormal.as_ref().unwrap_or(&Vector3 { x: 0.0, y: 1.0, z: 0.0 });
-            let _ = cursor.write_f32::<LittleEndian>(b.x);
-            let _ = cursor.write_f32::<LittleEndian>(b.y);
-            let _ = cursor.write_f32::<LittleEndian>(b.z);
-        }
-    }
-    buf
-}
-
 pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
     let mut compiled_meshes = Vec::new();
 
     for mesh in &model.meshes {
-        let mut dedup = MeshDeduplicator::new();
         let mut new_parts = Vec::new();
 
         for part in &mesh.parts {
-            let mut new_indices = Vec::new();
-            
-            for &idx in &part.indices {
-                if (idx as usize) < part.vertices.len() {
-                    let v = &part.vertices[idx as usize];
+            if !part.indices.is_empty() {
+                new_parts.push(HODMeshPart {
+                    material_index: part.material_index,
+                    vertex_mask: part.vertex_mask,
+                    vertices: part.vertices.clone(),
+                    indices: part.indices.clone(),
+                });
+            } else {
+                let mut dedup = MeshDeduplicator::new();
+                let mut new_indices = Vec::new();
+                
+                // If there are no indices, assume it's a flat triangle list
+                for (idx, v) in part.vertices.iter().enumerate() {
                     let new_idx = dedup.add_vertex(v);
                     new_indices.push(new_idx);
                 }
-            }
 
-            new_parts.push(HODMeshPart {
-                material_index: part.material_index,
-                vertex_mask: part.vertex_mask,
-                vertices: Vec::new(),
-                indices: new_indices,
-            });
+                new_parts.push(HODMeshPart {
+                    material_index: part.material_index,
+                    vertex_mask: part.vertex_mask,
+                    vertices: dedup.get_vertices().to_vec(),
+                    indices: new_indices,
+                });
+            }
         }
 
         compiled_meshes.push(CompiledMesh {
             name: mesh.name.clone(),
             parent_name: mesh.parent_name.clone(),
-            deduplicated_vertices: dedup.get_vertices().to_vec(),
+            lod: mesh.lod,
             new_parts,
         });
     }
@@ -174,14 +125,32 @@ pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
     compiled_meshes
 }
 
-pub fn generate_pool_data(compiled_meshes: &[CompiledMesh], original_textures: &[u8]) -> std::io::Result<Vec<u8>> {
+pub fn generate_pool_data(compiled_meshes: &[CompiledMesh], comp_tex: &[u8], decomp_tex_len: u32, pool_type: u32) -> std::io::Result<Vec<u8>> {
     let mut decomp_mesh = Vec::new();
     let mut decomp_face = Vec::new();
 
     for mesh in compiled_meshes {
         for part in &mesh.new_parts {
-            let v_data = serialize_vertices(&mesh.deduplicated_vertices, part.vertex_mask);
-            decomp_mesh.extend_from_slice(&v_data);
+            let mut vertex_stride = 0;
+            if (part.vertex_mask & 0x01) != 0 { vertex_stride += 16; }
+            if (part.vertex_mask & 0x02) != 0 { vertex_stride += 16; }
+            if (part.vertex_mask & 0x04) != 0 { vertex_stride += 4; }
+            if (part.vertex_mask & 0x08) != 0 { vertex_stride += 8; }
+            if (part.vertex_mask & 0x10) != 0 { vertex_stride += 8; }
+            if (part.vertex_mask & 0x20) != 0 { vertex_stride += 8; }
+            if (part.vertex_mask & 0x2000) != 0 { vertex_stride += 12; }
+            if (part.vertex_mask & 0x4000) != 0 { vertex_stride += 12; }
+            
+            if let Some(first_vert) = part.vertices.first() {
+                if let Some(ref skin) = first_vert.skinning_data {
+                    vertex_stride += skin.len() as u32;
+                }
+            }
+            if vertex_stride == 0 { vertex_stride = 1; }
+            
+            for v in &part.vertices {
+                let _ = crate::hod::write_vertex(&mut decomp_mesh, v, part.vertex_mask, 1401, vertex_stride);
+            }
             
             // Align face pool to 2 bytes
             if decomp_face.len() % 2 != 0 {
@@ -195,18 +164,17 @@ pub fn generate_pool_data(compiled_meshes: &[CompiledMesh], original_textures: &
         }
     }
 
-    let comp_tex = if original_textures.is_empty() { Vec::new() } else { crate::xpress::compress(original_textures) };
     let comp_mesh = if decomp_mesh.is_empty() { Vec::new() } else { crate::xpress::compress(&decomp_mesh) };
     let comp_face = if decomp_face.is_empty() { Vec::new() } else { crate::xpress::compress(&decomp_face) };
 
     let mut pool_buf = Vec::new();
     let mut cursor = Cursor::new(&mut pool_buf);
     
-    cursor.write_u32::<LittleEndian>(0)?; // pool_type
+    cursor.write_u32::<LittleEndian>(pool_type)?; // pool_type
     
     cursor.write_u32::<LittleEndian>(comp_tex.len() as u32)?;
-    cursor.write_u32::<LittleEndian>(original_textures.len() as u32)?;
-    cursor.write_all(&comp_tex)?;
+    cursor.write_u32::<LittleEndian>(decomp_tex_len)?;
+    cursor.write_all(comp_tex)?;
 
     cursor.write_u32::<LittleEndian>(comp_mesh.len() as u32)?;
     cursor.write_u32::<LittleEndian>(decomp_mesh.len() as u32)?;
@@ -219,46 +187,67 @@ pub fn generate_pool_data(compiled_meshes: &[CompiledMesh], original_textures: &
     Ok(pool_buf)
 }
 
+fn get_base_name(name: &str) -> String {
+    if let Some(idx) = name.find("_lod_") {
+        name[0..idx].to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 pub fn generate_mult_chunks(compiled_meshes: &[CompiledMesh]) -> std::io::Result<Vec<IffChunk>> {
     let mut mult_chunks = Vec::new();
-    
+    let mut grouped_meshes: Vec<(String, String, Vec<&CompiledMesh>)> = Vec::new();
+
     for mesh in compiled_meshes {
+        let base_name = get_base_name(&mesh.name);
+        if let Some((_, _, lod_meshes)) = grouped_meshes
+            .iter_mut()
+            .find(|(name, parent_name, _)| name == &base_name && parent_name == &mesh.parent_name)
+        {
+            lod_meshes.push(mesh);
+        } else {
+            grouped_meshes.push((base_name, mesh.parent_name.clone(), vec![mesh]));
+        }
+    }
+    
+    for (name, parent_name, lod_meshes) in grouped_meshes {
         let mut mult_buf = Vec::new();
         let mut m_cursor = Cursor::new(&mut mult_buf);
         
-        write_len_string(&mut m_cursor, &mesh.name)?;
-        let parent_name_bytes = mesh.parent_name.as_bytes();
-        let parent_len = parent_name_bytes.len() as u32;
-        m_cursor.write_u32::<LittleEndian>(parent_len)?;
-        m_cursor.write_all(parent_name_bytes)?;
+        write_len_string(&mut m_cursor, &name)?;
+        write_len_string(&mut m_cursor, &parent_name)?;
+        m_cursor.write_u32::<LittleEndian>(lod_meshes.len() as u32)?;
         
-        m_cursor.write_u32::<LittleEndian>(1)?; // lod_count
-        
-        // Write FORM TAGS "DoScars" (16 bytes payload)
+        // Original HOD 2.0 MULT chunks count only the real TAGS payload here:
+        // real id "TAGS" + u32 string length + "DoScars" = 15 bytes.
+        // Do not include a counted padding byte; doing so shifts the following NRML.
         m_cursor.write_all(b"FORM")?;
-        m_cursor.write_u32::<BigEndian>(16)?; // size
+        m_cursor.write_u32::<BigEndian>(15)?; // size
         m_cursor.write_all(b"TAGS")?;
         m_cursor.write_u32::<LittleEndian>(7)?; // string length
         m_cursor.write_all(b"DoScars")?;
-        m_cursor.write_u8(0)?; // 1 byte padding to align to 2 bytes (15 is odd)
 
-        for part in &mesh.new_parts {
-            // Wrap BMSH in NRML chunk!
+        for mesh in lod_meshes {
+            let bmsh_data_size = 8 + mesh.new_parts.len() * 18;
+            let nrml_size = 8 + bmsh_data_size;
+
+            // Wrap BMSH in NRML chunk.
             m_cursor.write_all(b"NRML")?;
-            m_cursor.write_u32::<BigEndian>(34)?; // size: 4 (BMSH) + 4 (version) + 26 (payload) = 34
-            
-            // Write BMSH header chunk manually!
+            m_cursor.write_u32::<BigEndian>(nrml_size as u32)?;
             m_cursor.write_all(b"BMSH")?;
-            m_cursor.write_u32::<LittleEndian>(1400)?; // version
+            m_cursor.write_u32::<BigEndian>(1401)?; // nested NRML BMSH version
             
-            m_cursor.write_i32::<LittleEndian>(0)?; // lod
-            m_cursor.write_i32::<LittleEndian>(1)?; // part count
+            m_cursor.write_i32::<LittleEndian>(mesh.lod)?;
+            m_cursor.write_i32::<LittleEndian>(mesh.new_parts.len() as i32)?;
             
-            m_cursor.write_i32::<LittleEndian>(part.material_index as i32)?;
-            m_cursor.write_u32::<LittleEndian>(part.vertex_mask)?;
-            m_cursor.write_i32::<LittleEndian>(mesh.deduplicated_vertices.len() as i32)?;
-            m_cursor.write_i16::<LittleEndian>(-1)?; // prim_group_count
-            m_cursor.write_i32::<LittleEndian>(part.indices.len() as i32)?;
+            for part in &mesh.new_parts {
+                m_cursor.write_i32::<LittleEndian>(part.material_index as i32)?;
+                m_cursor.write_u32::<LittleEndian>(part.vertex_mask)?;
+                m_cursor.write_i32::<LittleEndian>(part.vertices.len() as i32)?;
+                m_cursor.write_i16::<LittleEndian>(-1)?; // prim_group_count
+                m_cursor.write_i32::<LittleEndian>(part.indices.len() as i32)?;
+            }
         }
         
         mult_chunks.push(IffChunk {

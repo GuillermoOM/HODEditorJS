@@ -12,10 +12,14 @@ Throughout the reverse engineering process, several critical quirks regarding th
 * **Endianness Inconsistencies**: 
   * Standard IFF chunk headers and sizes (e.g., `VERS`, `NAME`, `HVMD`) use **Big-Endian**.
   * However, inner binary payload data and specifically `BMSH` (Basic Mesh) structures utilize **Little-Endian** formatting. The `VERS` chunk payload is Little-Endian (e.g., version 512 is `[0x00, 0x02, 0x00, 0x00]`).
+* **The `NAME` Chunk & Byte Alignment**:
+  * In HOD 2.0, the `NAME` chunk is formatted as a flat `FORM` container whose payload is exactly the character length of the model name string (e.g., exactly 26 bytes for `Homeworld2 Multi Mesh File`). **Do not append a trailing null byte (`\0`)** when serializing it. Doing so will shift the byte-alignment of all subsequent chunks (like `POOL` and `DTRM`), silently corrupting the parser in the game engine and causing immediate crashes upon load.
+* **Node Hierarchy & Cascade Deletions**:
+  * Joints, `engine_burns`, `nav_lights`, `engine_glows`, and `dockpaths` are structurally intertwined via the `parent_name` property (or just `name` for navlights). If a parent joint is deleted in the UI or modified, **all dependent child nodes must be cascade-deleted** (or explicitly re-parented). Leaving a dependent node pointing to a non-existent parent joint will cause the game engine to crash silently.
 * **The `MULT` Chunk & Sub-Meshes**:
   * The `MULT` container is highly volatile. It begins with a custom binary payload: `name` (u32 length prefix + string), `parent_name` (u32 length prefix + string), and `lod_count` (u32 Little-Endian).
   * Following this payload, it expects specific child chunks: `FORM TAGS` and `NRML`.
-  * **`FORM TAGS` Padding**: The `FORM TAGS` chunk (which holds variables like `DoScars`) must be perfectly byte-aligned. If the payload size is odd (e.g., 15 bytes), a `0x00` padding byte must be appended, and **the chunk size must be increased to 16** to ensure the IFF parser perfectly aligns with the beginning of the next chunk. Failure to do so misaligns the stream (e.g., reading `\0NRM` instead of `NRML`), resulting in swallowed mesh data.
+  * **`FORM TAGS` Size**: The `FORM TAGS` chunk (which holds variables like `DoScars`) uses a payload size of 15 bytes in original HOD 2.0 files: real id `TAGS` + little-endian string length + `DoScars`. Do not include a counted padding byte in this size; doing so makes generated `MULT` payloads one byte larger than the originals and shifts the following `NRML` data.
   * **`NRML` Wrappers**: In HOD 2.0, the `BMSH` mesh data chunk does not exist on its own. It is the payload *inside* a normal chunk designated as `NRML`.
 * **POOL Compression**: HOD 2.0 files store all mesh geometries, vertices, faces, and textures inside a giant `POOL` chunk compressed using Microsoft's `xpress` compression algorithm. 
   * *Note on Size Parity*: A generated `POOL` chunk will rarely match the byte-for-byte size of the original due to varying block compression ratios. Structural integrity is verified by ensuring the decompressed meshes parse correctly, not by comparing exact file sizes.
