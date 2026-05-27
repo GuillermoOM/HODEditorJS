@@ -1434,9 +1434,7 @@ const handleDeleteNode = (name: string, type: string) => {
         label: "Turret group",
         required: [
           { key: "Position", suffix: "_Position" },
-          { key: "Direction", suffix: "_Direction" },
-          { key: "Latitude", suffix: "_Latitude" },
-          { key: "Barrel", suffix: "_Barrel" },
+          { key: "Heading", suffix: "_Heading" },
           { key: "Muzzle", suffix: "_Muzzle", allowPrefix: true },
           { key: "Rest", suffix: "_Rest" },
         ],

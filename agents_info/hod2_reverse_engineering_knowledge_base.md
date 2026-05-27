@@ -31,6 +31,9 @@ Throughout the reverse engineering process, several critical quirks regarding th
   * The `HIER` chunk inside `DTRM` must be `ChunkType::Form` (`FORM HIER`), not `NRML`.
   * The `first_val` in the `HIER` chunk encodes the joint count as a two's complement byte inside `0xFFFFFF00` (e.g., `0xFFFFFF00 | ((-joint_count) & 0xFF)`). Hardcoding `0xFFFFFF00` will break loading if the joint count changes.
   * Preserving original DTRM sub-chunks (`MRKS`, `KDOP`, `COLD`, `SCAR`) when re-saving is fine, but you MUST exclude chunks you actively regenerate (`HIER`, `BURN`, `NAVL`, `MRKS`, `MRKR`) to avoid duplicating them in the output file, which can double marker counts and corrupt node mapping.
+* **Animation Rotation & Euler Interpolation**:
+  * HODKeyframes map rotations using both Quaternions (`rotation`) and Euler angles (`rotation_euler`, usually YXZ order).
+  * **Critical UI Trap:** Quaternions cannot natively represent a rotation greater than 180 degrees (they take the shortest path). If a user inputs a 360-degree rotation (or continuous spin) in the UI, converting it to a Quaternion and back to Euler will wrap the value (e.g., 360 -> 0). The UI must always read from and display `kf.rotation_euler` (converted to degrees) if available, bypassing the quaternion decomposition, to allow animations that exceed 360 degrees or continuous spinning.
 
 ## 3. Testing Methodology
 All new serialization techniques, chunk modifications, or parsing updates **MUST** be verified against a predefined suite of test files. 

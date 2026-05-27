@@ -530,12 +530,20 @@ fn import_dae_file(path: String) -> Result<hwr_hod_parser::hod::HODModel, String
             err_msg
         })?;
     // Clean up hierarchy and resolve name collisions
+    model.auto_repair_assembly_names();
     model.clean_hierarchy();
     model.deduplicate_names();
     model.auto_assign_and_resize_textures();
         
     
     write_log("INFO", &format!("Successfully imported DAE as HOD 2.0 ({} meshes, {} joints)", model.meshes.len(), model.joints.len()));
+    Ok(model)
+}
+
+#[tauri::command]
+fn convert_weapon_to_turret(mut model: hwr_hod_parser::hod::HODModel, base_name: String) -> Result<hwr_hod_parser::hod::HODModel, String> {
+    write_log("INFO", &format!("Converting Weapon to Turret for assembly: {}", base_name));
+    model.convert_weapon_to_turret(&base_name)?;
     Ok(model)
 }
 
@@ -569,7 +577,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, load_hod, save_hod, select_hod_file, select_keeper_file, log_event, get_shader_pipelines, save_text_file, load_text_file, export_textures_tga, import_tga_texture, select_save_hod_file, save_hod_as, import_dae_file, select_dae_file])
+        .invoke_handler(tauri::generate_handler![greet, load_hod, save_hod, select_hod_file, select_keeper_file, log_event, get_shader_pipelines, save_text_file, load_text_file, export_textures_tga, import_tga_texture, select_save_hod_file, save_hod_as, import_dae_file, select_dae_file, convert_weapon_to_turret])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

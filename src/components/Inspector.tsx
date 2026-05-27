@@ -723,6 +723,24 @@ export const Inspector: React.FC<InspectorProps> = ({
             </div>
           )}
 
+          {groupType === "weapon_group" && missingJoints.length === 0 && (
+            <button
+              onClick={async () => {
+                if (!model) return;
+                try {
+                  const updatedModel = await invoke<any>("convert_weapon_to_turret", { model, baseName: baseName });
+                  onModelChange?.(updatedModel);
+                  invoke("log_event", { level: "INFO", message: `Converted weapon ${baseName} to Turret` }).catch(console.error);
+                } catch (e: any) {
+                  alert(`Failed to convert: ${e}`);
+                }
+              }}
+              style={{ background: "rgba(22, 160, 255, 0.1)", border: "1px solid var(--accent-cyan)", padding: "6px 12px", color: "var(--accent-cyan)", fontSize: "11px", fontWeight: "600", borderRadius: "4px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", width: "fit-content" }}
+            >
+              Convert to Turret Assembly
+            </button>
+          )}
+
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {foundJoints.map(fj => renderJointCard(fj.spec.label, fj.spec.key, fj.jointObj))}
             {latJoint && renderJointCard("5. Latitude (Axis modifier)", "Latitude", latJoint)}
@@ -2445,7 +2463,11 @@ export const Inspector: React.FC<InspectorProps> = ({
 
       const handleRotationChange = (axis: "x" | "y" | "z", valueStr: string) => {
         const val = parseFloat(valueStr) || 0;
-        const currentEuler = quatToEulerDegrees(q);
+        const currentEuler = kf.rotation_euler ? {
+          x: kf.rotation_euler.x * 180 / Math.PI,
+          y: kf.rotation_euler.y * 180 / Math.PI,
+          z: kf.rotation_euler.z * 180 / Math.PI
+        } : quatToEulerDegrees(q);
         const newEuler = { ...currentEuler, [axis]: val };
         const newQuat = eulerDegreesToQuat(newEuler.x, newEuler.y, newEuler.z);
         const newEulerRad = { x: newEuler.x * Math.PI / 180, y: newEuler.y * Math.PI / 180, z: newEuler.z * Math.PI / 180 };
@@ -2462,7 +2484,11 @@ export const Inspector: React.FC<InspectorProps> = ({
         onModelChange?.({ ...model, animations: updatedAnims });
       };
 
-      const euler = quatToEulerDegrees(q);
+      const euler = kf.rotation_euler ? {
+        x: kf.rotation_euler.x * 180 / Math.PI,
+        y: kf.rotation_euler.y * 180 / Math.PI,
+        z: kf.rotation_euler.z * 180 / Math.PI
+      } : quatToEulerDegrees(q);
 
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>

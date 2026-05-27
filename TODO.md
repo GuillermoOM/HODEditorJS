@@ -29,14 +29,15 @@
 - [x] Collission box renderer hides navlights for some reason.
 - [x] ter_elysium.hod created by editor fails to load in game, gives error log: `Unknown basich mesh version (2013593600)-- FATAL EXIT --basicmesh/489:!--stack trace--`.
 - [x] Remove auto creation of collision mesh.
+- [x] Repair auto loading and assignment of Texture mappings on materials (TEAM must align to TEAM mapping, GLOW to GLOW, NORM to NORM, etc.)
+- [x] ter_zephyrus.hod has an existing docking path, but when loaded into editor, the path is rendered but not shown on the node tree.
+- [x] loading and saving HOD 2.0 ter_zephyrus.hod crashes the game on load.
+- [x] If a HOD loaded has any "assemblies" (weapon, capture, repair, etc.) sometimes they contain the proper structure but don't follow the naming conventions properly (es. ter_fenris.hod has CapturePoint0 and has children CapturePoint0Heading instead of CapturePoint0_Heading). We need to make sure to auto repair these, or when repairing we should auto clean up those nodes (assuming they have the Heading, Left, Up nodes).
+- [x] We need to fix the editor alerts for missing components in assemblies, overall alerts in HOD being edited isn't following spec
+- [x] Since Weapon and Turret assemblies are similar, we should be able to have an option to convert Weapon into Turret assembly in the inspector, which would add any missing nodes (must be repaired first).
+- [x] Creation and Loading of Animations and proper inspector / editor (ter_orion and hgn_mothership are examples that use this) - Added Create Animation, Add Track, and Add Keyframe controls.
 
-- [ ] Repair auto loading and assignment of Texture mappings on materials (TEAM must align to TEAM mapping, GLOW to GLOW, NORM to NORM, etc.)
-- [ ] ter_zephyrus.hod has an existing docking path, but when loaded into editor, the path is rendered but not shown on the node tree.
-- [ ] loading and saving HOD 2.0 ter_zephyrus.hod crashes the game on load.
 - [ ] fix loading of HOD 1.0 files into the editor.
-- [ ] Creation and Loading of Animations and proper inspector / editor (ter_orion and hgn_mothership are examples that use this) - Added Create Animation, Add Track, and Add Keyframe controls.
-- [ ] We need to fix the editor alerts for missing components in assemblies, overall alerts in HOD being edited isn't following spec
-
 - [ ] HOD 1.0 File animation proper loading (able to be later saved on to HOD 2.0 file), Animations aren't detected when loading them currently.
 - [ ] Full Test migrating a HOD 1.0 ship to HOD 2.0 with the editor and running it in game
 - [ ] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`

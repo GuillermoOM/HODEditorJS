@@ -302,7 +302,13 @@ export const Viewport: React.FC<ViewportProps> = ({
 
     const anims = currentModel?.animations || [];
     const activeAnim = anims[selectedAnimIdxRef.current];
-    if (activeAnim) {
+    const isPlay = isPlayingRef.current;
+    const selNode = selectedNodeRef.current;
+    const isKeyframeActive = selNode?.type === "keyframe";
+
+    // Only apply animation if playing or actively inspecting a keyframe.
+    // This allows joints to reset to their natural coordinates when not animating/editing keyframes.
+    if (activeAnim && (isPlay || isKeyframeActive)) {
       const track = activeAnim.tracks.find(t => t.joint_name.toLowerCase() === joint.name.toLowerCase());
       if (track && track.keyframes.length > 0) {
         const keys = track.keyframes;
@@ -345,9 +351,9 @@ export const Viewport: React.FC<ViewportProps> = ({
           const euler = new THREE.Euler(rx, ry, rz, "YXZ");
           quat.setFromEuler(euler);
         } else if (t1.rotation && t2.rotation) {
-          const q1 = new THREE.Quaternion(t1.rotation.x, t1.rotation.y, t1.rotation.z, t1.rotation.w);
-          const q2 = new THREE.Quaternion(t2.rotation.x, t2.rotation.y, t2.rotation.z, t2.rotation.w);
-          q1.slerp(q2, alpha);
+          const q1 = new THREE.Quaternion(t1.rotation.x, t1.rotation.y, t1.rotation.z, t1.rotation.w).normalize();
+          const q2 = new THREE.Quaternion(t2.rotation.x, t2.rotation.y, t2.rotation.z, t2.rotation.w).normalize();
+          q1.slerp(q2, alpha).normalize();
           quat.copy(q1);
         }
 
@@ -669,14 +675,14 @@ export const Viewport: React.FC<ViewportProps> = ({
       const gridFine = new THREE.GridHelper(200, 200, "#16a0ff", "#384e6e");
       // Safely duplicate the material properties without breaking the internal shader
       const fineMat = new THREE.LineBasicMaterial({
-        color: 0xffffff, // GridHelper uses vertex colors, so keep this white
+        color: 0xffffff,
         vertexColors: true,
         transparent: true,
         opacity: 0.45,
-        depthTest: false // Stops lines from fighting and clipping each other
+        depthTest: true
       });
       gridFine.material = fineMat;
-      gridFine.renderOrder = 3; // Highest number = rendered last (on top)
+      gridFine.renderOrder = 0;
       gridFine.position.y = 0;
       scene.add(gridFine);
 
@@ -685,10 +691,10 @@ export const Viewport: React.FC<ViewportProps> = ({
         vertexColors: true,
         transparent: true,
         opacity: 0.5,
-        depthTest: false
+        depthTest: true
       });
       gridCoarse.material = coarseMat;
-      gridCoarse.renderOrder = 2; // Middle layer
+      gridCoarse.renderOrder = 0;
       gridCoarse.position.y = 0;
       scene.add(gridCoarse);
 
@@ -697,10 +703,10 @@ export const Viewport: React.FC<ViewportProps> = ({
         vertexColors: true,
         transparent: true,
         opacity: 0.0,
-        depthTest: false
+        depthTest: true
       });
       gridMega.material = megaMat;
-      gridMega.renderOrder = 1; // Bottom layer
+      gridMega.renderOrder = 0;
       gridMega.position.y = 0;
       scene.add(gridMega);
 
@@ -850,6 +856,7 @@ export const Viewport: React.FC<ViewportProps> = ({
             if (currTime >= duration) {
               currTime = loop ? 0 : duration;
             }
+            currentTimeRef.current = currTime;
             setCurrentTime(currTime);
           }
         }

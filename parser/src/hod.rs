@@ -972,6 +972,7 @@ impl HODModel {
 
                                                 let default_pos = m.position.clone();
                                                 let default_euler = m.rotation_euler.clone().unwrap_or(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
+                                                let default_scale = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
 
                                                 let tx_curve = curves.iter().find(|c| c.name.ends_with("translateX") || c.name == "translateX");
                                                 let ty_curve = curves.iter().find(|c| c.name.ends_with("translateY") || c.name == "translateY");
@@ -1027,9 +1028,140 @@ impl HODModel {
             }
         }
 
+        model.auto_repair_assembly_names();
         model.clean_hierarchy();
 
         Ok(model)
+    }
+
+    pub fn auto_repair_assembly_names(&mut self) {
+        let mut renames: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let suffixes = ["Heading", "Position", "Direction", "Rest", "Left", "Up"];
+        
+        for joint in &self.joints {
+            let name = &joint.name;
+            for suffix in &suffixes {
+                if name.ends_with(suffix) && !name.ends_with(&format!("_{}", suffix)) {
+                    let base = &name[..name.len() - suffix.len()];
+                    if !base.is_empty() && !base.ends_with('_') {
+                        let new_name = format!("{}_{}", base, suffix);
+                        renames.insert(name.clone(), new_name);
+                    }
+                }
+            }
+            if let Some(idx) = name.find("Muzzle") {
+                if idx > 0 && name.as_bytes()[idx - 1] != b'_' {
+                    let base = &name[..idx];
+                    let suffix = &name[idx..];
+                    if !base.is_empty() && !base.ends_with('_') {
+                        let new_name = format!("{}_{}", base, suffix);
+                        renames.insert(name.clone(), new_name);
+                    }
+                }
+            }
+        }
+
+        if renames.is_empty() { return; }
+
+        for joint in &mut self.joints {
+            if let Some(new_name) = renames.get(&joint.name) {
+                joint.name = new_name.clone();
+            }
+            if let Some(parent_name) = &joint.parent_name {
+                if let Some(new_parent) = renames.get(parent_name) {
+                    joint.parent_name = Some(new_parent.clone());
+                }
+            }
+        }
+
+        for mesh in &mut self.meshes {
+            if let Some(new_name) = renames.get(&mesh.parent_name) {
+                mesh.parent_name = new_name.clone();
+            }
+        }
+
+        for marker in &mut self.markers {
+            if let Some(new_parent) = renames.get(&marker.parent_joint) {
+                marker.parent_joint = new_parent.clone();
+            }
+        }
+
+        for dockpath in &mut self.dockpaths {
+            if let Some(new_parent) = renames.get(&dockpath.parent_name) {
+                dockpath.parent_name = new_parent.clone();
+            }
+        }
+
+        for anim in &mut self.animations {
+            for track in &mut anim.tracks {
+                if let Some(new_name) = renames.get(&track.joint_name) {
+                    track.joint_name = new_name.clone();
+                }
+            }
+        }
+    }
+
+    pub fn convert_weapon_to_turret(&mut self, base_name: &str) -> Result<(), String> {
+        let pos_name = format!("{}_Position", base_name);
+        
+        let pos_exists = self.joints.iter().any(|j| j.name.eq_ignore_ascii_case(&pos_name));
+        if !pos_exists {
+            return Err("Weapon assembly missing _Position joint, cannot convert.".to_string());
+        }
+
+        let dir_name = format!("{}_Direction", base_name);
+        let head_name = format!("{}_Heading", base_name);
+        
+        let mut has_heading = self.joints.iter().any(|j| j.name.eq_ignore_ascii_case(&head_name));
+        if !has_heading {
+            // Rename _Direction to _Heading
+            if let Some(dir_joint) = self.joints.iter_mut().find(|j| j.name.eq_ignore_ascii_case(&dir_name)) {
+                dir_joint.name = head_name.clone();
+                has_heading = true;
+            }
+        }
+
+        if !has_heading {
+            let new_heading = crate::hod::HODJoint {
+                name: head_name.clone(),
+                parent_name: Some(pos_name.clone()),
+                local_transform: compose_transform_matrix(crate::hod::Vector3 { x: 0.0, y: 0.0, z: 5.0 }, crate::hod::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, crate::hod::Vector3 { x: 1.0, y: 1.0, z: 1.0 }),
+                position: None,
+                rotation: None,
+                scale: None,
+            };
+            self.joints.push(new_heading);
+        }
+
+        // Make sure any children that used Direction as parent now use Heading
+        for joint in &mut self.joints {
+            if let Some(parent) = &joint.parent_name {
+                if parent.eq_ignore_ascii_case(&dir_name) {
+                    joint.parent_name = Some(head_name.clone());
+                }
+            }
+        }
+        for mesh in &mut self.meshes {
+            if mesh.parent_name.eq_ignore_ascii_case(&dir_name) {
+                mesh.parent_name = head_name.clone();
+            }
+        }
+
+        let muzzle_name = format!("{}_Muzzle", base_name);
+        let has_muzzle = self.joints.iter().any(|j| j.name.eq_ignore_ascii_case(&muzzle_name));
+        if !has_muzzle {
+            let new_muzzle = crate::hod::HODJoint {
+                name: muzzle_name,
+                parent_name: Some(head_name), // Parented to Heading
+                local_transform: compose_transform_matrix(crate::hod::Vector3 { x: 0.0, y: 0.0, z: 5.0 }, crate::hod::Vector3 { x: 0.0, y: 0.0, z: 0.0 }, crate::hod::Vector3 { x: 1.0, y: 1.0, z: 1.0 }),
+                position: None,
+                rotation: None,
+                scale: None,
+            };
+            self.joints.push(new_muzzle);
+        }
+
+        Ok(())
     }
 
     pub fn clean_hierarchy(&mut self) {
@@ -4166,7 +4298,10 @@ pub fn parse_mad_bytes(bytes: &[u8], joints: &[HODJoint]) -> Result<Vec<HODAnima
             let joint_obj = joints.iter().find(|j| j.name.eq_ignore_ascii_case(&joint_name));
             let default_pos = joint_obj.and_then(|j| j.position.clone()).unwrap_or(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
             let default_euler = joint_obj.and_then(|j| j.rotation.clone()).unwrap_or(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
-            let default_scale = joint_obj.and_then(|j| j.scale.clone()).unwrap_or(Vector3 { x: 1.0, y: 1.0, z: 1.0 });
+            let mut default_scale = joint_obj.and_then(|j| j.scale.clone()).unwrap_or(Vector3 { x: 1.0, y: 1.0, z: 1.0 });
+            if default_scale.x.abs() < 0.0001 { default_scale.x = 1.0; }
+            if default_scale.y.abs() < 0.0001 { default_scale.y = 1.0; }
+            if default_scale.z.abs() < 0.0001 { default_scale.z = 1.0; }
 
             let mut tx_curve: Option<&ParsedCurve> = None;
             let mut ty_curve: Option<&ParsedCurve> = None;
