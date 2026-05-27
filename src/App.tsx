@@ -697,6 +697,34 @@ function App() {
         }
         return burn;
       });
+    } else if (nodeType.endsWith("_group")) {
+      const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(nodeName.toLowerCase() + "_") || j.name.toLowerCase() === nodeName.toLowerCase());
+      const rootGroupJoints = groupJoints.filter(j => {
+        const hasParentInGroup = groupJoints.some(other => other.name === j.parent_name);
+        return !hasParentInGroup;
+      });
+
+      // Prevent cyclical parenting for assemblies
+      const isDescendant = (parent: string, child: string): boolean => {
+        if (parent === child) return true;
+        const currentJoint = model.joints.find(j => j.name === parent);
+        if (!currentJoint || !currentJoint.parent_name || currentJoint.parent_name === "Root") return false;
+        return isDescendant(currentJoint.parent_name, child);
+      };
+
+      for (const root of rootGroupJoints) {
+         if (isDescendant(newParentName, root.name)) {
+            setErrorMsg("Error: Cyclical parenting is not allowed (cannot parent an assembly under its own descendants).");
+            return;
+         }
+      }
+
+      updatedModel.joints = model.joints.map((joint) => {
+        if (rootGroupJoints.some(rj => rj.name === joint.name)) {
+          return { ...joint, parent_name: newParentName };
+        }
+        return joint;
+      });
     } else if (nodeType === "navlight") {
       updatedModel.joints = model.joints.map((joint) => {
         if (joint.name === nodeName) {
@@ -747,7 +775,7 @@ function App() {
         return joint;
       });
       updateModel({ ...model, joints: updatedJoints });
-    } else if (type === "weapon_group") {
+    } else if (type.endsWith("_group")) {
       const updatedJoints = model.joints.map((joint) => {
         if (joint.name.toLowerCase() === `${name}_Position`.toLowerCase()) {
           const m = joint.local_transform.m.map(row => [...row]);

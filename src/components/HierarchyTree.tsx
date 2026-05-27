@@ -994,7 +994,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     
     let updatedModel = { ...model };
 
-    if (type === "weapon_group") {
+    if (type.endsWith("_group")) {
       const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(oldName.toLowerCase() + "_") || j.name.toLowerCase() === oldName.toLowerCase());
       
       for (const j of groupJoints) {
@@ -1118,7 +1118,7 @@ const handleDeleteNode = (name: string, type: string) => {
         return mrk;
       });
       invoke("log_event", { level: "INFO", message: `Deleted joint bone: ${name}. Children re-parented to: ${parentJointName}` }).catch(console.error);
-    } else if (type === "weapon_group") {
+    } else if (type.endsWith("_group")) {
       const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(name.toLowerCase() + "_") || j.name.toLowerCase() === name.toLowerCase());
       const jointNames = groupJoints.map(j => j.name);
 
@@ -1903,8 +1903,20 @@ const handleDeleteNode = (name: string, type: string) => {
       <div key={`weapon_group:${baseName}`} style={{ marginLeft: depth > 0 ? "12px" : "0px" }}>
         <div
           className={`list-item ${isSelected ? "active" : ""}`}
-          onClick={() => setSelectedNode({ type: "weapon_group", name: baseName })}
-          onContextMenu={(e) => handleContextMenu(e, baseName, "weapon_group")}
+          onClick={() => {
+            const info = getWeaponGroupInfo(baseName + "_Position") || getWeaponGroupInfo(baseName + "_Heading") || getWeaponGroupInfo(baseName);
+            setSelectedNode({ type: info?.type || "weapon_group", name: baseName });
+          }}
+          onContextMenu={(e) => {
+            const info = getWeaponGroupInfo(baseName + "_Position") || getWeaponGroupInfo(baseName + "_Heading") || getWeaponGroupInfo(baseName);
+            handleContextMenu(e, baseName, info?.type || "weapon_group");
+          }}
+          draggable="true"
+          onDragStart={(e) => {
+            e.stopPropagation();
+            const info = getWeaponGroupInfo(baseName + "_Position") || getWeaponGroupInfo(baseName + "_Heading") || getWeaponGroupInfo(baseName);
+            handleDragStart(e, baseName, info?.type || "weapon_group");
+          }}
           style={{
             paddingLeft: "4px",
             display: "flex",
