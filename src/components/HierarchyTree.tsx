@@ -1007,12 +1007,27 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
 
       updatedModel.joints = model.joints.map(j => {
         if (groupJoints.some(gj => gj.name === j.name)) {
-          return { ...j, name: j.name.replace(oldName, newName), parent_name: j.parent_name ? j.parent_name.replace(oldName, newName) : "Root" };
+          // Only replace prefix/base string exactly if it matches
+          const nameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
+          const newJName = j.name.replace(nameRegex, (_match, suffix) => `${newName}${suffix || ""}`);
+          
+          const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
+          const newPName = j.parent_name ? j.parent_name.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) : "Root";
+          
+          return { ...j, name: newJName, parent_name: newPName };
         }
-        return { ...j, parent_name: j.parent_name ? j.parent_name.replace(oldName, newName) : "Root" };
+        
+        const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
+        return { ...j, parent_name: j.parent_name ? j.parent_name.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) : "Root" };
       });
-      updatedModel.meshes = model.meshes.map(m => ({ ...m, parent_name: m.parent_name ? m.parent_name.replace(oldName, newName) : "Root" }));
-      updatedModel.markers = model.markers.map(m => ({ ...m, parent_joint: m.parent_joint.replace(oldName, newName) }));
+      updatedModel.meshes = model.meshes.map(m => {
+         const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
+         return { ...m, parent_name: m.parent_name ? m.parent_name.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) : "Root" };
+      });
+      updatedModel.markers = model.markers.map(m => {
+         const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
+         return { ...m, parent_joint: m.parent_joint.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) };
+      });
       
       onModelChange?.(updatedModel);
       if (selectedNode && selectedNode.name === oldName && selectedNode.type === type) {
@@ -1472,7 +1487,7 @@ const handleDeleteNode = (name: string, type: string) => {
     });
     
     const childWeaponGroups = getUniqueAssemblyGroups().filter(baseName => {
-      const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_"));
+      const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_") || j.name.toLowerCase() === baseName.toLowerCase());
       return groupJoints.some(j => {
         const hasParentInGroup = groupJoints.some(other => other.name === j.parent_name);
         return !hasParentInGroup && j.parent_name === jointName;
@@ -1978,7 +1993,7 @@ const handleDeleteNode = (name: string, type: string) => {
 
   // Find root weapon groups (groups whose top-most parent is null, or parentless)
   const rootWeaponGroups = getUniqueAssemblyGroups().filter(baseName => {
-    const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_"));
+    const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_") || j.name.toLowerCase() === baseName.toLowerCase());
     return groupJoints.some(j => {
       const hasParentInGroup = groupJoints.some(other => other.name === j.parent_name);
       if (hasParentInGroup) return false;
