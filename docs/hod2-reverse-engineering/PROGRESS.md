@@ -9,8 +9,8 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ## Current Status
 
 **Phase:** Phase 2 In Progress  
-**Status:** Compilation Fixed; HODOR Replication Test Panics on LMIP Overflow; verify_lossless Structurally Passing  
-**Last Updated:** 2026-05-28 21:30 UTC  
+**Status:** Compilation Fixed; Collision Mesh Pool Appending Working; LMIP Format Mismatch Blocks Re-parse  
+**Last Updated:** 2026-05-28 22:45 UTC  
 **Updated By:** OpenCode Agent
 
 ---
@@ -159,12 +159,10 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ### Planned Tasks
 
-- [ ] Fix LMIP integer overflow in `parse_texture` (`hod.rs:2647`) — cast to usize before multiply
-- [ ] Fix collision mesh vertex pool appending in `generate_v2_from_model`
-- [ ] Re-run in-game validation after collision mesh pool fix
-- [ ] Create minimal HOD 2.0 test case (single mesh, single material)
-- [ ] Test edge cases (animations, dockpaths, collision meshes)
-- [ ] Document SHADERS.MAP integration
+- [ ] Fix LMIP chunk data format mismatch — check if `original_tex_preserved` at `hod.rs:5081` causes original HODOR LMIP chunks to be used instead of generated ones
+- [ ] Re-run `cargo run --bin test_hodor_replication` — should pass 2/2
+- [ ] Re-run `cargo run --bin verify_lossless` — should pass structurally
+- [ ] In-game validation after collision mesh pool fix
 - [ ] Expand HODOR fixture coverage
 
 ### Expected Deliverables
@@ -269,11 +267,14 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ### Current Issues
 
-1. **Compilation regression (FIXED):** After a session with another agent modifying `hod.rs` (adding `source_path` to `HODTexture`, `has_mult_tags` to `HODMesh`), two function callsites were left referencing renamed functions: `parse_lmi_texture` → `parse_texture` and `parse_material` → `parse_stat_material`. Fixed by updating callsites in `hod.rs:461` and `hod.rs:486`.
-2. **ter_pharos test_hodor_replication panic:** `attempt to multiply with overflow` at `hod.rs:2647` during LMIP texture parsing of HODOR file. Pre-existing bug — `width * height` overflows u32 for large texture dimensions before the `std::cmp::max` clamp.
-3. **Collision mesh vertices:** `generate_collision_mesh` generates box vertices from extents and reports `CollisionMeshes=1`, but mesh pool byte size vs HODOR is unchanged (1183488 bytes). The collision vertex data is not being correctly appended to the mesh pool during `generate_v2_from_model`.
-4. **In-game results (prior session):** Both `ter_centaur_generated.hod` and `ter_pharos_generated.hod` showed vertex explosion, mesh corruption, and wrong texture colors when loaded in Homeworld Remastered. Root cause identified as mesh pool size mismatch (34968 bytes smaller due to missing collision mesh data).
-5. **Texture compression:** Our DXT encoder produces different compressed blocks than HODOR — expected behavior. Our Xpress compressor is more efficient (smaller compressed output for same decompressed data).
+1. **LMIP chunk data format mismatch (BLOCKER):** `generate_lmip_texture_chunks_and_pool` at `hod.rs:4649` writes LMIP chunk data, but when the generated HOD is re-parsed by `parse_texture` at `hod.rs:2614`, texture names are corrupted (e.g. `'Pharos_DIFFDXT1     '` instead of `'Pharos_DIFF'`). Root cause: likely the original LMIP chunks from HODOR are being preserved via `original_tex_preserved` flag instead of using the newly generated chunks. Need to check lines 5081-5084 in `generate_v2_from_model`.
+2. **Collision mesh pool appending:** Confirmed working — decomp_mesh grew from 146688 to 146816 bytes (128 bytes for 8 vertices × 16 bytes each). Debug output at `hod.rs:4994-5007`.
+3. **LMIP u32 overflow (FIXED):** `parse_texture` at `hod.rs:2647` now casts `width`/`height` to `usize` before multiplication.
+4. **LMIP tiny chunks (FIXED):** LMIP sub-chunks < 48 bytes are now skipped at `hod.rs:459`.
+5. **TGA case sensitivity (FIXED):** `test_hodor_replication.rs:131` now uses `eq_ignore_ascii_case`.
+6. **Texture filtering (FIXED):** `test_hodor_replication.rs:276-284` filters textures to only those referenced by materials.
+7. **DAE symlinks (FIXED):** Created uppercase `.TGA` symlinks in `testing/ter_centaur/`.
+8. **Texture compression:** Our DXT encoder produces different compressed blocks than HODOR — expected behavior. Our Xpress compressor is more efficient (smaller compressed output for same decompressed data).
 
 ### Potential Blockers
 
@@ -572,6 +573,6 @@ cargo run --bin verify_lossless
 
 ---
 
-**Document Version:** 2.3  
+**Document Version:** 2.4  
 **Last Updated:** 2026-05-28  
-**Next Update:** After fixing LMIP overflow and collision mesh pool appending
+**Next Update:** After fixing LMIP format mismatch

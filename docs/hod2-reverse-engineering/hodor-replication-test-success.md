@@ -24,16 +24,21 @@ HODOR HOD files are parsed only as comparison oracles.
 ## Current Result
 
 **Test Cases:** `ter_pharos`, `ter_centaur`  
-**Result:** Panics — `ter_pharos` fails with LMIP integer overflow  
+**Result:** 0/2 passed — LMIP format mismatch  
 **Command:** `cargo run --bin test_hodor_replication`
 
-The test panics at `hod.rs:2647` with `attempt to multiply with overflow` when parsing LMIP textures from the HODOR-generated ter_pharos file. The `width * height` product overflows u32 for large texture dimensions before the `std::cmp::max` clamp.
+ter_pharos fails with corrupted texture name: `'Pharos_DIFFDXT1     '` vs `'Pharos_DIFF'`.  
+ter_centaur fails with texture count mismatch: 1 vs 4.
+
+Root cause: `generate_lmip_texture_chunks_and_pool` writes LMIP chunk data that `parse_texture` cannot re-parse correctly. Likely the `original_tex_preserved` flag at `hod.rs:5081` causes original HODOR LMIP chunks to be preserved instead of using the newly generated ones.
 
 **verify_lossless** (separate test) passes structurally for all 4 fixtures:
 - `pebble_0`: byte-for-byte identical
 - `ter_elysium`: size diff 67629 bytes (expected — collision mesh added, compression diff)
 - `ter_fenris`: size diff 76911 bytes (expected — collision mesh added, compression diff)
 - `asteroid_3`: size diff -54 bytes (expected — compression efficiency)
+
+**Collision mesh pool appending**: Confirmed working — decomp_mesh grew from 146688 to 146816 bytes (128 bytes for 8 vertices × 16 bytes each).
 
 ## What The Test Verifies
 
@@ -88,13 +93,13 @@ Texture-format result:
 
 ## Next Steps
 
-1. Fix LMIP integer overflow at `hod.rs:2647` — cast `width`/`height` to `usize` before multiplication.
-2. Fix collision mesh vertex pool appending in `generate_v2_from_model` (mesh pool 34968 bytes smaller than HODOR).
+1. Fix LMIP chunk data format mismatch — check `original_tex_preserved` at `hod.rs:5081-5084`.
+2. Re-run `cargo run --bin test_hodor_replication` — should pass 2/2.
 3. Re-run in-game validation after collision mesh pool fix.
 4. Expand HODOR fixture coverage.
 
 ---
 
-**Document Version:** 2.3  
+**Document Version:** 2.4  
 **Last Updated:** 2026-05-28  
-**Status:** Compilation fixed; LMIP overflow and collision mesh pool gaps identified as next blockers
+**Status:** LMIP format mismatch is the next blocker
