@@ -64,23 +64,31 @@ Disassemble `HomeworldRM.exe` to understand the exact decompression algorithm us
 
 ---
 
-## Path 2: Windows RtlCompressBuffer API
+## Path 2: Windows RtlCompressBuffer API (Validation Only)
 
 ### Goal
-Use the Windows NT `RtlCompressBuffer` API from `ntdll.dll` to compress POOL data. If the game engine uses the same API, the bytes will match.
+Test whether the game engine uses the Windows `RtlCompressBuffer` API. This is a **validation step only** — not a production solution, since the editor must be cross-platform.
+
+### Approach
+1. Write a small C program that calls `RtlCompressBuffer(COMPRESSION_FORMAT_XPRESS, ...)`
+2. Compile with MinGW (cross-compiler for Windows)
+3. Run under Wine on Linux
+4. Compare output with HODOR's compressed bytes
+5. **If bytes match** → the game engine uses the Windows API. Port the ReactOS/Wine open-source implementation to pure Rust (see Path 4).
+6. **If bytes differ** → the game engine uses a custom implementation. Skip to Path 1 or Path 3.
 
 ### Prerequisites
-- Windows or Wine environment (Linux can use Wine)
-- Rust FFI knowledge
-- The API: `RtlCompressBuffer(COMPRESSION_FORMAT_XPRESS, ...)`
+- MinGW cross-compiler: `sudo apt install gcc-mingw-w64`
+- Wine: `sudo apt install wine`
+- Rust FFI knowledge (for eventual port)
 
 ### Steps
-1. Research the `RtlCompressBuffer` API signature and parameters
-2. Write a Rust FFI wrapper that calls `ntdll.dll!RtlCompressBuffer`
-3. Test compressing the `ter_centaur` decompressed mesh pool
-4. Compare output with HODOR's compressed bytes
-5. If bytes match, integrate into `compress_or_raw()`
-6. If bytes differ, try `COMPRESSION_FORMAT_XPRESS_HUFF` variant
+1. Write `test_rtl_compress.c` that reads decompressed data, calls `RtlCompressBuffer`, writes output
+2. Compile: `x86_64-w64-mingw32-gcc -o test_rtl_compress.exe test_rtl_compress.c -lntdll`
+3. Run: `wine test_rtl_compress.exe <input> <output>`
+4. Compare output with HODOR's bytes using `xpress_compare`
+5. If match → proceed to Path 4 (port ReactOS implementation to Rust)
+6. If no match → document finding and move to Path 1 or Path 3
 
 ### API Reference
 ```c
@@ -97,10 +105,9 @@ NTSTATUS RtlCompressBuffer(
 ```
 
 ### What to Document
-- API signature and parameters used
-- Whether output bytes match HODOR's
-- Any differences found
-- Integration approach
+- Whether `RtlCompressBuffer` output matches HODOR's bytes
+- If match: proceed to Path 4, document ReactOS/Wine implementation details
+- If no match: document finding, move to Path 1 or Path 3
 
 ### Progress
 
@@ -110,8 +117,7 @@ NTSTATUS RtlCompressBuffer(
 
 ### Verification
 - Compress `ter_centaur` mesh pool with `RtlCompressBuffer`
-- Compare bytes with HODOR's — should be identical
-- Load generated HOD in-game — should render correctly
+- Compare bytes with HODOR's — if identical, game uses Windows API
 
 ---
 
