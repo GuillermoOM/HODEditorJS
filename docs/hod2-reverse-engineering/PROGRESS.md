@@ -8,17 +8,10 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ## Current Status
 
-**Phase:** Phase 4 Ongoing (Compression Root Cause Proven)  
-**Status:** Xpress compression fixes applied: 32-bit indicators + Type 4 matches. Ready for in-game testing.  
-**Last Updated:** 2026-05-29 00:15 UTC  
+**Phase:** Phase 4 Ongoing  
+**Status:** Xpress compression incompatibility affects ALL pools. Hybrid swap tests completed. Implementing compression bypass workaround.  
+**Last Updated:** 2026-05-29 01:15 UTC  
 **Updated By:** OpenCode Agent
-1. **Face Pool Size Mismatch:** Generated face pool is 37,704 bytes vs HODOR's 65,286 bytes. HODOR contains an extra ~27KB of index data at the end.
-2. **Vertex Data Divergence:** Normals, Tangents, and Binormals differ on 10,000+ vertices. Binormals differ on ~15,000 vertices, which is likely the cause of the spikiness.
-3. **Save_edits Alignment Bug:** Collision mesh face pool appending lacks 2-byte alignment.
-4. **Collision Stride Bug:** `0x04` (color) is missing from the stride calculation in `save_edits`.
-5. **prim_group_count Asymmetry:** V2 write uses `-1`, read ignores. V1 write uses `1`, read uses `1`.
-**Last Updated:** 2026-05-28 22:30 UTC  
-**Updated By:** Antigravity Agent
 
 ---
 
@@ -152,25 +145,36 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ### Current Issues
 
-1. **Xpress Compression Incompatibility (PROVEN ROOT CAUSE):** Bypassing Xpress compression (setting compressed size = decompressed size) causes the model to render correctly in-game. This proves our compressor's output is incompatible with the game engine's decompressor. The vertex data divergence found by `pool_byte_diff` is NOT the root cause — the decompressor fails midway, leaving vertices at garbage/zero positions.
-2. **Compression Fixes Applied:**
-   - Changed indicator word from 31-bit to 32-bit (HODOR consistently sets bit 31 in indicator words)
-   - Added Type 4 match handling (3-byte, offset up to 65535, length 3-34) — was missing from compressor
-   - Remaining differences are in match selection strategy (which offset to pick when multiple matches exist)
-3. **Face Pool Size Mismatch:** HODOR generates 65,286 bytes vs our 37,704 bytes for ter_centaur. HODOR appends ~27KB of extra index data at the end. Need to determine what this data is.
-4. **Serialization Asymmetries:**
+1. **Xpress Compression Incompatibility (PROVEN ROOT CAUSE):** Our Xpress compressor produces byte patterns that the game engine's decompressor cannot handle. This affects ALL three POOL streams (texture, mesh, face).
+
+2. **Hybrid Swap Test Results (ter_centaur):**
+   - `hybrid_tex_from_hodor.hod` (tex=HODOR, mesh/gen, face/gen) → FAIL: full spikiness
+   - `hybrid_mesh_from_hodor.hod` (tex/gen, mesh=HODOR, face/gen) → FAIL: vertices confined but textures rainbow
+   - `hybrid_face_from_hodor.hod` (tex/gen, mesh/gen, face=HODOR) → FAIL: full spikiness
+   - `hybrid_all_from_hodor.hod` (all=HODOR) → **PASS: renders correctly**
+   - `hybrid_mesh_uncompressed.hod` (tex/gen, mesh=uncomp, face/gen) → FAIL: same as mesh=HODOR
+   - Conclusion: ALL pools must use HODOR's compressed bytes. The face pool and texture pool compression is also broken, not just mesh.
+
+3. **Compression Fixes Already Applied (insufficient):**
+   - Changed indicator word from 31-bit to 32-bit
+   - Added Type 4 match handling (3-byte, offset up to 65535)
+   - Remaining differences in match selection strategy
+
+4. **Face Pool Size Mismatch:** HODOR generates 65,286 bytes vs our 37,704 bytes for ter_centaur. HODOR appends ~27KB of extra index data at the end.
+
+5. **Serialization Asymmetries:**
    - `save_edits` face pool appending lacks 2-byte alignment.
    - `save_edits` vertex stride calculation is missing `0x04` (color) mask.
    - `prim_group_count` is inconsistent between v1 and v2, read vs write.
 
 ### Next Steps
 
-1. **Test in-game** — load the newly generated HOD files to see if the 32-bit indicator + Type 4 fixes resolve the vertex spikiness
-2. If spikiness persists, investigate match selection strategy differences (HODOR picks different offsets than our compressor)
-3. Investigate why HODOR appends ~27KB extra to the face pool
-4. Fix `save_edits` 2-byte alignment bug
-5. Fix `save_edits` missing `0x04` color mask in stride calculation
-6. Fix `prim_group_count` inconsistency between v1/v2
+1. **Implement compression bypass workaround** — set `comp_size == decomp_size` for all pools so files render correctly in-game (larger files but correct rendering)
+2. **Reverse-engineer game engine decompressor** — use Ghidra to disassemble `HomeworldRM.exe` `ArchiveCompressStream` class
+3. **Try Windows RtlCompressBuffer API** — the game engine might use the Windows NT compression API
+4. **Match HODOR's compressor byte-for-byte** — fix match selection strategy to produce identical bytes
+5. Fix face pool size mismatch (27KB missing data)
+6. Fix serialization asymmetries (alignment, stride, prim_group_count)
 
 ---
 
@@ -195,6 +199,6 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ---
 
-**Document Version:** 3.1  
-**Last Updated:** 2026-05-28  
-**Status:** In-game validation and size parity fully resolved.  
+**Document Version:** 4.0  
+**Last Updated:** 2026-05-29  
+**Status:** Xpress compression bypass workaround being implemented. Hybrid swap tests completed.  

@@ -89,14 +89,16 @@ Texture-format result:
 
 ## Next Steps
 
-1. **Fix Xpress compression output** — our compressor produces byte patterns the game engine's decompressor cannot handle. Proven: bypassing compression makes the model render correctly in-game.
-2. Fix the face pool size mismatch (~27KB missing from generated `ter_centaur` face pool).
-3. Fix collision mesh serialization alignment and stride bugs.
-4. Expand HODOR source-asset fixtures to cover additional ship and terrain assets.
-5. Integrate workflow into the editor UI.
+1. **Implement compression bypass workaround** — set `comp_size == decomp_size` for all pools so files render correctly in-game
+2. **Reverse-engineer game engine decompressor** — use Ghidra on `HomeworldRM.exe`
+3. **Try Windows RtlCompressBuffer API** — alternative compression approach
+4. Fix face pool size mismatch (~27KB missing)
+5. Fix serialization bugs (alignment, stride, prim_group_count)
+6. Expand HODOR source-asset fixtures
+7. Integrate workflow into the editor UI.
 
 ---
 
-**Document Version:** 3.2  
-**Last Updated:** 2026-05-28  
-**Status:** CRITICAL BREAKTHROUGH: Bypassing Xpress compression causes model to render correctly in-game. Compression output is incompatible with game engine's decompressor. This is the proven root cause of vertex spikiness.
+**Document Version:** 4.0  
+**Last Updated:** 2026-05-29  
+**Status:** Xpress compression bypass workaround being implemented. Hybrid swap tests completed.

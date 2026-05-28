@@ -284,13 +284,14 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
 /// HOD POOL streams store both compressed and decompressed sizes. Existing
 /// save code uses equal sizes to mean an uncompressed/raw stream, avoiding the
 /// game-side decompressor path for incompressible data.
+///
+/// WORKAROUND: Currently returns raw (uncompressed) data always, because our
+/// Xpress compressor produces byte patterns incompatible with the game engine's
+/// decompressor. This makes files larger but renders correctly in-game.
+/// TODO: Fix compressor to match HODOR's byte patterns, then restore compression.
 pub fn compress_or_raw(input: &[u8]) -> Vec<u8> {
-    let compressed = compress(input);
-    if compressed.len() >= input.len() {
-        input.to_vec()
-    } else {
-        compressed
-    }
+    // Bypass compression — game engine's decompressor can't handle our bytes
+    input.to_vec()
 }
 
 #[cfg(test)]

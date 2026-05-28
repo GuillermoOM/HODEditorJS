@@ -46,7 +46,7 @@ What works:
 
 What is not complete:
 
-- **Xpress compression incompatibility (PROVEN ROOT CAUSE):** Bypassing compression (setting compressed size = decompressed size) causes the model to render correctly in-game. Our compressor's output is incompatible with the game engine's decompressor. The vertex data divergence found by `pool_byte_diff` is NOT the root cause.
+- **Xpress compression incompatibility (PROVEN ROOT CAUSE):** Our compressor produces byte patterns the game engine's decompressor cannot handle. Affects ALL pools (texture, mesh, face). Hybrid swap tests prove only HODOR's bytes work.
 - Face pool size mismatch (~27KB missing from generated `ter_centaur` face pool).
 - Serialization asymmetries (alignment, stride calculation, prim_group_count).
 - Editor UI integration for the source-asset workflow is not done.
@@ -152,13 +152,14 @@ Current result:
 
 ## Next Targets
 
-1. **Fix Xpress compression output** — our compressor produces byte patterns the game engine's decompressor cannot handle. Need to match HODOR's compression patterns exactly. Proven: bypassing compression makes the model render correctly.
-2. Investigate why HODOR appends ~27KB extra to the face pool.
-3. Fix serialization asymmetries (alignment, stride, prim_group_count).
-4. Editor UI integration.
+1. **Implement compression bypass workaround** — set `comp_size == decomp_size` for all pools so files render correctly in-game
+2. **Reverse-engineer game engine decompressor** — use Ghidra on `HomeworldRM.exe` to understand `ArchiveCompressStream`
+3. **Try Windows RtlCompressBuffer API** — the game engine might use the Windows NT compression API
+4. Fix serialization asymmetries (alignment, stride, prim_group_count).
+5. Editor UI integration.
 
 ---
 
-**Document Version:** 3.3  
-**Last Updated:** 2026-05-28  
-**Status:** CRITICAL BREAKTHROUGH: Bypassing Xpress compression causes model to render correctly in-game. Compression output is incompatible with game engine's decompressor.
+**Document Version:** 4.0  
+**Last Updated:** 2026-05-29  
+**Status:** Xpress compression bypass workaround being implemented. Hybrid swap tests completed.
