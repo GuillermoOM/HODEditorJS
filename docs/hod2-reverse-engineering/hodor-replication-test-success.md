@@ -89,11 +89,14 @@ Texture-format result:
 
 ## Next Steps
 
-1. Expand HODOR source-asset fixtures to cover additional ship and terrain assets.
-2. Integrate workflow into the editor UI.
+1. Fix the face pool size mismatch (~27KB missing from generated `ter_centaur` face pool).
+2. Fix vertex generation (normals, tangents, binormals) to achieve byte-for-byte parity with HODOR.
+3. Fix collision mesh serialization alignment and stride bugs.
+4. Expand HODOR source-asset fixtures to cover additional ship and terrain assets.
+5. Integrate workflow into the editor UI.
 
 ---
 
-**Document Version:** 3.0  
+**Document Version:** 3.1  
 **Last Updated:** 2026-05-28  
-**Status:** 100% Replication success achieved on both fixtures. In-game rendering and size parity fully resolved.
+**Status:** Ongoing. In-game rendering is still spiky. Byte-level diagnostic tools have identified face pool size mismatches and massive vertex normal/tangent/binormal divergence as the root cause, invalidating the previous assumption that structure-count matching equals success.

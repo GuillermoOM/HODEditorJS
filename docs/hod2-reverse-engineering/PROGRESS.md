@@ -8,9 +8,14 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ## Current Status
 
-**Phase:** Phase 4 Complete (In-Game Rendering & Size Parity Verified)  
-**Status:** 100% HODOR Replication Success; Lossless Verification Passed; In-game vertex explosion and spikiness resolved; POOL compression sliding-window offset cap upgraded to 2MB, achieving perfect cross-LOD compression parity and beating HODOR's file size (198KB vs 232KB).  
-**Last Updated:** 2026-05-28 22:20 UTC  
+**Phase:** Phase 4 Ongoing (In-Game Rendering Issues)  
+**Status:** Spikiness still present in-game. Created `pool_byte_diff` diagnostic tool. Discovered major asymmetries in `hod.rs` generation vs HODOR:
+1. **Face Pool Size Mismatch:** Generated face pool is 37,704 bytes vs HODOR's 65,286 bytes. HODOR contains an extra ~27KB of index data at the end.
+2. **Vertex Data Divergence:** Normals, Tangents, and Binormals differ on 10,000+ vertices. Binormals differ on ~15,000 vertices, which is likely the cause of the spikiness.
+3. **Save_edits Alignment Bug:** Collision mesh face pool appending lacks 2-byte alignment.
+4. **Collision Stride Bug:** `0x04` (color) is missing from the stride calculation in `save_edits`.
+5. **prim_group_count Asymmetry:** V2 write uses `-1`, read ignores. V1 write uses `1`, read uses `1`.
+**Last Updated:** 2026-05-28 22:30 UTC  
 **Updated By:** Antigravity Agent
 
 ---
@@ -145,7 +150,14 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ### Current Issues
 
-*None.* All issues are successfully resolved and verified.
+1. **Vertex Spikiness in Engine:** Rendering is spiky in-game for `ter_centaur` despite Xpress compression Type 5 elimination. 
+2. **Face Pool Size Mismatch:** HODOR generates a 65,286 byte decompressed face pool vs our 37,704 byte pool (a 27KB discrepancy at the tail end, right after the main geometry indices).
+3. **Vertex Data Discrepancy:** Byte-level comparisons show massive differences in normals, tangents, and binormals (~15,000 vertices). Binormal divergence is likely causing the visual spikiness in-game.
+4. **Serialization Asymmetries:** 
+   - `save_edits` face pool appending lacks 2-byte alignment.
+   - `save_edits` vertex stride calculation is missing `0x04` (color).
+   - `prim_group_count` is inconsistent between v1 and v2, read vs write.
+5. **Testing Blindspots:** `verify_lossless` only checks structure counts and round-trip parsing, but **does not verify mesh data integrity**. Files can pass verify_lossless while containing completely broken mesh geometry.
 
 ---
 

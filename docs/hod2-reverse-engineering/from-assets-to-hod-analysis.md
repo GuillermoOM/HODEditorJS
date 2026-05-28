@@ -46,6 +46,9 @@ What works:
 
 What is not complete:
 
+- In-game rendering is still spiky for generated models.
+- Byte-level equivalence for face pools and vertex data (normals, tangents, binormals). HODOR face pools contain extra trailing data, and vertex binormals diverge significantly.
+- Serialization asymmetries (e.g. alignment, stride calculation) must be fixed to achieve full parity.
 - Editor UI integration for the source-asset workflow is not done.
 
 ## DAE Intermediate Oracle
@@ -149,11 +152,13 @@ Current result:
 
 ## Next Targets
 
-1. Expand HODOR source-asset fixtures beyond `ter_pharos` and `ter_centaur`.
-2. Editor UI integration.
+1. Fix `hod.rs` and `compiler.rs` generation asymmetries (stride calc, alignment, `prim_group_count`).
+2. Discover why HODOR's face pool contains an extra 27KB of data at the end (LOD duplication?).
+3. Fix normal/tangent/binormal generation to achieve byte-level parity with HODOR, which should resolve the in-game spikiness.
+4. Editor UI integration.
 
 ---
 
-**Document Version:** 3.1  
+**Document Version:** 3.2  
 **Last Updated:** 2026-05-28  
-**Status:** 100% Replication success achieved on both fixtures. In-game rendering and size parity fully resolved.
+**Status:** In-game rendering is still spiky. Byte-level diagnostic tools have identified face pool size mismatches and vertex data divergence (binormals, tangents) as the root cause.
