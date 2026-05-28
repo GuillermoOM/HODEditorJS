@@ -166,6 +166,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
    - `save_edits` face pool appending lacks 2-byte alignment.
    - `save_edits` vertex stride calculation is missing `0x04` (color) mask.
    - `prim_group_count` is inconsistent between v1 and v2, read vs write.
+6. **Uncompressed Textures Look Blocky:** With the compression bypass workaround, textures render blocky in-game instead of smooth. This is likely because the texture pool is now raw RGBA instead of DXT-compressed, and the game engine expects DXT data for proper GPU texture sampling. The texture pool compression may need a different approach than the mesh/face pools — possibly using a standard DXT compressor without Xpress wrapping.
 
 ### Next Steps
 
