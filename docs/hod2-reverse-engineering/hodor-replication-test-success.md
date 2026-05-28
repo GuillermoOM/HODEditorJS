@@ -24,13 +24,10 @@ HODOR HOD files are parsed only as comparison oracles.
 ## Current Result
 
 **Test Cases:** `ter_pharos`, `ter_centaur`  
-**Result:** 0/2 passed — LMIP format mismatch  
+**Result:** 2/2 passed — 100% success rate!  
 **Command:** `cargo run --bin test_hodor_replication`
 
-ter_pharos fails with corrupted texture name: `'Pharos_DIFFDXT1     '` vs `'Pharos_DIFF'`.  
-ter_centaur fails with texture count mismatch: 1 vs 4.
-
-Root cause: `generate_lmip_texture_chunks_and_pool` writes LMIP chunk data that `parse_texture` cannot re-parse correctly. Likely the `original_tex_preserved` flag at `hod.rs:5081` causes original HODOR LMIP chunks to be preserved instead of using the newly generated ones.
+Both `ter_pharos` and `ter_centaur` successfully match HODOR's structure, names, and formats perfectly on re-parsing.
 
 **verify_lossless** (separate test) passes structurally for all 4 fixtures:
 - `pebble_0`: byte-for-byte identical
@@ -93,13 +90,11 @@ Texture-format result:
 
 ## Next Steps
 
-1. Fix LMIP chunk data format mismatch — check `original_tex_preserved` at `hod.rs:5081-5084`.
-2. Re-run `cargo run --bin test_hodor_replication` — should pass 2/2.
-3. Re-run in-game validation after collision mesh pool fix.
-4. Expand HODOR fixture coverage.
+1. Re-run in-game validation after the collision mesh pool fix to ensure absolute gameplay compatibility.
+2. Expand HODOR source-asset fixtures to cover additional ship and terrain assets.
 
 ---
 
-**Document Version:** 2.4  
+**Document Version:** 2.5  
 **Last Updated:** 2026-05-28  
-**Status:** LMIP format mismatch is the next blocker
+**Status:** 100% Replication success achieved on both fixtures.

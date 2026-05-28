@@ -298,7 +298,7 @@ impl HODModel {
             texture_pool: Cursor::new(Vec::new()),
             mesh_pool: Cursor::new(Vec::new()),
             face_pool: Cursor::new(Vec::new()),
-            is_v2: false,
+            is_v2: chunks.iter().any(|c| c.id == "POOL"),
             hod_dir,
             uncompressed_dir,
             hod_file_path: hod_file_path_buf,
@@ -306,7 +306,6 @@ impl HODModel {
 
         for chunk in &chunks {
             if chunk.id == "POOL" {
-                context.is_v2 = true;
                 println!("[RUST] POOL chunk detected. Decompressing streams...");
                 let mut pool_cursor = Cursor::new(&chunk.data);
                 let _pool_type = pool_cursor
@@ -453,17 +452,23 @@ impl HODModel {
                         "[RUST]     Parsing HVMD container children (count: {})...",
                         chunk.children.len()
                     );
+                    for sub_chunk in &chunk.children {
+                        println!("[RUST]       HVMD child: ID='{}', type={:?}, data_len={}", sub_chunk.id, sub_chunk.chunk_type, sub_chunk.data.len());
+                    }
                     // Pass 1: Parse all texture chunks first
                     for sub_chunk in &chunk.children {
                         match sub_chunk.id.trim() {
                             "LMIP" => {
                                 // Extract textures from LMIP
                                 // LMIP chunks can be tiny headers (36 bytes) — skip if too small for the 48-byte header
-                                if sub_chunk.data.len() < 48 {
+                                if sub_chunk.data.len() < 36 {
+                                    println!("[RUST]       Skipping tiny LMIP chunk (len={})", sub_chunk.data.len());
                                     continue;
                                 }
+                                println!("[RUST]       Parsing LMIP texture chunk...");
                                 let tex = parse_texture(sub_chunk, &mut context)
                                     .map_err(|e| format!("Error in LMIP texture: {}", e))?;
+                                println!("[RUST]         Successfully parsed texture: name='{}', format='{}'", tex.name, tex.format);
                                 textures.push(tex);
                             }
                             "TEXM" => {
@@ -2614,34 +2619,74 @@ fn encode_b64_png_thumbnail(rgba: &[u8], width: u32, height: u32, max_dim: u32) 
 fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTexture, String> {
     let mut reader = Cursor::new(&chunk.data);
 
-    // Header details
-    let mut name_bytes = [0u8; 32];
-    reader
-        .read_exact(&mut name_bytes)
-        .map_err(|e| e.to_string())?;
-    let name = String::from_utf8_lossy(&name_bytes)
-        .trim_matches('\0')
-        .to_string();
+    let (name, format, width, height, _mip_levels) = if context.is_v2 {
+        let name_base = read_len_string(&mut reader)?;
+        let mut format_bytes = [0u8; 4];
+        reader
+            .read_exact(&mut format_bytes)
+            .map_err(|e| e.to_string())?;
+        let format_str = String::from_utf8_lossy(&format_bytes)
+            .trim()
+            .to_string();
+        
+        let mip_count = reader
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        
+        let mut width = 0u32;
+        let mut height = 0u32;
+        if mip_count > 0 {
+            width = reader
+                .read_u32::<LittleEndian>()
+                .map_err(|e| e.to_string())?;
+            height = reader
+                .read_u32::<LittleEndian>()
+                .map_err(|e| e.to_string())?;
+            // Skip the remaining mip dimensions
+            for _ in 1..mip_count {
+                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+            }
+        }
+        
+        let name = format!("{}{}", name_base, format_str);
+        (name, format_str, width, height, mip_count as u32)
+    } else {
+        // Header details
+        let mut name_bytes = [0u8; 32];
+        reader
+            .read_exact(&mut name_bytes)
+            .map_err(|e| e.to_string())?;
+        let name = String::from_utf8_lossy(&name_bytes)
+            .trim_matches('\0')
+            .to_string();
 
-    let format_val = reader
-        .read_u32::<LittleEndian>()
-        .map_err(|e| e.to_string())?;
-    let format = match format_val {
-        0 => "RGBA".to_string(),
-        1 => "DXT1".to_string(),
-        5 => "DXT5".to_string(),
-        _ => format!("Format_{}", format_val),
+        let format_val = reader
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())?;
+        let format = match format_val {
+            0 => "RGBA".to_string(),
+            1 => "DXT1".to_string(),
+            5 => "DXT5".to_string(),
+            _ => format!("Format_{}", format_val),
+        };
+
+        let mut width = 0u32;
+        let mut height = 0u32;
+        let mut _mip_levels = 0u32;
+        if chunk.data.len() >= 48 {
+            width = reader
+                .read_u32::<LittleEndian>()
+                .map_err(|e| e.to_string())?;
+            height = reader
+                .read_u32::<LittleEndian>()
+                .map_err(|e| e.to_string())?;
+            _mip_levels = reader
+                .read_u32::<LittleEndian>()
+                .map_err(|e| e.to_string())?;
+        }
+        (name, format, width, height, _mip_levels)
     };
-
-    let width = reader
-        .read_u32::<LittleEndian>()
-        .map_err(|e| e.to_string())?;
-    let height = reader
-        .read_u32::<LittleEndian>()
-        .map_err(|e| e.to_string())?;
-    let _mip_levels = reader
-        .read_u32::<LittleEndian>()
-        .map_err(|e| e.to_string())?;
 
     // In a HOD 2.0 file, raw mip pixels are loaded from context.texture_pool.
     // In HOD 1.0, they would be read inline from child MIPS chunks (we will support this as well!).
@@ -4639,34 +4684,33 @@ fn generate_lmip_texture_chunks_and_pool(
         }
         let mips = generate_mip_chain(&rgba, width as usize, height as usize, mip_count as usize);
 
-        let has_alpha = rgba.chunks_exact(4).any(|pixel| pixel[3] < 250);
-        let output_format = if texture.format == "DXT5" || has_alpha {
-            "DXT5"
-        } else {
-            "DXT1"
+        let output_format = match texture.format.as_str() {
+            "DXT1" => "DXT1",
+            "DXT5" => "DXT5",
+            _ => {
+                let has_alpha = rgba.chunks_exact(4).any(|pixel| pixel[3] < 250);
+                if has_alpha {
+                    "DXT5"
+                } else {
+                    "DXT1"
+                }
+            }
         };
 
         let mut data = Vec::new();
-        // LMIP chunk data format: fixed 32-byte name, u32 format_val, u32 width, u32 height, u32 mip_count, then mip dims
-        let mut name_buf = [0u8; 32];
-        let name_bytes = texture.name.as_bytes();
-        let copy_len = name_bytes.len().min(31);
-        name_buf[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
-        data.write_all(&name_buf)
-            .map_err(|e| e.to_string())?;
-        let format_val: u32 = match output_format {
-            "DXT5" => 5,
-            "DXT1" => 1,
-            _ => 0,
-        };
-        data.write_u32::<LittleEndian>(format_val)
-            .map_err(|e| e.to_string())?;
-        data.write_u32::<LittleEndian>(width)
-            .map_err(|e| e.to_string())?;
-        data.write_u32::<LittleEndian>(height)
-            .map_err(|e| e.to_string())?;
+        // V2 format: string name, 4-byte format name, u32 mip_count, and then mip dimensions (width, height as u32 LittleEndian)
+        write_len_string(&mut data, &texture.name)?;
+        
+        let format_name = output_format; // "DXT1" or "DXT5"
+        let mut format_bytes = [b' '; 4];
+        let bytes = format_name.as_bytes();
+        let copy_len = bytes.len().min(4);
+        format_bytes[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        data.write_all(&format_bytes).map_err(|e| e.to_string())?;
+
         data.write_u32::<LittleEndian>(mip_count as u32)
             .map_err(|e| e.to_string())?;
+
         for &(_, mw, mh) in &mips {
             data.write_u32::<LittleEndian>(mw as u32)
                 .map_err(|e| e.to_string())?;

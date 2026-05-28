@@ -96,6 +96,14 @@ fn run_test_case(name: &str, dir: &Path) -> Result<(), String> {
 
     // Test 5: Compare structures
     println!("  5. Comparing structures...");
+    println!("=== DEBUG TEXTURES FOR HODOR ===");
+    for tex in &hodor_model.textures {
+        println!("Hodor Texture: name='{}', format='{}', width={}, height={}", tex.name, tex.format, tex.width, tex.height);
+    }
+    println!("=== DEBUG TEXTURES FOR REPARSED ===");
+    for tex in &reparsed.textures {
+        println!("Reparsed Texture: name='{}', format='{}', width={}, height={}", tex.name, tex.format, tex.width, tex.height);
+    }
     compare_structures(&hodor_model, &reparsed)?;
     compare_texture_layouts(&hodor_bytes, &generated)?;
 
@@ -137,6 +145,15 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
         .filter_map(|path| path.file_stem()?.to_str()?.to_string().into())
         .collect();
     texture_names.sort();
+    texture_names.dedup();
+
+    let textures_json_path = dir.join("textures.json");
+    let textures_specs: Vec<serde_json::Value> = if textures_json_path.exists() {
+        serde_json::from_slice(&fs::read(&textures_json_path).map_err(|e| e.to_string())?)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     let mut textures = Vec::new();
     for tex_name in &texture_names {
@@ -156,7 +173,13 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
                         .unwrap_or(false)
             })
             .ok_or_else(|| format!("No TGA file found for texture '{}'", tex_name))?;
-        textures.push(load_tga_texture(&tga_path, tex_name)?);
+        let mut tex = load_tga_texture(&tga_path, tex_name)?;
+        if let Some(spec) = textures_specs.iter().find(|s| s["name"].as_str() == Some(tex_name)) {
+            if let Some(fmt) = spec["format"].as_str() {
+                tex.format = fmt.to_string();
+            }
+        }
+        textures.push(tex);
     }
     println!("     Loaded {} textures", textures.len());
 
@@ -279,6 +302,10 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
         .flat_map(|m| m.texture_maps.iter().cloned())
         .collect();
     println!("     Referenced textures: {:?}", referenced_textures);
+    println!("=== BEFORE FILTERING ===");
+    for t in &textures {
+        println!("  Texture in list: name='{}'", t.name);
+    }
     let textures: Vec<_> = textures
         .into_iter()
         .filter(|t| referenced_textures.contains(&t.name))

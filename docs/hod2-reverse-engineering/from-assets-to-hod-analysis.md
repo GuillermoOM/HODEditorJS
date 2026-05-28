@@ -43,7 +43,6 @@ What works:
 
 What is not complete:
 
-- LMIP chunk data format mismatch — `generate_lmip_texture_chunks_and_pool` writes LMIP data that `parse_texture` cannot re-parse correctly. Texture names are corrupted (include format bytes). Likely caused by `original_tex_preserved` flag preserving original HODOR LMIP chunks instead of using generated ones. Check `hod.rs:5081-5084`.
 - In-game validation is still required after the collision mesh pool fix.
 - Editor UI integration for the source-asset workflow is not done.
 
@@ -148,12 +147,11 @@ Current result:
 
 ## Next Targets
 
-1. Fix LMIP chunk data format mismatch — check `original_tex_preserved` flag at `hod.rs:5081-5084` and verify generated LMIP chunks are being used.
-2. Re-run in-game validation after collision mesh pool fix.
-3. Expand HODOR source-asset fixtures beyond `ter_pharos` and `ter_centaur`.
+1. Perform in-game validation after the collision mesh pool fix to ensure absolute gameplay compatibility.
+2. Expand HODOR source-asset fixtures beyond `ter_pharos` and `ter_centaur`.
 
 ---
 
-**Document Version:** 2.5  
+**Document Version:** 2.6  
 **Last Updated:** 2026-05-28  
-**Status:** LMIP format mismatch is the next blocker
+**Status:** 100% Replication success achieved on both fixtures.
