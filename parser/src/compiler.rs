@@ -75,6 +75,14 @@ pub struct CompiledMesh {
     pub new_parts: Vec<HODMeshPart>,
 }
 
+fn normalize_hwrm_vertex_mask(mask: u32) -> u32 {
+    let mut normalized = mask & !0x30;
+    if (mask & 0x10) != 0 {
+        normalized |= 0x08;
+    }
+    normalized
+}
+
 fn write_len_string<W: Write>(writer: &mut W, s: &str) -> std::io::Result<()> {
     writer.write_u32::<LittleEndian>(s.len() as u32)?;
     writer.write_all(s.as_bytes())?;
@@ -91,7 +99,7 @@ pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
             if !part.indices.is_empty() {
                 new_parts.push(HODMeshPart {
                     material_index: part.material_index,
-                    vertex_mask: part.vertex_mask,
+                    vertex_mask: normalize_hwrm_vertex_mask(part.vertex_mask),
                     vertices: part.vertices.clone(),
                     indices: part.indices.clone(),
                 });
@@ -107,7 +115,7 @@ pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
 
                 new_parts.push(HODMeshPart {
                     material_index: part.material_index,
-                    vertex_mask: part.vertex_mask,
+                    vertex_mask: normalize_hwrm_vertex_mask(part.vertex_mask),
                     vertices: dedup.get_vertices().to_vec(),
                     indices: new_indices,
                 });
@@ -149,7 +157,7 @@ pub fn generate_pool_data(compiled_meshes: &[CompiledMesh], comp_tex: &[u8], dec
             if vertex_stride == 0 { vertex_stride = 1; }
             
             for v in &part.vertices {
-                let _ = crate::hod::write_vertex(&mut decomp_mesh, v, part.vertex_mask, 1401, vertex_stride);
+                let _ = crate::hod::write_vertex(&mut decomp_mesh, v, part.vertex_mask, 1400, vertex_stride);
             }
             
             // Align face pool to 2 bytes
@@ -164,8 +172,9 @@ pub fn generate_pool_data(compiled_meshes: &[CompiledMesh], comp_tex: &[u8], dec
         }
     }
 
-    let comp_mesh = if decomp_mesh.is_empty() { Vec::new() } else { crate::xpress::compress(&decomp_mesh) };
-    let comp_face = if decomp_face.is_empty() { Vec::new() } else { crate::xpress::compress(&decomp_face) };
+    let comp_mesh = if decomp_mesh.is_empty() { Vec::new() } else { crate::xpress::compress_or_raw(&decomp_mesh) };
+    
+    let comp_face = if decomp_face.is_empty() { Vec::new() } else { crate::xpress::compress_or_raw(&decomp_face) };
 
     let mut pool_buf = Vec::new();
     let mut cursor = Cursor::new(&mut pool_buf);
@@ -190,6 +199,18 @@ pub fn generate_pool_data(compiled_meshes: &[CompiledMesh], comp_tex: &[u8], dec
 fn get_base_name(name: &str) -> String {
     if let Some(idx) = name.find("_lod_") {
         name[0..idx].to_string()
+    } else if let Some(idx) = name.rfind("_LOD") {
+        let suffix = &name[idx + 4..];
+        if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+            return name[0..idx].to_string();
+        }
+        name.to_string()
+    } else if let Some(idx) = name.rfind("_lod") {
+        let suffix = &name[idx + 4..];
+        if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+            return name[0..idx].to_string();
+        }
+        name.to_string()
     } else {
         name.to_string()
     }
@@ -236,7 +257,7 @@ pub fn generate_mult_chunks(compiled_meshes: &[CompiledMesh]) -> std::io::Result
             m_cursor.write_all(b"NRML")?;
             m_cursor.write_u32::<BigEndian>(nrml_size as u32)?;
             m_cursor.write_all(b"BMSH")?;
-            m_cursor.write_u32::<BigEndian>(1401)?; // nested NRML BMSH version
+            m_cursor.write_u32::<BigEndian>(1400)?; // nested NRML BMSH version
             
             m_cursor.write_i32::<LittleEndian>(mesh.lod)?;
             m_cursor.write_i32::<LittleEndian>(mesh.new_parts.len() as i32)?;

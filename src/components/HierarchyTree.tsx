@@ -179,9 +179,6 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  // Node Delete Mode State
-  const [isDeleteModeActive, setIsDeleteModeActive] = useState(false);
-
   // Add Node Form State
   const [isAddNodeOpen, setIsAddNodeOpen] = useState(false);
   const [addNodeType, setAddNodeType] = useState<"joint" | "marker" | "navlight" | "dockpath" | "collision" | "weapon_template" | "turret_template" | "engine_nozzle" | "mesh" | "repair_point_template" | "capture_point_template" | "hardpoint_template" | "salvage_point_template">("joint");
@@ -261,7 +258,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     if (weaponMatch) return { baseName: weaponMatch[1], suffix: weaponMatch[2], type: weaponMatch[1].startsWith('Turret') ? 'turret_group' : 'weapon_group' };
     
     // Check point groups (Capture, Repair, Salvage, Hardpoint)
-    const pointMatch = name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+|Hardpoint_\d+)_(Heading|Left|Up|Position|Direction|Rest)$/i);
+    const pointMatch = name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+|Hardpoint[A-Za-z0-9_]*)_(Heading|Left|Up|Position|Direction|Rest)$/i);
     if (pointMatch) {
       let type = "point_group";
       if (pointMatch[1].startsWith("Hardpoint")) type = "hardpoint_group";
@@ -272,10 +269,11 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     }
     
     // Check base nodes for point groups (they don't always have a suffix for the root)
-    const exactPointMatch = name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+)$/i);
+    const exactPointMatch = name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+|Hardpoint[A-Za-z0-9_]*)$/i);
     if (exactPointMatch) {
       let type = "point_group";
-      if (exactPointMatch[1].startsWith("Capture")) type = "capture_point_group";
+      if (exactPointMatch[1].startsWith("Hardpoint")) type = "hardpoint_group";
+      else if (exactPointMatch[1].startsWith("Capture")) type = "capture_point_group";
       else if (exactPointMatch[1].startsWith("Repair")) type = "repair_point_group";
       else if (exactPointMatch[1].startsWith("Salvage")) type = "salvage_point_group";
       return { baseName: exactPointMatch[1], suffix: "", type };
@@ -889,47 +887,8 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     return true;
   };
 
-  const renderDeleteButton = (name: string, type: string) => {
-    if (!isDeleteModeActive) return null;
-    const deletable = isNodeDeletable(name, type);
-    if (!deletable) {
-      return (
-        <span 
-          style={{ display: "inline-flex", padding: "0 4px", color: "rgba(255,255,255,0.25)", fontSize: "11px", cursor: "not-allowed" }}
-          title="This node is essential and protected from deletion."
-        >
-          🔒
-        </span>
-      );
-    }
-    return (
-      <span
-        onClick={(e) => {
-          e.stopPropagation();
-          const confirmMsg = type === "weapon_group" 
-            ? `Are you sure you want to delete the entire weapon/turret family "${name}"? This will remove all of its component joints safely.` 
-            : `Are you sure you want to delete "${name}"?`;
-          if (window.confirm(confirmMsg)) {
-            handleDeleteNode(name, type);
-          }
-        }}
-        style={{
-          display: "inline-flex",
-          padding: "2px 6px",
-          color: "#ff1744",
-          fontSize: "10px",
-          fontWeight: "700",
-          cursor: "pointer",
-          background: "rgba(255, 23, 68, 0.15)",
-          border: "1px solid rgba(255, 23, 68, 0.35)",
-          borderRadius: "3px",
-          marginLeft: "6px"
-        }}
-        title={`Delete this ${type}`}
-      >
-        ✕
-      </span>
-    );
+  const renderDeleteButton = (_name: string, _type: string) => {
+    return null;
   };
 
   
@@ -1197,7 +1156,6 @@ const handleDeleteNode = (name: string, type: string) => {
 
     onModelChange?.(updatedModel);
     setSelectedNode(null);
-    setIsDeleteModeActive(false);
   };
 
   const handleDragOverContainer = (e: React.DragEvent<HTMLDivElement>) => {
@@ -1281,6 +1239,17 @@ const handleDeleteNode = (name: string, type: string) => {
       
       const updated = { ...prev, [nodeKey]: nextVisibility };
       
+      // If toggling a mesh base name, toggle all its LODs
+      if (!nodeKey.includes(":") && model?.meshes) {
+        const baseName = nodeKey;
+        model.meshes.forEach((m) => {
+          const mBase = m.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+          if (mBase === baseName) {
+            updated[`${m.name}_lod_${m.lod}`] = nextVisibility;
+          }
+        });
+      }
+      
       // If we toggle a Joint node, propagate that same visibility recursively to all descendants!
       if (nodeKey.startsWith("joint:")) {
         const jointName = nodeKey.substring("joint:".length);
@@ -1310,7 +1279,16 @@ const handleDeleteNode = (name: string, type: string) => {
   };
 
   const renderEyeToggle = (nodeKey: string) => {
-    const isVisible = visibleMeshes[nodeKey] !== false;
+    // For mesh base names, check if any LOD is visible
+    let isVisible = visibleMeshes[nodeKey] !== false;
+    if (!nodeKey.includes(":") && model?.meshes) {
+      const baseName = nodeKey;
+      const hasVisibleLod = model.meshes.some((m) => {
+        const mBase = m.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+        return mBase === baseName && visibleMeshes[`${m.name}_lod_${m.lod}`] !== false;
+      });
+      isVisible = hasVisibleLod;
+    }
     return (
       <span
         onClick={(e) => {
@@ -1752,43 +1730,52 @@ const handleDeleteNode = (name: string, type: string) => {
               );
             })}
 
-            {/* Render Meshes (LOD parts) */}
-            {meshes.map((mesh) => {
-              const meshKey = `${mesh.name}_lod_${mesh.lod}`;
-              const isMeshSelected = selectedNode?.type === "mesh" && selectedNode.name === meshKey;
-              if (searchTerm && !mesh.name.toLowerCase().includes(searchTerm.toLowerCase())) return null;
-              return (
-                <div
-                  key={meshKey}
-                  className={`list-item ${isMeshSelected ? "active" : ""}`}
-                  onClick={() => setSelectedNode({ type: "mesh", name: meshKey })}
-                  onContextMenu={(e) => handleContextMenu(e, meshKey, "mesh")}
-                  draggable="true"
-                  onDragStart={(e) => {
-                    e.stopPropagation();
-                    handleDragStart(e, meshKey, "mesh");
-                  }}
-                  style={{ 
-                    paddingLeft: "16px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center"
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden", flex: 1 }}>
-                    <span style={{ width: "14px", flexShrink: 0 }} />
-                    <Box size={13} style={{ color: "var(--accent-blue)", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {mesh.name} (LOD {mesh.lod})
-                    </span>
+            {/* Render Meshes grouped by base name */}
+            {(() => {
+              const groupedMeshes = new Map<string, typeof meshes>();
+              meshes.forEach((mesh) => {
+                const baseName = mesh.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+                if (!groupedMeshes.has(baseName)) groupedMeshes.set(baseName, []);
+                groupedMeshes.get(baseName)!.push(mesh);
+              });
+              return Array.from(groupedMeshes.entries()).map(([baseName, lodMeshes]) => {
+                const meshKey = baseName;
+                const isMeshSelected = selectedNode?.type === "mesh" && selectedNode.name === meshKey;
+                if (searchTerm && !baseName.toLowerCase().includes(searchTerm.toLowerCase())) return null;
+                const sortedLods = [...lodMeshes].sort((a, b) => a.lod - b.lod);
+                return (
+                  <div
+                    key={meshKey}
+                    className={`list-item ${isMeshSelected ? "active" : ""}`}
+                    onClick={() => setSelectedNode({ type: "mesh", name: meshKey })}
+                    onContextMenu={(e) => handleContextMenu(e, meshKey, "mesh")}
+                    draggable="true"
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      handleDragStart(e, meshKey, "mesh");
+                    }}
+                    style={{ 
+                      paddingLeft: "16px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden", flex: 1 }}>
+                      <span style={{ width: "14px", flexShrink: 0 }} />
+                      <Box size={13} style={{ color: "var(--accent-blue)", flexShrink: 0 }} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {baseName} ({sortedLods.length} LOD{sortedLods.length !== 1 ? "s" : ""})
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      {renderEyeToggle(meshKey)}
+                      {renderDeleteButton(meshKey, "mesh")}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    {renderEyeToggle(meshKey)}
-                    {renderDeleteButton(meshKey, "mesh")}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
 
             {/* 2. Render NavLights */}
             {navLights.map((nav) => {
@@ -2260,27 +2247,6 @@ const handleDeleteNode = (name: string, type: string) => {
                   >
                     <Plus size={11} />
                     Add Node
-                  </button>
-                  <button
-                    onClick={() => setIsDeleteModeActive(!isDeleteModeActive)}
-                    style={{
-                      fontSize: "10px",
-                      padding: "3px 8px",
-                      background: isDeleteModeActive ? "rgba(255, 23, 68, 0.25)" : "rgba(255, 255, 255, 0.05)",
-                      color: isDeleteModeActive ? "#ff1744" : "var(--text-secondary)",
-                      border: isDeleteModeActive ? "1px solid rgba(255, 23, 68, 0.6)" : "1px solid rgba(255,255,255,0.15)",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontWeight: "600",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      whiteSpace: "nowrap"
-                    }}
-                    title="Toggle delete mode to safely remove nodes from HOD"
-                  >
-                    <Trash2 size={11} />
-                    {isDeleteModeActive ? "Exit Delete" : "Delete Node"}
                   </button>
                   <button
                     onClick={() => setVisibleMeshes({})}

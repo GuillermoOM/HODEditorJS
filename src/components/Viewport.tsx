@@ -20,6 +20,8 @@ export interface HODVertex {
   normal?: Vector3D;
   color?: number;
   uv?: { u: number; v: number };
+  tangent?: Vector3D;
+  binormal?: Vector3D;
 }
 
 export interface HODMeshPart {
@@ -228,6 +230,7 @@ export const Viewport: React.FC<ViewportProps> = ({
   const orbitControlsRef = useRef<OrbitControls | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const markersGroupRef = useRef<THREE.Group | null>(null);
   const jointsGroupRef = useRef<THREE.Group | null>(null);
   const meshesGroupRef = useRef<THREE.Group | null>(null);
@@ -640,6 +643,7 @@ export const Viewport: React.FC<ViewportProps> = ({
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(width, height);
       renderer.setPixelRatio(window.devicePixelRatio);
+      rendererRef.current = renderer;
       mountRef.current.appendChild(renderer.domElement);
 
       const handlePrevent = (e: Event) => e.preventDefault();
@@ -786,41 +790,25 @@ export const Viewport: React.FC<ViewportProps> = ({
         animationId = requestAnimationFrame(animate);
         orbitControls.update();
 
-        // Adaptive grid fading based on camera distance (zoom)
+        // Adaptive grid toggling based on camera distance (zoom)
+        // Ensure only one grid is active at a time to prevent clipping / z-fighting
         if (camera && fineMat && coarseMat && megaMat) {
           const dist = camera.position.distanceTo(orbitControls.target);
           
-          // 1. Fine Grid Logic
-          if (dist < 40) {
+          if (dist < 150) {
+            gridFine.visible = true;
+            gridCoarse.visible = false;
+            gridMega.visible = false;
             fineMat.opacity = 0.45;
-          } else if (dist < 150) {
-            // Smoothly fades from 0.45 down to 0
-            fineMat.opacity = 0.45 * (1 - (dist - 40) / 110);
-          } else {
-            fineMat.opacity = 0;
-          }
-
-          // 2. Coarse Grid Logic
-          if (dist < 5) {
-            coarseMat.opacity = 0; // Fully invisible when microscopic
-          } else if (dist < 40) {
-            // Fade in from 0 to 0.5 as we pull away from microscopic view
-            coarseMat.opacity = 0.5 * ((dist - 5) / 35);
-          } else if (dist < 400) {
-            coarseMat.opacity = 0.5; // Solid holding zone
           } else if (dist < 1500) {
-            // Smoothly fades out to the mega grid
-            coarseMat.opacity = 0.5 * (1 - (dist - 400) / 1100);
+            gridFine.visible = false;
+            gridCoarse.visible = true;
+            gridMega.visible = false;
+            coarseMat.opacity = 0.5;
           } else {
-            coarseMat.opacity = 0;
-          }
-
-          // 3. Mega Grid Logic
-          if (dist < 300) {
-            megaMat.opacity = 0;
-          } else if (dist < 1200) {
-            megaMat.opacity = 0.6 * ((dist - 300) / 900);
-          } else {
+            gridFine.visible = false;
+            gridCoarse.visible = false;
+            gridMega.visible = true;
             megaMat.opacity = 0.6;
           }
         }
@@ -959,9 +947,11 @@ export const Viewport: React.FC<ViewportProps> = ({
                     
                     for (let i = 0; i < posAttr.count; i++) {
                       vertices.push({
-                        pos: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+                        position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
                         normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
-                        uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: geo.attributes.uv.getY(i) } : { u: 0, v: 0 }
+                        uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
+                        tangent: { x: 1, y: 0, z: 0 },
+                        binormal: { x: 0, y: 0, z: 1 }
                       });
                     }
                     
@@ -982,7 +972,7 @@ export const Viewport: React.FC<ViewportProps> = ({
                       parent_name: "Root",
                       parts: [{
                         material_index: 0,
-                        vertex_mask: 19,
+                        vertex_mask: 0x600B,
                         vertices,
                         indices
                       }]
@@ -1028,6 +1018,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         orbitControls.dispose();
         transformControls.dispose();
         renderer.dispose();
+        rendererRef.current = null;
         if (mountRef.current && renderer.domElement) {
           mountRef.current.removeChild(renderer.domElement);
         }
@@ -1106,6 +1097,7 @@ export const Viewport: React.FC<ViewportProps> = ({
       disposeHierarchy(engineGlowsGroup);
       disposeHierarchy(engineShapesGroup);
       disposeHierarchy(targetBoxesGroup);
+      textureCacheRef.current.clear();
 
       while (meshesGroup.children.length > 0) meshesGroup.remove(meshesGroup.children[0]);
       while (jointsGroup.children.length > 0) jointsGroup.remove(jointsGroup.children[0]);
@@ -1281,8 +1273,9 @@ export const Viewport: React.FC<ViewportProps> = ({
           // Helper to get or create a texture from base64Png
           const getCachedTexture = (base64Png: string, name: string): THREE.Texture => {
             const cache = textureCacheRef.current;
-            if (cache.has(name)) {
-              return cache.get(name)!;
+            const cacheKey = `${name}:${base64Png.length}:${base64Png.slice(0, 64)}`;
+            if (cache.has(cacheKey)) {
+              return cache.get(cacheKey)!;
             }
             const img = new Image();
             img.src = base64Png.startsWith("data:") ? base64Png : `data:image/png;base64,${base64Png}`;
@@ -1290,10 +1283,15 @@ export const Viewport: React.FC<ViewportProps> = ({
             tex.wrapS = THREE.RepeatWrapping;
             tex.wrapT = THREE.RepeatWrapping;
             tex.flipY = true;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.anisotropy = rendererRef.current?.capabilities.getMaxAnisotropy() ?? 1;
+            tex.generateMipmaps = false;
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
             img.onload = () => {
               tex.needsUpdate = true;
             };
-            cache.set(name, tex);
+            cache.set(cacheKey, tex);
             return tex;
           };
 
@@ -1306,13 +1304,19 @@ export const Viewport: React.FC<ViewportProps> = ({
           if (model.materials && part.material_index < model.materials.length) {
             const hMaterial = model.materials[part.material_index];
             if (hMaterial && hMaterial.texture_maps) {
-              hMaterial.texture_maps.forEach((texName, tIdx) => {
-                const cleanTexName = (name: string) => name.toLowerCase().replace(/\.(tga|png|dds|bmp|jpg|jpeg)$/, "").trim();
-                const hTexture = model.textures?.find(t => {
+              const cleanTexName = (name: string) => name.toLowerCase().replace(/\.(tga|png|dds|bmp|jpg|jpeg)$/, "").trim();
+              const findTexture = (texName: string) => {
+                const mName = cleanTexName(texName);
+                const exact = model.textures?.find(t => cleanTexName(t.name) === mName);
+                if (exact) return exact;
+                return model.textures?.find(t => {
                   const tName = cleanTexName(t.name);
-                  const mName = cleanTexName(texName);
-                  return tName === mName || tName.includes(mName) || mName.includes(tName);
+                  return tName.includes(mName) || mName.includes(tName);
                 });
+              };
+
+              hMaterial.texture_maps.forEach((texName, tIdx) => {
+                const hTexture = findTexture(texName);
                 if (hTexture) {
                   const b64 = hTexture.png_data || hTexture.png_preview;
                   if (b64) {
@@ -1377,35 +1381,63 @@ export const Viewport: React.FC<ViewportProps> = ({
             });
           }
 
-          if (teamMap && (renderMode === "textured_team" || renderMode === "shaded_team")) {
+          const hasTeam = teamMap && (renderMode === "textured_team" || renderMode === "shaded_team");
+          const hasGlow = glowMap && (renderMode === "shaded" || renderMode === "shaded_team");
+
+          if (hasTeam || hasGlow) {
             const uTeam = new THREE.Color(teamColor);
             const uStripe = new THREE.Color(stripeColor);
+            
+            let isGlowRGB = false;
+            if (hMaterial) {
+              const sName = hMaterial.shader_name.toLowerCase();
+              if (sName.includes("glow") || sName.includes("burn") || sName === "ore" || sName.startsWith("bg_")) {
+                 isGlowRGB = true;
+              }
+            }
 
             material.onBeforeCompile = (shader, _renderer) => {
-              shader.uniforms.teamMap = { value: teamMap };
-              shader.uniforms.uColTeam = { value: uTeam };
-              shader.uniforms.uColStripe = { value: uStripe };
+              if (hasTeam) {
+                shader.uniforms.teamMap = { value: teamMap };
+                shader.uniforms.uColTeam = { value: uTeam };
+                shader.uniforms.uColStripe = { value: uStripe };
 
-              shader.fragmentShader = `
-                uniform sampler2D teamMap;
-                uniform vec3 uColTeam;
-                uniform vec3 uColStripe;
-              ` + shader.fragmentShader;
+                shader.fragmentShader = `
+                  uniform sampler2D teamMap;
+                  uniform vec3 uColTeam;
+                  uniform vec3 uColStripe;
+                ` + shader.fragmentShader;
 
-              shader.fragmentShader = shader.fragmentShader.replace(
-                '#include <map_fragment>',
-                `
-                #include <map_fragment>
-                #ifdef USE_MAP
-                  vec4 texTeam = texture2D( teamMap, vMapUv );
-                  vec3 paint = mix(uColTeam, diffuseColor.rgb, texTeam.r);
-                  paint = mix(uColStripe, paint, texTeam.g);
-                  diffuseColor.rgb = paint;
-                #else
-                  diffuseColor.rgb *= uColTeam;
-                #endif
-                `
-              );
+                shader.fragmentShader = shader.fragmentShader.replace(
+                  '#include <map_fragment>',
+                  `
+                  #include <map_fragment>
+                  #ifdef USE_MAP
+                    vec4 texTeam = texture2D( teamMap, vMapUv );
+                    vec3 paint = mix(uColTeam, diffuseColor.rgb, texTeam.r);
+                    paint = mix(uColStripe, paint, texTeam.g);
+                    diffuseColor.rgb = paint;
+                  #else
+                    diffuseColor.rgb *= uColTeam;
+                  #endif
+                  `
+                );
+              }
+
+              if (hasGlow) {
+                shader.fragmentShader = shader.fragmentShader.replace(
+                  '#include <emissivemap_fragment>',
+                  `
+                  #include <emissivemap_fragment>
+                  #ifdef USE_EMISSIVEMAP
+                    ${isGlowRGB 
+                      ? '' 
+                      : 'totalEmissiveRadiance = diffuseColor.rgb * emissiveColor.g * emissive;'
+                    }
+                  #endif
+                  `
+                );
+              }
             };
           }
 

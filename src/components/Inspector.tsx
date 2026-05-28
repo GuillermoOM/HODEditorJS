@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
-import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench } from "lucide-react";
+import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff } from "lucide-react";
 
 interface InspectorProps {
   model: HODModel | null;
@@ -12,6 +12,8 @@ interface InspectorProps {
   onSelectedNodeChange?: (node: { type: string; name: string } | null) => void;
   filePath: string;
   selectedAnimIdx?: number;
+  visibleMeshes?: Record<string, boolean>;
+  onToggleVisibility?: (meshKey: string) => void;
 }
 
 const quatToEulerDegrees = (q: { x: number; y: number; z: number; w: number }) => {
@@ -184,6 +186,229 @@ const SHADER_SLOTS: Record<string, string[]> = {
   shipglow_ns: ["Diffuse Map (DIFF)", "Glow Map (GLOW)"],
 };
 
+interface MeshLODInspectorProps {
+  model: HODModel;
+  baseName: string;
+  onModelChange?: (updatedModel: HODModel) => void;
+  visibleMeshes?: Record<string, boolean>;
+  onToggleVisibility?: (meshKey: string) => void;
+}
+
+const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, onModelChange, visibleMeshes, onToggleVisibility }) => {
+  const [selectedLodIdx, setSelectedLodIdx] = useState(0);
+  const lodMeshes = model.meshes.filter(m => {
+    const mBase = m.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+    return mBase === baseName;
+  }).sort((a, b) => a.lod - b.lod);
+  const selectedLodMesh = lodMeshes[selectedLodIdx] || lodMeshes[0];
+
+  const buildThreeMeshFromState = (m: any) => {
+    const group = new THREE.Group();
+    group.name = m.name;
+    m.parts.forEach((part: any, pIdx: number) => {
+      const geometry = new THREE.BufferGeometry();
+      const vertices: number[] = [];
+      const normals: number[] = [];
+      const uvs: number[] = [];
+      part.vertices.forEach((v: any) => {
+        vertices.push(v.position.x, v.position.y, v.position.z);
+        normals.push(v.normal ? v.normal.x : 0, v.normal ? v.normal.y : 1, v.normal ? v.normal.z : 0);
+        uvs.push(v.uv ? v.uv.u : 0, v.uv ? 1 - v.uv.v : 0);
+      });
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+      if (normals.length > 0) geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+      if (uvs.length > 0) geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(part.indices);
+      const matName = model.materials?.[part.material_index]?.name || `material_${part.material_index}`;
+      const meshObj = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ name: matName }));
+      meshObj.name = `${m.name}_part_${pIdx}`;
+      group.add(meshObj);
+    });
+    return group;
+  };
+
+  const handleExportOBJ = async () => {
+    if (!selectedLodMesh) return;
+    try {
+      const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
+      const exporter = new OBJExporter();
+      const tempGroup = buildThreeMeshFromState(selectedLodMesh);
+      let objResult = exporter.parse(tempGroup);
+      const objFilename = `${selectedLodMesh.name}_lod${selectedLodMesh.lod}`;
+      objResult = `mtllib ${objFilename}.mtl\n` + objResult;
+      const savedPath = await invoke<string | null>("save_text_file", { defaultName: `${objFilename}.obj`, filters: ["obj"], contents: objResult });
+      if (savedPath) {
+        const mtlLines: string[] = [];
+        selectedLodMesh.parts.forEach((part) => {
+          const hMat = model.materials?.[part.material_index];
+          const matName = hMat?.name || `material_${part.material_index}`;
+          mtlLines.push(`newmtl ${matName}`, `Kd 1.0 1.0 1.0`, `Ka 1.0 1.0 1.0`, `Ks 0.1 0.1 0.1`, `Ns 32`);
+          if (hMat?.texture_maps?.[0]) mtlLines.push(`map_Kd ${hMat.texture_maps[0]}.tga`);
+          mtlLines.push("");
+        });
+        const lastSlash = Math.max(savedPath.lastIndexOf("/"), savedPath.lastIndexOf("\\"));
+        const folderPath = lastSlash !== -1 ? savedPath.substring(0, lastSlash) : ".";
+        await invoke("save_text_file", { defaultName: `${objFilename}.mtl`, filters: ["mtl"], contents: mtlLines.join("\n") });
+        if (model.textures?.length) await invoke("export_textures_tga", { folderPath, textures: model.textures });
+        alert(`Mesh exported to:\n${folderPath}`);
+      }
+    } catch (e: any) { console.error(e); alert(`Export failed: ${e.toString()}`); }
+  };
+
+  const handleImportOBJ = async () => {
+    if (!selectedLodMesh) return;
+    try {
+      const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
+      if (!fileContent) return;
+      const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
+      const objGroup = new OBJLoader().parse(fileContent);
+      const newParts: any[] = [];
+      objGroup.traverse((child: any) => {
+        if (child.isMesh) {
+          const geo = (child as THREE.Mesh).geometry;
+          if (geo?.attributes.position) {
+            const posAttr = geo.attributes.position;
+            const vertices: any[] = [];
+            const indices: number[] = [];
+            for (let i = 0; i < posAttr.count; i++) {
+              vertices.push({
+                position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+                normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
+                uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
+                tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 }
+              });
+            }
+            const indexAttr = geo.index;
+            if (indexAttr) { for (let i = 0; i < indexAttr.count; i++) indices.push(indexAttr.getX(i)); }
+            else { for (let i = 0; i < posAttr.count; i++) indices.push(i); }
+            newParts.push({ material_index: 0, vertex_mask: 0x600B, vertices, indices });
+          }
+        }
+      });
+      if (newParts.length > 0) {
+        onModelChange?.({ ...model, meshes: model.meshes.map(m => m.name === selectedLodMesh.name && m.lod === selectedLodMesh.lod ? { ...m, parts: newParts } : m) });
+        alert(`Mesh "${selectedLodMesh.name}" LOD ${selectedLodMesh.lod} replaced by imported OBJ.`);
+      } else { alert("No valid geometries found in the OBJ file."); }
+    } catch (e: any) { console.error(e); alert(`Import failed: ${e.toString()}`); }
+  };
+
+  const handleAddLod = () => {
+    const maxLod = Math.max(...lodMeshes.map(m => m.lod), -1);
+    onModelChange?.({ ...model, meshes: [...model.meshes, { name: baseName, parent_name: lodMeshes[0]?.parent_name || "Root", lod: maxLod + 1, parts: [{ material_index: 0, vertex_mask: 0x600B, vertices: [], indices: [] }] }] });
+    setSelectedLodIdx(lodMeshes.length);
+  };
+
+  const handleDeleteLod = (idx: number) => {
+    if (lodMeshes.length <= 1) return;
+    const target = lodMeshes[idx];
+    onModelChange?.({ ...model, meshes: model.meshes.filter(m => !(m.name === target.name && m.lod === target.lod)) });
+    setSelectedLodIdx(Math.max(0, idx - 1));
+  };
+
+  const handleMoveLod = (fromIdx: number, direction: -1 | 1) => {
+    const toIdx = fromIdx + direction;
+    if (toIdx < 0 || toIdx >= lodMeshes.length) return;
+    const fromMesh = lodMeshes[fromIdx];
+    const toMesh = lodMeshes[toIdx];
+    onModelChange?.({ ...model, meshes: model.meshes.map(m => {
+      if (m.name === fromMesh.name && m.lod === fromMesh.lod) return { ...m, lod: toMesh.lod };
+      if (m.name === toMesh.name && m.lod === toMesh.lod) return { ...m, lod: fromMesh.lod };
+      return m;
+    }) });
+    setSelectedLodIdx(toIdx);
+  };
+
+  if (!selectedLodMesh) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Mesh not found</div>;
+
+  const totalVerts = selectedLodMesh.parts.reduce((s, p) => s + p.vertices.length, 0);
+  const totalIndices = selectedLodMesh.parts.reduce((s, p) => s + p.indices.length, 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div>
+        <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>Mesh</div>
+        <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>{baseName}</div>
+      </div>
+      <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+          <label style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>LOD Variants</label>
+          <button onClick={handleAddLod} style={{ height: "24px", fontSize: "11px", padding: "0 8px", display: "flex", alignItems: "center", gap: "4px" }}><Plus size={12} /> Add LOD</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", background: "rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px" }}>
+          {lodMeshes.map((lm, idx) => {
+            const isSelected = selectedLodIdx === idx;
+            const lodKey = `${lm.name}_lod_${lm.lod}`;
+            const isLodVisible = visibleMeshes?.[lodKey] !== false;
+            return (
+              <div key={lodKey} onClick={() => setSelectedLodIdx(idx)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: "3px", cursor: "pointer", background: isSelected ? "rgba(22, 160, 255, 0.15)" : "transparent", border: isSelected ? "1px solid rgba(22, 160, 255, 0.3)" : "1px solid transparent" }}>
+                <span style={{ fontSize: "12px", color: isSelected ? "var(--accent-cyan)" : "var(--text-primary)" }}>
+                  LOD {lm.lod} <span style={{ color: "var(--text-muted)", fontSize: "10px" }}>({lm.parts.reduce((s, p) => s + p.vertices.length, 0)} verts)</span>
+                </span>
+                <div style={{ display: "flex", gap: "2px", alignItems: "center" }}>
+                  {onToggleVisibility && (
+                    <span onClick={(e) => { e.stopPropagation(); onToggleVisibility(lodKey); }}
+                      style={{ padding: "2px 4px", cursor: "pointer", color: isLodVisible ? "var(--accent-cyan)" : "var(--text-muted)", display: "inline-flex", alignItems: "center" }}
+                      title={isLodVisible ? "Hide LOD" : "Show LOD"}>
+                      {isLodVisible ? <Eye size={12} /> : <EyeOff size={12} />}
+                    </span>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); handleMoveLod(idx, -1); }} disabled={idx === 0} style={{ padding: "2px 4px", fontSize: "10px" }}>▲</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleMoveLod(idx, 1); }} disabled={idx === lodMeshes.length - 1} style={{ padding: "2px 4px", fontSize: "10px" }}>▼</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDeleteLod(idx); }} disabled={lodMeshes.length <= 1} style={{ padding: "2px 4px", fontSize: "10px", color: "#f44" }}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {selectedLodMesh && (
+        <>
+          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
+          <div>
+            <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>3D Model (LOD {selectedLodMesh.lod})</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <button onClick={handleExportOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><Upload size={14} style={{ color: "var(--accent-blue)" }} /> Export OBJ</button>
+              <button onClick={handleImportOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ</button>
+            </div>
+          </div>
+          <div style={{ background: "rgba(22, 160, 255, 0.05)", border: "1px solid rgba(22, 160, 255, 0.15)", borderRadius: "4px", padding: "8px 10px", fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
+            <span style={{ fontWeight: "600", color: "var(--accent-cyan)", marginRight: "4px" }}>Positioning Note:</span>
+            Meshes inherit position from their parent joint bone (<strong>{selectedLodMesh.parent_name || "Root"}</strong>). Drag this mesh node onto a joint in the node tree to re-parent.
+          </div>
+          {model.materials?.length > 0 && (
+            <div>
+              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>Material Assignment</label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", background: "rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px" }}>
+                {selectedLodMesh.parts.map((part, pIdx) => (
+                  <div key={pIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Part {pIdx}</span>
+                    <select value={part.material_index} onChange={(e) => {
+                      const newMatIdx = parseInt(e.target.value, 10);
+                      onModelChange?.({ ...model, meshes: model.meshes.map(m => m.name === selectedLodMesh.name && m.lod === selectedLodMesh.lod ? { ...m, parts: m.parts.map((p, i) => i === pIdx ? { ...p, material_index: newMatIdx } : p) } : m) });
+                    }} style={{ width: "160px", height: "26px", padding: "2px 6px", fontSize: "11px" }}>
+                      {model.materials.map((mat, mIdx) => (<option key={mIdx} value={mIdx}>{mat.name}</option>))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: "11px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "6px" }}>Geometry Info</div>
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-color)", padding: "10px", borderRadius: "4px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+              <div><div style={{ fontSize: "10px", color: "var(--text-muted)" }}>PARTS</div><div style={{ fontSize: "14px", fontWeight: "600" }}>{selectedLodMesh.parts.length}</div></div>
+              <div><div style={{ fontSize: "10px", color: "var(--text-muted)" }}>TRIANGLES</div><div style={{ fontSize: "14px", fontWeight: "600" }}>{totalIndices / 3}</div></div>
+              <div><div style={{ fontSize: "10px", color: "var(--text-muted)" }}>VERTICES</div><div style={{ fontSize: "14px", fontWeight: "600" }}>{totalVerts}</div></div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
 export const Inspector: React.FC<InspectorProps> = ({
   model,
   selectedNode,
@@ -192,6 +417,8 @@ export const Inspector: React.FC<InspectorProps> = ({
   onSelectedNodeChange,
   filePath,
   selectedAnimIdx,
+  visibleMeshes,
+  onToggleVisibility,
 }) => {
   const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "bay", "thruster"]);
   const [renameWeaponName, setRenameWeaponName] = useState("");
@@ -1375,391 +1602,9 @@ export const Inspector: React.FC<InspectorProps> = ({
       );
     }
 
-    if (selectedNode.type === "mesh") {
-      const [meshName, lodStr] = selectedNode.name.split("_lod_");
-      const lod = parseInt(lodStr, 10);
-      const mesh = model.meshes.find(m => m.name === meshName && m.lod === lod);
-      if (!mesh) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Mesh not found</div>;
-
-      const buildThreeMeshFromState = (m: any) => {
-        const group = new THREE.Group();
-        group.name = m.name;
-        
-        m.parts.forEach((part: any, pIdx: number) => {
-          const geometry = new THREE.BufferGeometry();
-          const vertices: number[] = [];
-          const normals: number[] = [];
-          const uvs: number[] = [];
-          
-          part.vertices.forEach((v: any) => {
-            vertices.push(v.position.x, v.position.y, v.position.z);
-            if (v.normal) {
-              normals.push(v.normal.x, v.normal.y, v.normal.z);
-            } else {
-              normals.push(0, 1, 0);
-            }
-            if (v.uv) {
-              uvs.push(v.uv.u, 1 - v.uv.v); // Flip Y UV for OBJ
-            } else {
-              uvs.push(0, 0);
-            }
-          });
-          
-          geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-          if (normals.length > 0) {
-            geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-          }
-          if (uvs.length > 0) {
-            geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-          }
-          
-          geometry.setIndex(part.indices);
-          
-          const matName = model.materials?.[part.material_index]?.name || `material_${part.material_index}`;
-          const material = new THREE.MeshStandardMaterial({ name: matName });
-          
-          const meshObj = new THREE.Mesh(geometry, material);
-          meshObj.name = `${m.name}_part_${pIdx}`;
-          group.add(meshObj);
-        });
-        
-        return group;
-      };
-
-      const handleExportOBJ = async () => {
-        try {
-          const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
-          const exporter = new OBJExporter();
-          
-          const tempGroup = buildThreeMeshFromState(mesh);
-          let objResult = exporter.parse(tempGroup);
-          
-          const objFilename = `${mesh.name}_lod${mesh.lod}`;
-          objResult = `mtllib ${objFilename}.mtl\n` + objResult;
-          
-          const defaultName = `${objFilename}.obj`;
-          const savedPath = await invoke<string | null>("save_text_file", {
-            defaultName,
-            filters: ["obj"],
-            contents: objResult
-          });
-          
-          if (savedPath) {
-            invoke("log_event", { level: "INFO", message: `Mesh exported successfully to OBJ: ${savedPath}` }).catch(console.error);
-            
-            // Generate MTL content
-            const mtlLines: string[] = [];
-            mesh.parts.forEach((part) => {
-              const hMat = model.materials?.[part.material_index];
-              const matName = hMat?.name || `material_${part.material_index}`;
-              mtlLines.push(`newmtl ${matName}`);
-              mtlLines.push(`Kd 1.0 1.0 1.0`);
-              mtlLines.push(`Ka 1.0 1.0 1.0`);
-              mtlLines.push(`Ks 0.1 0.1 0.1`);
-              mtlLines.push(`Ns 32`);
-              if (hMat && hMat.texture_maps && hMat.texture_maps.length > 0) {
-                const diffMap = hMat.texture_maps[0];
-                if (diffMap) {
-                  mtlLines.push(`map_Kd ${diffMap}.tga`);
-                }
-              }
-              mtlLines.push("");
-            });
-            
-            const lastSlash = Math.max(savedPath.lastIndexOf("/"), savedPath.lastIndexOf("\\"));
-            const folderPath = lastSlash !== -1 ? savedPath.substring(0, lastSlash) : ".";
-            
-            await invoke("save_text_file", {
-              defaultName: `${objFilename}.mtl`,
-              filters: ["mtl"],
-              contents: mtlLines.join("\n")
-            });
-            
-            if (model.textures && model.textures.length > 0) {
-              await invoke("export_textures_tga", {
-                folderPath,
-                textures: model.textures
-              });
-            }
-            
-            alert(`Mesh geometry, MTL library, and TGA textures successfully exported to:\n${folderPath}`);
-          }
-        } catch (e: any) {
-          console.error(e);
-          alert(`Export failed: ${e.toString()}`);
-        }
-      };
-
-      const handleImportOBJ = async () => {
-        try {
-          const fileContent = await invoke<string | null>("load_text_file", {
-            filters: ["obj"]
-          });
-          if (!fileContent) return;
-          
-          invoke("log_event", { level: "INFO", message: "Parsing imported OBJ mesh..." }).catch(console.error);
-          
-          const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
-          const loader = new OBJLoader();
-          
-          const objGroup = loader.parse(fileContent);
-          const newParts: any[] = [];
-          
-          objGroup.traverse((child: any) => {
-            if (child.isMesh) {
-              const childMesh = child as THREE.Mesh;
-              const geo = childMesh.geometry;
-              
-              if (geo) {
-                const posAttr = geo.attributes.position;
-                if (posAttr) {
-                  const vertices: any[] = [];
-                  const indices: number[] = [];
-                  
-                  for (let i = 0; i < posAttr.count; i++) {
-                    vertices.push({
-                      position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
-                      normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
-                      uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 }
-                    });
-                  }
-                  
-                  const indexAttr = geo.index;
-                  if (indexAttr) {
-                    for (let i = 0; i < indexAttr.count; i++) {
-                      indices.push(indexAttr.getX(i));
-                    }
-                  } else {
-                    for (let i = 0; i < posAttr.count; i++) {
-                      indices.push(i);
-                    }
-                  }
-                  
-                  newParts.push({
-                    material_index: 0,
-                    vertex_mask: 19,
-                    vertices,
-                    indices
-                  });
-                }
-              }
-            }
-          });
-          
-          if (newParts.length > 0) {
-            const updatedMeshes = model.meshes.map((m) => {
-              if (m.name === mesh.name && m.lod === mesh.lod) {
-                return { ...m, parts: newParts };
-              }
-              return m;
-            });
-            onModelChange?.({ ...model, meshes: updatedMeshes });
-            invoke("log_event", { level: "INFO", message: `Successfully imported OBJ mesh into: ${mesh.name}` }).catch(console.error);
-            alert(`Mesh "${mesh.name}" geometry successfully replaced by imported OBJ file!`);
-          } else {
-            alert("No valid geometries found in the OBJ file.");
-          }
-        } catch (e: any) {
-          console.error(e);
-          alert(`Import failed: ${e.toString()}`);
-        }
-      };
-
-      const totalParts = mesh.parts.length;
-      const totalVerts = mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
-      const totalIndices = mesh.parts.reduce((sum, p) => sum + p.indices.length, 0);
-      const totalTris = totalIndices / 3;
-
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div>
-            <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
-              Selected Mesh Part
-            </div>
-            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
-              {mesh.name} (LOD {mesh.lod})
-            </div>
-          </div>
-
-          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
-
-          {/* Mesh Properties Form */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div>
-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
-                Mesh Name
-              </label>
-              <input
-                type="text"
-                value={mesh.name}
-                onChange={(e) => {
-                  const newName = e.target.value;
-                  if (!newName) return;
-                  const updatedMeshes = model.meshes.map(m => {
-                    if (m.name === mesh.name && m.lod === mesh.lod) {
-                      return { ...m, name: newName };
-                    }
-                    return m;
-                  });
-                  onModelChange?.({ ...model, meshes: updatedMeshes });
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
-                LOD Level
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="10"
-                value={mesh.lod}
-                onChange={(e) => {
-                  const newLod = parseInt(e.target.value, 10);
-                  if (isNaN(newLod)) return;
-                  const updatedMeshes = model.meshes.map(m => {
-                    if (m.name === mesh.name && m.lod === mesh.lod) {
-                      return { ...m, lod: newLod };
-                    }
-                    return m;
-                  });
-                  onModelChange?.({ ...model, meshes: updatedMeshes });
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
-                Skeletal Joint Parent
-              </label>
-              <select
-                value={mesh.parent_name || "Root"}
-                onChange={(e) => {
-                  const newParent = e.target.value === "Root" ? "Root" : e.target.value;
-                  const updatedMeshes = model.meshes.map(m => {
-                    if (m.name === mesh.name && m.lod === mesh.lod) {
-                      return { ...m, parent_name: newParent };
-                    }
-                    return m;
-                  });
-                  onModelChange?.({ ...model, meshes: updatedMeshes });
-                }}
-                style={{ width: "100%", height: "32px", fontSize: "12px" }}
-              >
-                <option value="Root">Root (None)</option>
-                {model.joints.map(j => (
-                  <option key={j.name} value={j.name}>{j.name}</option>
-                ))}
-              </select>
-              <div style={{ marginTop: "8px", background: "rgba(22, 160, 255, 0.05)", border: "1px solid rgba(22, 160, 255, 0.15)", borderRadius: "4px", padding: "8px 10px", fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
-                <span style={{ fontWeight: "600", color: "var(--accent-cyan)", marginRight: "4px" }}>💡 Positioning Note:</span>
-                Meshes do not contain individual local coordinates. Their spatial position and rotation are inherited entirely from their parent joint bone (<strong>{mesh.parent_name || "Root"}</strong>). To move this mesh, please select and edit its parent joint bone.
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px", borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>
-                3D Model Actions (OBJ Wavefront)
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                <button
-                  onClick={handleExportOBJ}
-                  style={{
-                    height: "32px",
-                    fontSize: "12px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "6px"
-                  }}
-                  title="Export this mesh and its materials as separate OBJ and MTL files"
-                >
-                  <Upload size={14} style={{ color: "var(--accent-blue)" }} />
-                  <span>Export OBJ</span>
-                </button>
-                <button
-                  onClick={handleImportOBJ}
-                  style={{
-                    height: "32px",
-                    fontSize: "12px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "6px"
-                  }}
-                  title="Import an external OBJ file to fully replace this mesh's geometry"
-                >
-                  <Download size={14} style={{ color: "var(--accent-cyan)" }} />
-                  <span>Import OBJ</span>
-                </button>
-              </div>
-            </div>
-
-            {model.materials && model.materials.length > 0 && (
-              <div>
-                <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
-                  Material Assignment (per Part)
-                </label>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(0,0,0,0.15)", padding: "10px", borderRadius: "4px" }}>
-                  {mesh.parts.map((part, pIdx) => (
-                    <div key={pIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-                      <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Part {pIdx}</span>
-                      <select
-                        value={part.material_index}
-                        onChange={(e) => {
-                          const newMatIdx = parseInt(e.target.value, 10);
-                          const updatedMeshes = model.meshes.map(m => {
-                            if (m.name === mesh.name && m.lod === mesh.lod) {
-                              const updatedParts = m.parts.map((p, idx) => {
-                                if (idx === pIdx) {
-                                  return { ...p, material_index: newMatIdx };
-                                }
-                                return p;
-                              });
-                              return { ...m, parts: updatedParts };
-                            }
-                            return m;
-                          });
-                          onModelChange?.({ ...model, meshes: updatedMeshes });
-                        }}
-                        style={{ width: "160px", height: "28px", padding: "2px 6px", fontSize: "11px" }}
-                      >
-                        {model.materials.map((mat, mIdx) => (
-                          <option key={mIdx} value={mIdx}>{mat.name} (ID {mIdx})</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
-
-          {/* Mesh Statistics Card */}
-          <div>
-            <div style={{ fontSize: "11px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "8px" }}>
-              Mesh Geometry Info
-            </div>
-            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-color)", padding: "12px", borderRadius: "4px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-              <div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>LOD PARTS</div>
-                <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--text-primary)" }}>{totalParts}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
-                <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--text-primary)" }}>{totalTris}</div>
-              </div>
-              <div style={{ gridColumn: "span 2" }}>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TOTAL VERTICES</div>
-                <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--text-primary)" }}>{totalVerts}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
+    if (selectedNode.type === "mesh" || selectedNode.type === "mesh_lod") {
+      const baseName = selectedNode.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+      return <MeshLODInspector model={model} baseName={baseName} onModelChange={onModelChange} visibleMeshes={visibleMeshes} onToggleVisibility={onToggleVisibility} />;
     }
 
     if (selectedNode.type === "engine_burn") {

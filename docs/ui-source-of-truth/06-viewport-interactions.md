@@ -44,6 +44,10 @@ Visibility layer toggles and `visibleMeshes` should hide/show matching helpers c
 
 Viewport sanitizes invalid or extreme vertex values before use. Non-finite or outlier coordinates should not break camera framing or rendering.
 
+## Texture Rendering
+
+Viewport-created material textures should use sRGB color space, repeat wrapping, linear filtering, and the renderer's maximum available anisotropy so full-resolution texture previews stay crisp and visibly match imported texture files.
+
 ## Render Modes And Overlays
 
 Render mode, helper layers, and viewport overlays are controlled by app state and passed into Viewport. Agents should not introduce independent duplicate toggles inside Viewport when the behavior is global.

@@ -73,7 +73,7 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
             // Parse triangles
             let mut mesh_part = HODMeshPart {
                 material_index: 0,
-                vertex_mask: 0x01 | 0x02 | 0x04 | 0x08, // Base mask (pos, norm, uv, tang)
+                vertex_mask: 0x01 | 0x02 | 0x08 | 0x2000 | 0x4000,
                 vertices: Vec::new(),
                 indices: Vec::new(),
             };

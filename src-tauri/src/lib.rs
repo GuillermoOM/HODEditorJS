@@ -481,6 +481,7 @@ fn import_tga_texture(hod_file_path: String) -> Result<Option<HODTexture>, Strin
             let width = img.width();
             let height = img.height();
             
+            let img = image::imageops::flip_vertical(&img);
             let mut png_bytes: Vec<u8> = Vec::new();
             let mut cursor = std::io::Cursor::new(&mut png_bytes);
             img.write_to(&mut cursor, image::ImageFormat::Png)

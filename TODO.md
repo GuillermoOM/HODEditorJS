@@ -36,11 +36,12 @@
 - [x] We need to fix the editor alerts for missing components in assemblies, overall alerts in HOD being edited isn't following spec
 - [x] Since Weapon and Turret assemblies are similar, we should be able to have an option to convert Weapon into Turret assembly in the inspector, which would add any missing nodes (must be repaired first).
 - [x] Creation and Loading of Animations and proper inspector / editor (ter_orion and hgn_mothership are examples that use this) - Added Create Animation, Add Track, and Add Keyframe controls.
+- [x] Make Hardpoint nodes assemblies
 
+- [ ] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`
 - [ ] fix loading of HOD 1.0 files into the editor.
 - [ ] HOD 1.0 File animation proper loading (able to be later saved on to HOD 2.0 file), Animations aren't detected when loading them currently.
 - [ ] Full Test migrating a HOD 1.0 ship to HOD 2.0 with the editor and running it in game
-- [ ] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`
 
 ## As a final test for HOD modifying:
 

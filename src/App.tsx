@@ -335,13 +335,13 @@ function App() {
     resetUIState();
     
     const newModel: HODModel = {
-      version: 2000,
+      version: 512, // HOD 2.0 (0x200)
       name: "New_Model",
       is_v2: true,
       joints: [
         {
           name: "Root",
-          parent_name: "Root",
+          parent_name: undefined,
           local_transform: {
             m: [
               [1, 0, 0, 0],
@@ -1278,6 +1278,8 @@ function App() {
           onSelectedNodeChange={setSelectedNode}
           filePath={filePath}
           selectedAnimIdx={selectedAnimIdx}
+          visibleMeshes={visibleMeshes}
+          onToggleVisibility={(meshKey) => setVisibleMeshes(prev => ({ ...prev, [meshKey]: prev[meshKey] === false ? true : false }))}
         />
       </div>
 

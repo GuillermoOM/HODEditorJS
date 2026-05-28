@@ -19,6 +19,18 @@ This is a **Tauri** desktop application with three major structural boundaries:
    - Responsible for the heavy lifting: binary parsing, struct mapping, Microsoft Xpress compression (`xpress.rs`), and binary serialization of HOD files (`hod.rs`, `iff.rs`, `compiler.rs`).
    - Includes multiple utility bins (`src/bin/*`) for diagnostic dumping and validation testing.
 
+## 2. HOD Save Architecture (CRITICAL HARD RULE)
+
+**Every save operation MUST generate a fresh HOD 2.0 file from the in-memory model. Never patch the original file.**
+
+- When a HOD 1.0, HOD 2.0, or DAE file is loaded, it is parsed into `HODModel` and the original file bytes are discarded.
+- On save, `generate_v2_from_model([], &model)` is called to create a brand new HOD 2.0 binary from the model data.
+- **All output files are HOD 2.0 format**, regardless of input format. This app modernizes HOD 1.0 files.
+- The `save_edits` function and `original_needs_full_v2_regeneration` logic are DEPRECATED. They only exist as a fallback for edge cases and should not be relied upon.
+- Unparsed chunks from the original file (like `KDOP`, `COLD`, `SCAR`, `INFO`) must be preserved in `HODModel` as raw bytes and written back to the output during generation.
+
+This architecture is documented in `agents_info/implementation_plan.md`.
+
 ## 2. Reading the UI Source of Truth
 
 When modifying the React frontend, **never rely on `TODO.md` or aspirational docs.**

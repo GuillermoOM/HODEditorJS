@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::io::{Cursor, Read, Write};
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use crate::iff::IffChunk;
+use crate::iff::ChunkType;
 use crate::xpress;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -216,6 +217,8 @@ pub struct HODModel {
     pub dockpaths: Vec<HODDockpath>,
     #[serde(default)]
     pub animations: Vec<HODAnimation>,
+    #[serde(skip)]
+    pub preserved_chunks: Vec<IffChunk>,
 }
 
 pub struct ParsingContext {
@@ -246,6 +249,7 @@ impl HODModel {
             collision_meshes: Vec::new(),
             dockpaths: Vec::new(),
             animations: Vec::new(),
+            preserved_chunks: Vec::new(),
         }
     }
 
@@ -300,7 +304,11 @@ impl HODModel {
                 println!("[RUST]   Texture pool: compressed={}, decompressed={}", comp_tex_len, decomp_tex_len);
                 let mut comp_tex = vec![0u8; comp_tex_len];
                 pool_cursor.read_exact(&mut comp_tex).map_err(|e| e.to_string())?;
-                let decomp_tex = xpress::decompress(&comp_tex, decomp_tex_len)?;
+                let decomp_tex = if comp_tex_len == decomp_tex_len {
+                    comp_tex
+                } else {
+                    xpress::decompress(&comp_tex, decomp_tex_len)?
+                };
                 context.texture_pool = Cursor::new(decomp_tex);
 
                 // Mesh data stream
@@ -309,7 +317,11 @@ impl HODModel {
                 println!("[RUST]   Mesh pool: compressed={}, decompressed={}", comp_mesh_len, decomp_mesh_len);
                 let mut comp_mesh = vec![0u8; comp_mesh_len];
                 pool_cursor.read_exact(&mut comp_mesh).map_err(|e| e.to_string())?;
-                let decomp_mesh = xpress::decompress(&comp_mesh, decomp_mesh_len)?;
+                let decomp_mesh = if comp_mesh_len == decomp_mesh_len {
+                    comp_mesh
+                } else {
+                    xpress::decompress(&comp_mesh, decomp_mesh_len)?
+                };
                 println!("[RUST] First 256 bytes of decompressed mesh pool:");
                 for i in 0..16 {
                     let offset = i * 16;
@@ -329,7 +341,11 @@ impl HODModel {
                 println!("[RUST]   Face pool: compressed={}, decompressed={}", comp_face_len, decomp_face_len);
                 let mut comp_face = vec![0u8; comp_face_len];
                 pool_cursor.read_exact(&mut comp_face).map_err(|e| e.to_string())?;
-                let decomp_face = xpress::decompress(&comp_face, decomp_face_len)?;
+                let decomp_face = if comp_face_len == decomp_face_len {
+                    comp_face
+                } else {
+                    xpress::decompress(&comp_face, decomp_face_len)?
+                };
                 println!("[RUST] First 128 u16s of decompressed face pool:");
                 for chunk in decomp_face.chunks(32).take(8) {
                     let u16s: Vec<u16> = chunk.chunks(2).map(|c| {
@@ -363,6 +379,7 @@ impl HODModel {
          let mut engine_shapes = Vec::new();
          let mut collision_meshes = Vec::new();
          let mut dockpaths = Vec::new();
+         let mut preserved_chunks = Vec::new();
 
         for chunk in &chunks {
             println!("[RUST]   Processing chunk ID: '{}' (type={:?}, size={})", chunk.id, chunk.chunk_type, chunk.data.len());
@@ -865,7 +882,10 @@ impl HODModel {
                                                     }
                                                 }
                                             }
-                                            _ => {}
+                _ => {
+                    // Capture unparsed root chunks (like INFO) for preservation
+                    preserved_chunks.push(chunk.clone());
+                }
                                         }
                                     }
 
@@ -894,7 +914,10 @@ impl HODModel {
                                 };
                                 parse_cold(&mut context).map_err(|e| format!("Error in COLD: {}", e))?;
                             }
-                            _ => {}
+                            _ => {
+                                // Preserve unparsed DTRM sub-chunks (KDOP, SCAR, etc.)
+                                preserved_chunks.push(sub_chunk.clone());
+                            }
                         }
                     }
                 }
@@ -921,6 +944,7 @@ impl HODModel {
             collision_meshes,
             dockpaths,
             animations: Vec::new(),
+            preserved_chunks,
         };
 
         // Phase 3: Animation Loading & parsing companion .mad or legacy KEYF
@@ -1445,6 +1469,198 @@ fn find_tga_recursive(dir: &std::path::Path, filename_lower: &str) -> Option<std
         }
     }
     None
+}
+
+fn rgb565_to_u16(r: u8, g: u8, b: u8) -> u16 {
+    let ri = (r as u32 * 31 / 255) as u16;
+    let gi = (g as u32 * 63 / 255) as u16;
+    let bi = (b as u32 * 31 / 255) as u16;
+    (ri << 11) | (gi << 5) | bi
+}
+
+fn u16_to_rgb565(val: u16) -> (u8, u8, u8) {
+    let r = (((val >> 11) & 0x1F) as u32 * 255 / 31) as u8;
+    let g = (((val >> 5) & 0x3F) as u32 * 255 / 63) as u8;
+    let b = ((val & 0x1F) as u32 * 255 / 31) as u8;
+    (r, g, b)
+}
+
+fn color_error(r0: u8, g0: u8, b0: u8, r1: u8, g1: u8, b1: u8) -> u32 {
+    let dr = r0 as i32 - r1 as i32;
+    let dg = g0 as i32 - g1 as i32;
+    let db = b0 as i32 - b1 as i32;
+    (dr * dr + dg * dg + db * db) as u32
+}
+
+fn find_best_endpoints(block: &[[u8; 4]; 16]) -> (u16, u16) {
+    let mut min_r = 255u8; let mut max_r = 0u8;
+    let mut min_g = 255u8; let mut max_g = 0u8;
+    let mut min_b = 255u8; let mut max_b = 0u8;
+    for px in block {
+        if px[0] < min_r { min_r = px[0]; }
+        if px[0] > max_r { max_r = px[0]; }
+        if px[1] < min_g { min_g = px[1]; }
+        if px[1] > max_g { max_g = px[1]; }
+        if px[2] < min_b { min_b = px[2]; }
+        if px[2] > max_b { max_b = px[2]; }
+    }
+
+    let c0 = rgb565_to_u16(min_r, min_g, min_b);
+    let c1 = rgb565_to_u16(max_r, max_g, max_b);
+    let (er, eg, eb) = u16_to_rgb565(c0);
+    let (fr, fg, fb) = u16_to_rgb565(c1);
+
+    let mut best_err = u32::MAX;
+    let mut best_c0 = c0;
+    let mut best_c1 = c1;
+
+    let candidates = [(min_r, min_g, min_b), (max_r, max_g, max_b), (er, eg, eb), (fr, fg, fb)];
+    for &(a_r, a_g, a_b) in &candidates {
+        for &(b_r, b_g, b_b) in &candidates {
+            let c_a = rgb565_to_u16(a_r, a_g, a_b);
+            let c_b = rgb565_to_u16(b_r, b_g, b_b);
+            let (ar, ag, ab) = u16_to_rgb565(c_a);
+            let (br, bg, bb) = u16_to_rgb565(c_b);
+            let palette = [
+                (ar, ag, ab),
+                (br, bg, bb),
+                ((ar as u32 * 2 + br as u32) as u8 / 3, (ag as u32 * 2 + bg as u32) as u8 / 3, (ab as u32 * 2 + bb as u32) as u8 / 3),
+                ((ar as u32 + br as u32 * 2) as u8 / 3, (ag as u32 + bg as u32 * 2) as u8 / 3, (ab as u32 + bb as u32 * 2) as u8 / 3),
+            ];
+            let mut total = 0u32;
+            for px in block {
+                let mut best_d = u32::MAX;
+                for &(pr, pg, pb) in &palette {
+                    let d = color_error(px[0], px[1], px[2], pr, pg, pb);
+                    if d < best_d {
+                        best_d = d;
+                    }
+                    if best_d == 0 { break; }
+                }
+                total += best_d;
+                if total >= best_err { break; }
+            }
+            if total < best_err {
+                best_err = total;
+                best_c0 = c_a;
+                best_c1 = c_b;
+            }
+        }
+    }
+
+    if best_c0 <= best_c1 {
+        (best_c1, best_c0)
+    } else {
+        (best_c0, best_c1)
+    }
+}
+
+fn compress_dxt1_block(block: &[[u8; 4]; 16]) -> [u8; 8] {
+    let (c0, c1) = find_best_endpoints(block);
+    let (r0, g0, b0) = u16_to_rgb565(c0);
+    let (r1, g1, b1) = u16_to_rgb565(c1);
+    let palette = [
+        (r0, g0, b0),
+        (r1, g1, b1),
+        if c0 > c1 {
+            ((r0 as u32 * 2 + r1 as u32) as u8 / 3, (g0 as u32 * 2 + g1 as u32) as u8 / 3, (b0 as u32 * 2 + b1 as u32) as u8 / 3)
+        } else {
+            ((r0 as u32 + r1 as u32) as u8 / 2, (g0 as u32 + g1 as u32) as u8 / 2, (b0 as u32 + b1 as u32) as u8 / 2)
+        },
+        if c0 > c1 {
+            ((r0 as u32 + r1 as u32 * 2) as u8 / 3, (g0 as u32 + g1 as u32 * 2) as u8 / 3, (b0 as u32 + b1 as u32 * 2) as u8 / 3)
+        } else {
+            (0, 0, 0)
+        },
+    ];
+    let mut code = 0u32;
+    for (i, px) in block.iter().enumerate() {
+        let mut best_idx = 0u32;
+        let mut best_d = u32::MAX;
+        for (j, &(pr, pg, pb)) in palette.iter().enumerate() {
+            let d = color_error(px[0], px[1], px[2], pr, pg, pb);
+            if d < best_d {
+                best_d = d;
+                best_idx = j as u32;
+            }
+            if best_d == 0 { break; }
+        }
+        code |= best_idx << (2 * i as u32);
+    }
+    let mut out = [0u8; 8];
+    out[0..2].copy_from_slice(&c0.to_le_bytes());
+    out[2..4].copy_from_slice(&c1.to_le_bytes());
+    out[4..8].copy_from_slice(&code.to_le_bytes());
+    out
+}
+
+fn compress_dxt1(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let blocks_x = (width + 3) / 4;
+    let blocks_y = (height + 3) / 4;
+    let mut out = Vec::with_capacity(blocks_x * blocks_y * 8);
+
+    for by in 0..blocks_y {
+        for bx in 0..blocks_x {
+            let mut block = [[0u8; 4]; 16];
+            for y in 0..4 {
+                for x in 0..4 {
+                    let px = bx * 4 + x;
+                    let py = by * 4 + y;
+                    let idx = (py * width + px) * 4;
+                    if px < width && py < height && idx + 3 < rgba.len() {
+                        block[y * 4 + x] = [rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3]];
+                    }
+                }
+            }
+            out.extend_from_slice(&compress_dxt1_block(&block));
+        }
+    }
+    out
+}
+
+fn generate_mip_chain(rgba: &[u8], width: usize, height: usize, max_mips: usize) -> Vec<(Vec<u8>, usize, usize)> {
+    let mut mips = Vec::new();
+    let mut cur_rgba = rgba.to_vec();
+    let mut cur_w = width;
+    let mut cur_h = height;
+
+    for _ in 0..max_mips {
+        mips.push((cur_rgba.clone(), cur_w, cur_h));
+        if cur_w <= 1 && cur_h <= 1 { break; }
+        let next_w = std::cmp::max(1, cur_w / 2);
+        let next_h = std::cmp::max(1, cur_h / 2);
+        let mut next = vec![0u8; next_w * next_h * 4];
+        for ny in 0..next_h {
+            for nx in 0..next_w {
+                let sx = nx * 2;
+                let sy = ny * 2;
+                let mut r = 0u32; let mut g = 0u32; let mut b = 0u32; let mut a = 0u32; let mut cnt = 0u32;
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let px = sx + dx;
+                        let py = sy + dy;
+                        if px < cur_w && py < cur_h {
+                            let i = (py * cur_w + px) * 4;
+                            r += cur_rgba[i] as u32;
+                            g += cur_rgba[i + 1] as u32;
+                            b += cur_rgba[i + 2] as u32;
+                            a += cur_rgba[i + 3] as u32;
+                            cnt += 1;
+                        }
+                    }
+                }
+                let ni = (ny * next_w + nx) * 4;
+                next[ni] = (r / cnt) as u8;
+                next[ni + 1] = (g / cnt) as u8;
+                next[ni + 2] = (b / cnt) as u8;
+                next[ni + 3] = (a / cnt) as u8;
+            }
+        }
+        cur_rgba = next;
+        cur_w = next_w;
+        cur_h = next_h;
+    }
+    mips
 }
 
 fn decompress_dxt1(data: &[u8], width: usize, height: usize) -> Vec<u8> {
@@ -2145,19 +2361,6 @@ fn safe_read_u16(face_pool: &mut Cursor<Vec<u8>>) -> Result<u16, String> {
     Ok(val)
 }
 
-fn align_face_pool(face_pool: &mut Cursor<Vec<u8>>) {
-    let pos = face_pool.position();
-    let u1_res = face_pool.read_u16::<LittleEndian>();
-    let u2_res = face_pool.read_u16::<LittleEndian>();
-    face_pool.set_position(pos);
-
-    if let (Ok(u1), Ok(u2)) = (u1_res, u2_res) {
-        if (u1 > 0 && u1 % 256 == 0) || (u1 == 0 && u2 > 0 && u2 % 256 == 0) {
-            let _ = face_pool.read_u8();
-        }
-    }
-}
-
 fn parse_basic_mesh(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODMesh, String> {
     println!("[RUST] BMSH raw data (len={}): {:02x?}", chunk.data.len(), &chunk.data[..std::cmp::min(128, chunk.data.len())]);
     let mut reader = Cursor::new(&chunk.data);
@@ -2214,7 +2417,6 @@ fn parse_basic_mesh(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HO
                 vertices.push(v);
             }
 
-            align_face_pool(&mut context.face_pool);
             let mut raw_indices = Vec::new();
             for _ in 0..indice_count {
                 // HOD 2.0 face pool stores plain little-endian u16 indices, local to each part.
@@ -2697,7 +2899,7 @@ pub fn write_vertex<W: Write>(writer: &mut W, vertex: &HODVertex, vertex_mask: u
         writer.write_f32::<LittleEndian>(n.x).map_err(|e| e.to_string())?;
         writer.write_f32::<LittleEndian>(n.y).map_err(|e| e.to_string())?;
         writer.write_f32::<LittleEndian>(n.z).map_err(|e| e.to_string())?;
-        writer.write_f32::<LittleEndian>(0.0).map_err(|e| e.to_string())?;
+        writer.write_f32::<LittleEndian>(1.0).map_err(|e| e.to_string())?;
         bytes_written += 16;
     }
     if (vertex_mask & 0x4) != 0 {
@@ -2808,8 +3010,11 @@ fn update_mesh_chunks(
                     }
                 }
 
-                update_mesh_chunks(&mut sub_chunks, updated_model, is_v2, new_mesh_pool, new_face_pool, &extracted_mesh_name)?;
+                // Detect NRML MULT: inline BMSH data, not pool-based
+                let is_nrml_mult = chunk.chunk_type == ChunkType::Normal && chunk.data.len() > 20;
+                update_mesh_chunks(&mut sub_chunks, updated_model, is_v2 && !is_nrml_mult, new_mesh_pool, new_face_pool, &extracted_mesh_name)?;
 
+                let original_chunk_type = chunk.chunk_type.clone();
                 let mut new_mult_data = Vec::new();
                 write_len_string(&mut new_mult_data, &extracted_mesh_name)?;
                 write_len_string(&mut new_mult_data, &extracted_parent_name)?;
@@ -2817,11 +3022,19 @@ fn update_mesh_chunks(
                 let lod_count = sub_chunks.iter().filter(|c| c.id.trim() == "BMSH").count() as u32;
                 new_mult_data.write_u32::<LittleEndian>(lod_count).map_err(|e| e.to_string())?;
 
-                for child in &sub_chunks {
-                    child.write_chunk(&mut new_mult_data).map_err(|e| e.to_string())?;
+                if original_chunk_type == ChunkType::Form {
+                    // FORM: children are serialized separately during write_chunk
+                    chunk.data = new_mult_data;
+                    chunk.children = sub_chunks;
+                } else {
+                    // NRML: serialize children into data
+                    for child in &sub_chunks {
+                        child.write_chunk(&mut new_mult_data).map_err(|e| e.to_string())?;
+                    }
+                    chunk.data = new_mult_data;
+                    chunk.children = Vec::new();
                 }
-
-                chunk.data = new_mult_data;
+                chunk.chunk_type = original_chunk_type;
             }
         } else if chunk.id == "GLOW" {
             let mut extracted_glow_name = String::new();
@@ -3062,67 +3275,348 @@ fn sanitize_prim_group_counts(chunks: &mut [IffChunk]) -> Result<(), String> {
     Ok(())
 }
 
+fn texture_name_key(name: &str) -> String {
+    name.to_lowercase()
+        .trim_end_matches(".tga")
+        .trim_end_matches(".png")
+        .trim_end_matches(".dds")
+        .trim_end_matches(".bmp")
+        .trim_end_matches(".jpg")
+        .trim_end_matches(".jpeg")
+        .trim()
+        .to_string()
+}
+
+fn decode_texture_png_rgba(texture: &HODTexture) -> Result<Option<(Vec<u8>, u32, u32)>, String> {
+    use base64::{engine::general_purpose, Engine as _};
+
+    let Some(encoded) = texture.png_data.as_ref().or(texture.png_preview.as_ref()) else {
+        return Ok(None);
+    };
+    let payload = encoded
+        .split_once(',')
+        .map(|(_, data)| data)
+        .unwrap_or(encoded.as_str());
+    let bytes = general_purpose::STANDARD
+        .decode(payload)
+        .map_err(|e| format!("Failed to decode texture '{}': {}", texture.name, e))?;
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Failed to decode texture image '{}': {}", texture.name, e))?
+        .to_rgba8();
+    let (width, height) = img.dimensions();
+
+    Ok(Some((img.into_raw(), width, height)))
+}
+
+fn generate_lmip_texture_chunks_and_pool(textures: &[HODTexture]) -> Result<(Vec<IffChunk>, Vec<u8>), String> {
+    let mut chunks = Vec::new();
+    let mut texture_pool = Vec::new();
+
+    for texture in textures {
+        let Some((rgba, width, height)) = decode_texture_png_rgba(texture)? else {
+            continue;
+        };
+        if width == 0 || height == 0 {
+            continue;
+        }
+
+        let mip_count = 8.min(((width.max(height) as f32).log2().floor() as u32) + 1);
+        let mips = generate_mip_chain(&rgba, width as usize, height as usize, mip_count as usize);
+
+        let mut data = Vec::new();
+        write_len_string(&mut data, &texture_name_key(&texture.name))?;
+        data.write_all(b"DXT1").map_err(|e| e.to_string())?;
+        data.write_u32::<LittleEndian>(mip_count).map_err(|e| e.to_string())?;
+        for &(_, mw, mh) in &mips {
+            data.write_u32::<LittleEndian>(mw as u32).map_err(|e| e.to_string())?;
+            data.write_u32::<LittleEndian>(mh as u32).map_err(|e| e.to_string())?;
+        }
+
+        for (mip_rgba, mw, mh) in &mips {
+            let dxt = compress_dxt1(mip_rgba, *mw, *mh);
+            texture_pool.extend_from_slice(&dxt);
+        }
+
+        chunks.push(IffChunk {
+            id: "LMIP".to_string(),
+            chunk_type: crate::iff::ChunkType::Default,
+            version: 0,
+            data,
+            children: Vec::new(),
+        });
+    }
+
+    Ok((chunks, texture_pool))
+}
+
+fn shader_texture_param_name(shader_name: &str, texture_name: &str, slot_index: usize) -> String {
+    let tex_key = texture_name_key(texture_name);
+    let shader_key = shader_name.to_lowercase();
+
+    if tex_key.contains("diff_off") || tex_key.contains("diffoff") {
+        return "$diffuseoff".to_string();
+    }
+    if tex_key.contains("glow_off") || tex_key.contains("glowoff") {
+        return "$glowoff".to_string();
+    }
+    if tex_key.contains("diff") || tex_key.contains("albedo") || tex_key.contains("base") {
+        return "$diffuse".to_string();
+    }
+    if tex_key.contains("glow") || tex_key.contains("emit") {
+        return "$glow".to_string();
+    }
+    if tex_key.contains("team") || tex_key.contains("stripe") {
+        return "$team".to_string();
+    }
+    if tex_key.contains("norm") || tex_key.contains("normal") || tex_key.contains("bump") {
+        return "$normal".to_string();
+    }
+    if tex_key.contains("spec") || tex_key.contains("rough") || tex_key.contains("metal") {
+        return "$specular".to_string();
+    }
+
+    let ship_slots = ["$diffuse", "$glow", "$team", "$normal", "$specular"];
+    let thruster_slots = ["$diffuse", "$glow", "$team", "$normal", "$diffuseoff", "$glowoff"];
+    let default_slots = ["$diffuse", "$glow", "$team", "$normal"];
+
+    let slots = if shader_key.contains("thruster") {
+        &thruster_slots[..]
+    } else if shader_key.contains("ship") || shader_key.contains("bay") {
+        &ship_slots[..]
+    } else {
+        &default_slots[..]
+    };
+
+    slots.get(slot_index).unwrap_or(&"$diffuse").to_string()
+}
+
+fn write_stat_texture_params<W: Write>(writer: &mut W, mat: &HODMaterial, textures: &[HODTexture]) -> Result<(), String> {
+    let mut texture_indices = Vec::new();
+    for (slot_index, tex_name) in mat.texture_maps.iter().enumerate() {
+        let tex_key = texture_name_key(tex_name);
+        if let Some(index) = textures.iter().position(|t| texture_name_key(&t.name) == tex_key) {
+            let param_name = shader_texture_param_name(&mat.shader_name, tex_name, slot_index);
+            texture_indices.push((index as u32, param_name));
+        }
+    }
+
+    writer
+        .write_u32::<LittleEndian>(texture_indices.len() as u32)
+        .map_err(|e| e.to_string())?;
+    if texture_indices.is_empty() {
+        return Ok(());
+    }
+
+    writer.write_u32::<LittleEndian>(5).map_err(|e| e.to_string())?;
+    writer.write_u32::<LittleEndian>(4).map_err(|e| e.to_string())?;
+    for (idx, (texture_index, param_name)) in texture_indices.iter().enumerate() {
+        if idx > 0 {
+            writer.write_u32::<LittleEndian>(5).map_err(|e| e.to_string())?;
+            writer.write_u32::<LittleEndian>(4).map_err(|e| e.to_string())?;
+        }
+        writer.write_u32::<LittleEndian>(*texture_index).map_err(|e| e.to_string())?;
+        write_len_string(writer, param_name)?;
+    }
+
+    Ok(())
+}
+
+fn original_needs_full_v2_regeneration(original_bytes: &[u8], updated_model: &HODModel) -> bool {
+    if original_bytes.is_empty() {
+        return true;
+    }
+    if !updated_model.is_v2 {
+        return false;
+    }
+
+    let mut cursor = Cursor::new(original_bytes);
+    let mut has_pool = false;
+    let mut has_lmip = false;
+    while cursor.position() < original_bytes.len() as u64 {
+        let Ok(chunk) = IffChunk::read_chunk(&mut cursor) else {
+            return false;
+        };
+        if chunk.id == "HVMD" {
+            has_lmip = chunk.children.iter().any(|child| child.id == "LMIP");
+        }
+        if chunk.id == "POOL" {
+            has_pool = true;
+            let mut pool_cursor = Cursor::new(&chunk.data);
+            let Ok(_pool_type) = pool_cursor.read_u32::<LittleEndian>() else {
+                return true;
+            };
+            let Ok(comp_tex_len) = pool_cursor.read_u32::<LittleEndian>() else {
+                return true;
+            };
+            let Ok(decomp_tex_len) = pool_cursor.read_u32::<LittleEndian>() else {
+                return true;
+            };
+            if !updated_model.textures.is_empty() && (comp_tex_len == 0 || decomp_tex_len == 0) {
+                return true;
+            }
+            let skip_tex_to = pool_cursor.position().saturating_add(comp_tex_len as u64);
+            if skip_tex_to > chunk.data.len() as u64 {
+                return true;
+            }
+            pool_cursor.set_position(skip_tex_to);
+            let Ok(comp_mesh_len) = pool_cursor.read_u32::<LittleEndian>() else {
+                return true;
+            };
+            let Ok(decomp_mesh_len) = pool_cursor.read_u32::<LittleEndian>() else {
+                return true;
+            };
+            if !updated_model.meshes.is_empty() && (comp_mesh_len == 0 || decomp_mesh_len == 0) {
+                return true;
+            }
+            break;
+        }
+    }
+
+    if !updated_model.textures.is_empty() && !has_lmip {
+        return true;
+    }
+
+    !has_pool
+}
+
 pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result<Vec<u8>, String> {
-    use crate::iff::{IffChunk, ChunkType};
+    use crate::iff::{ChunkType, IffChunk};
     use crate::xpress;
     let compiled = crate::compiler::compile_model_meshes(model);
     
-    let mut original_chunks = Vec::new();
-    if !original_bytes.is_empty() {
-        let mut reader = Cursor::new(original_bytes);
-        while let Ok(chunk) = IffChunk::read_chunk(&mut reader) {
-            original_chunks.push(chunk);
-        }
-    }
-    
     let mut comp_tex_buf = Vec::new();
     let mut decomp_tex_len_val = 0;
-    let mut extracted_pool_type = if model.is_v2 { 3 } else { 0 };
-    for chunk in &original_chunks {
-        if chunk.id == "POOL" {
-            let mut pool_cursor = Cursor::new(&chunk.data);
-            if let Ok(pool_type) = pool_cursor.read_u32::<LittleEndian>() {
-                extracted_pool_type = pool_type;
-                if let Ok(comp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
-                    if let Ok(decomp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
-                        decomp_tex_len_val = decomp_tex_len;
-                        let mut comp_tex = vec![0u8; comp_tex_len as usize];
-                        if pool_cursor.read_exact(&mut comp_tex).is_ok() {
-                            comp_tex_buf = comp_tex;
+    let mut extracted_pool_type = if model.is_v2 { 3518 } else { 0 };
+    
+    // Try to extract original compressed texture data from the original POOL
+    let mut original_tex_preserved = false;
+    let mut original_lmip_chunks: Vec<IffChunk> = Vec::new();
+    let mut original_stat_chunks: Vec<IffChunk> = Vec::new();
+    let mut original_comp_mesh_buf = Vec::new();
+    let mut original_decomp_mesh_len_val = 0u32;
+    let mut original_comp_face_buf = Vec::new();
+    let mut original_decomp_face_len_val = 0u32;
+    let mut original_mesh_pool_preserved = false;
+    if !original_bytes.is_empty() {
+        let mut cursor = Cursor::new(original_bytes);
+        while cursor.position() < original_bytes.len() as u64 {
+            if let Ok(chunk) = IffChunk::read_chunk(&mut cursor) {
+                if chunk.id == "POOL" && !chunk.data.is_empty() && !original_tex_preserved {
+                    let mut pool_cursor = Cursor::new(&chunk.data);
+                    if let Ok(pool_type) = pool_cursor.read_u32::<LittleEndian>() {
+                        extracted_pool_type = pool_type;
+                        if let Ok(comp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
+                            if let Ok(decomp_tex_len) = pool_cursor.read_u32::<LittleEndian>() {
+                                let mut comp_tex = vec![0u8; comp_tex_len as usize];
+                                if pool_cursor.read_exact(&mut comp_tex).is_ok() && !comp_tex.is_empty() {
+                                    comp_tex_buf = comp_tex;
+                                    decomp_tex_len_val = decomp_tex_len;
+                                    original_tex_preserved = true;
+                                }
+                                // Also extract mesh and face pool data
+                                if let Ok(cm_len) = pool_cursor.read_u32::<LittleEndian>() {
+                                    if let Ok(dm_len) = pool_cursor.read_u32::<LittleEndian>() {
+                                        let mut comp_mesh = vec![0u8; cm_len as usize];
+                                        if pool_cursor.read_exact(&mut comp_mesh).is_ok() {
+                                            original_comp_mesh_buf = comp_mesh;
+                                            original_decomp_mesh_len_val = dm_len;
+                                        }
+                                        if let Ok(cf_len) = pool_cursor.read_u32::<LittleEndian>() {
+                                            if let Ok(df_len) = pool_cursor.read_u32::<LittleEndian>() {
+                                                let mut comp_face = vec![0u8; cf_len as usize];
+                                                if pool_cursor.read_exact(&mut comp_face).is_ok() {
+                                                    original_comp_face_buf = comp_face;
+                                                    original_decomp_face_len_val = df_len;
+                                                    original_mesh_pool_preserved = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if chunk.id == "HVMD" {
+                    // Extract original LMIP and STAT chunks from HVMD for preservation
+                    for child in &chunk.children {
+                        if child.id == "LMIP" {
+                            original_lmip_chunks.push(child.clone());
+                        } else if child.id == "STAT" {
+                            original_stat_chunks.push(child.clone());
                         }
                     }
                 }
-            }
-        }
-    }
-
-    let pool_data = crate::compiler::generate_pool_data(&compiled, &comp_tex_buf, decomp_tex_len_val, extracted_pool_type).map_err(|e| e.to_string())?;
-    let mut hvmd_children = Vec::new();
-
-    // Add preserved HVMD children (EXCEPT MULT)
-    let mut stat_chunks_preserved = 0;
-    for chunk in &original_chunks {
-        if chunk.id == "HVMD" {
-            for child in &chunk.children {
-                if child.id != "MULT" {
-                    if child.id == "STAT" {
-                        stat_chunks_preserved += 1;
-                    }
-                    hvmd_children.push(child.clone());
-                }
+            } else {
+                break;
             }
         }
     }
     
-    // If we didn't preserve any STAT chunks (e.g. DAE import), generate empty ones for each material
-    if stat_chunks_preserved == 0 && !model.materials.is_empty() {
+    // Fall back to regenerating textures from model data if original wasn't available
+    let mut generated_texture_chunks = Vec::new();
+    if !original_tex_preserved {
+        let (gen_chunks, generated_texture_pool) = generate_lmip_texture_chunks_and_pool(&model.textures)?;
+        generated_texture_chunks = gen_chunks;
+        if !generated_texture_pool.is_empty() {
+            comp_tex_buf = xpress::compress_or_raw(&generated_texture_pool);
+            decomp_tex_len_val = generated_texture_pool.len() as u32;
+        }
+    }
+    if model.is_v2 {
+        extracted_pool_type = 3518;
+    }
+
+    // For v1, mesh data is inline in BMSH chunks; generate empty pool
+    // For v2, mesh data goes into the POOL chunk
+    let pool_data = if !model.is_v2 {
+        // V1: empty mesh/face pools (data is inline)
+        let mut pool_buf = Vec::new();
+        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // pool_type
+        pool_buf.write_u32::<LittleEndian>(comp_tex_buf.len() as u32).unwrap();
+        pool_buf.write_u32::<LittleEndian>(decomp_tex_len_val).unwrap();
+        pool_buf.extend_from_slice(&comp_tex_buf);
+        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // comp_mesh_len = 0
+        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // decomp_mesh_len = 0
+        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // comp_face_len = 0
+        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // decomp_face_len = 0
+        pool_buf
+    } else if original_mesh_pool_preserved && !original_comp_mesh_buf.is_empty() {
+        // Preserve original mesh/face pool data when meshes haven't been modified
+        let mut pool_buf = Vec::new();
+        pool_buf.write_u32::<LittleEndian>(extracted_pool_type).unwrap();
+        pool_buf.write_u32::<LittleEndian>(comp_tex_buf.len() as u32).unwrap();
+        pool_buf.write_u32::<LittleEndian>(decomp_tex_len_val).unwrap();
+        pool_buf.extend_from_slice(&comp_tex_buf);
+        pool_buf.write_u32::<LittleEndian>(original_comp_mesh_buf.len() as u32).unwrap();
+        pool_buf.write_u32::<LittleEndian>(original_decomp_mesh_len_val).unwrap();
+        pool_buf.extend_from_slice(&original_comp_mesh_buf);
+        pool_buf.write_u32::<LittleEndian>(original_comp_face_buf.len() as u32).unwrap();
+        pool_buf.write_u32::<LittleEndian>(original_decomp_face_len_val).unwrap();
+        pool_buf.extend_from_slice(&original_comp_face_buf);
+        pool_buf
+    } else {
+        crate::compiler::generate_pool_data(&compiled, &comp_tex_buf, decomp_tex_len_val, extracted_pool_type).map_err(|e| e.to_string())?
+    };
+    let mut hvmd_children = Vec::new();
+
+    // Add LMIP chunks: preserve originals if texture pool was preserved, otherwise use generated
+    if original_tex_preserved && !original_lmip_chunks.is_empty() {
+        hvmd_children.extend(original_lmip_chunks);
+    } else {
+        hvmd_children.extend(generated_texture_chunks);
+    }
+    
+    // Preserve original STAT chunks when available, otherwise generate from materials
+    if !original_stat_chunks.is_empty() {
+        hvmd_children.extend(original_stat_chunks);
+    } else if !model.materials.is_empty() {
         for mat in &model.materials {
             let mut stat_buf = Vec::new();
             let mut stat_cursor = Cursor::new(&mut stat_buf);
             
             write_len_string(&mut stat_cursor, &mat.name).unwrap();
             write_len_string(&mut stat_cursor, &mat.shader_name).unwrap();
-            stat_cursor.write_u32::<LittleEndian>(0).unwrap(); // param count = 0
+            write_stat_texture_params(&mut stat_cursor, mat, &model.textures).unwrap();
             
             hvmd_children.push(IffChunk {
                 id: "STAT".to_string(),
@@ -3132,13 +3626,27 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
                 children: Vec::new(),
             });
         }
-    } else if stat_chunks_preserved == 0 && model.materials.is_empty() {
-        // Fallback default material
+    } else if model.materials.is_empty() {
+        // Auto-generate a material from imported textures when no material exists
+        let auto_mat = if !model.textures.is_empty() {
+            let texture_maps: Vec<String> = model.textures.iter().map(|t| t.name.clone()).collect();
+            HODMaterial {
+                name: "default_mat".to_string(),
+                shader_name: "ship".to_string(),
+                texture_maps,
+            }
+        } else {
+            HODMaterial {
+                name: "default_mat".to_string(),
+                shader_name: "default_shader".to_string(),
+                texture_maps: Vec::new(),
+            }
+        };
         let mut stat_buf = Vec::new();
         let mut stat_cursor = Cursor::new(&mut stat_buf);
-        write_len_string(&mut stat_cursor, "default_mat").unwrap();
-        write_len_string(&mut stat_cursor, "default_shader").unwrap();
-        stat_cursor.write_u32::<LittleEndian>(0).unwrap();
+        write_len_string(&mut stat_cursor, &auto_mat.name).unwrap();
+        write_len_string(&mut stat_cursor, &auto_mat.shader_name).unwrap();
+        write_stat_texture_params(&mut stat_cursor, &auto_mat, &model.textures).unwrap();
         
         hvmd_children.push(IffChunk {
             id: "STAT".to_string(),
@@ -3170,12 +3678,44 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     // Bug 2 fix: Use ChunkType::Form (FORM HIER), not ChunkType::Normal (NRML HIER)
     // Bug 3 fix: Use actual joint rotation/scale data, not hardcoded zeros/ones
     let mut hier_buf = Vec::new();
+    let default_root_pos = Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let default_root_rot = Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let default_root_scale = Vector3 {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
+    let default_root_joint = HODJoint {
+        name: "Root".to_string(),
+        parent_name: None,
+        local_transform: compose_transform_matrix(
+            default_root_pos.clone(),
+            default_root_rot.clone(),
+            default_root_scale.clone(),
+        ),
+        position: Some(default_root_pos),
+        rotation: Some(default_root_rot),
+        scale: Some(default_root_scale),
+    };
+    let joints_to_write: Vec<&HODJoint> = if model.joints.is_empty() {
+        vec![&default_root_joint]
+    } else {
+        model.joints.iter().collect()
+    };
     {
-        let joint_count = model.joints.len() as i32;
+        let joint_count = joints_to_write.len() as i32;
         let first_val = (0xFFFFFF00u32 | ((-joint_count) as u32 & 0xFF)) as u32;
         hier_buf.write_u32::<LittleEndian>(first_val).map_err(|e| e.to_string())?;
     }
-    for joint in &model.joints {
+    for joint in &joints_to_write {
         write_len_string(&mut hier_buf, &joint.name)?;
         let parent_str = joint.parent_name.clone().unwrap_or_default();
         write_len_string(&mut hier_buf, &parent_str)?;
@@ -3272,14 +3812,18 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         });
     }
 
-    // Add preserved DTRM children (MRKS, KDOP, COLD, SCAR — skip HIER, MRKR, BURN, NAVL since we regenerated them)
-    for chunk in &original_chunks {
+    // Add preserved DTRM children (KDOP, COLD, SCAR, etc. — skip regenerated chunks)
+    let dtrm_sub_chunk_ids = ["HIER", "MRKR", "BURN", "NAVL", "MRKS"];
+    for chunk in &model.preserved_chunks {
         if chunk.id == "DTRM" {
             for child in &chunk.children {
-                if child.id != "HIER" && child.id != "MRKR" && child.id != "BURN" && child.id != "NAVL" && child.id != "MRKS" {
+                if !dtrm_sub_chunk_ids.contains(&child.id.as_str()) {
                     dtrm_children.push(child.clone());
                 }
             }
+        } else if ["KDOP", "COLD", "SCAR", "BNDV", "ETSH"].contains(&chunk.id.as_str()) {
+            // These are DTRM sub-chunks stored at preserved_chunks level
+            dtrm_children.push(chunk.clone());
         }
     }
     
@@ -3305,12 +3849,8 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         children: Vec::new(),
     });
     
-    // NAME
-    let name_bytes = if model.name.is_empty() { b"cloned_mesh\0".to_vec() } else { 
-        let mut n = model.name.as_bytes().to_vec(); 
-        n.push(0); 
-        n 
-    };
+    // HOD 2.0 files use this fixed NAME payload; do not serialize the UI model name here.
+    let name_bytes = b"Homeworld2 Multi Mesh File".to_vec();
     top_chunks.push(IffChunk {
         id: "NAME".to_string(),
         chunk_type: ChunkType::Form,
@@ -3332,9 +3872,34 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     top_chunks.push(hvmd_chunk);
     top_chunks.push(dtrm_chunk);
     
-    // Add preserved Root children
-    for chunk in &original_chunks {
-        if chunk.id != "VERS" && chunk.id != "NAME" && chunk.id != "POOL" && chunk.id != "HVMD" && chunk.id != "DTRM" {
+    // Add INFO chunk if not already present in preserved chunks
+    let has_info = model.preserved_chunks.iter().any(|c| c.id == "INFO");
+    if !has_info {
+        let author = b"HODEditorJS";
+        let mut ownr_data = Vec::new();
+        ownr_data.write_u32::<LittleEndian>(author.len() as u32).map_err(|e| e.to_string())?;
+        ownr_data.extend_from_slice(author);
+        ownr_data.push(0);
+        let ownr_chunk = IffChunk {
+            id: "OWNR".to_string(),
+            chunk_type: ChunkType::Normal,
+            version: 38,
+            data: ownr_data,
+            children: Vec::new(),
+        };
+        top_chunks.push(IffChunk {
+            id: "INFO".to_string(),
+            chunk_type: ChunkType::Form,
+            version: 0,
+            data: Vec::new(),
+            children: vec![ownr_chunk],
+        });
+    }
+    
+    // Add preserved Root children (like INFO) — exclude DTRM sub-chunks and top-level chunks
+    let top_level_ids = ["VERS", "NAME", "POOL", "HVMD", "DTRM", "KDOP", "COLD", "SCAR", "BNDV", "ETSH"];
+    for chunk in &model.preserved_chunks {
+        if !top_level_ids.contains(&chunk.id.as_str()) {
             top_chunks.push(chunk.clone());
         }
     }
@@ -3348,13 +3913,38 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
 }
 
 pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec<u8>, String> {
+    // For HOD 2.0, always generate from scratch
+    if updated_model.is_v2 {
+        // Check if original has a POOL chunk (valid HOD 2.0 with pool data)
+        let has_pool = if !original_bytes.is_empty() {
+            let mut cursor = Cursor::new(original_bytes);
+            let mut found = false;
+            while cursor.position() < original_bytes.len() as u64 {
+                match IffChunk::read_chunk(&mut cursor) {
+                    Ok(chunk) => { if chunk.id == "POOL" { found = true; break; } }
+                    Err(_) => break,
+                }
+            }
+            found
+        } else {
+            false
+        };
+        // If no POOL or empty original, generate from scratch
+        if !has_pool || original_bytes.is_empty() {
+            return generate_v2_from_model(original_bytes, updated_model);
+        }
+    }
+    if original_needs_full_v2_regeneration(original_bytes, updated_model) {
+        return generate_v2_from_model(original_bytes, updated_model);
+    }
+
     let mut chunks = Vec::new();
     if original_bytes.is_empty() {
         let mut vers_data = Vec::new();
         vers_data.write_u32::<BigEndian>(updated_model.version).map_err(|e| e.to_string())?;
         chunks.push(IffChunk {
             id: "VERS".to_string(),
-            chunk_type: crate::iff::ChunkType::Normal,
+            chunk_type: crate::iff::ChunkType::Form,
             version: 0,
             data: vers_data,
             children: Vec::new(),
@@ -3362,9 +3952,9 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
 
         chunks.push(IffChunk {
             id: "NAME".to_string(),
-            chunk_type: crate::iff::ChunkType::Normal,
+            chunk_type: crate::iff::ChunkType::Form,
             version: 0,
-            data: updated_model.name.as_bytes().to_vec(),
+            data: b"Homeworld2 Multi Mesh File".to_vec(),
             children: Vec::new(),
         });
 
@@ -3452,7 +4042,9 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                                 if pool_cursor.read_exact(&mut comp_tex).is_ok() {
                                     original_comp_tex = comp_tex.clone();
                                     original_decomp_tex_len = decomp_tex_len;
-                                    if let Ok(decomp_tex) = xpress::decompress(&comp_tex, decomp_tex_len as usize) {
+                                    if comp_tex_len == decomp_tex_len {
+                                        original_texture_pool = comp_tex.clone();
+                                    } else if let Ok(decomp_tex) = xpress::decompress(&comp_tex, decomp_tex_len as usize) {
                                         original_texture_pool = decomp_tex;
                                     }
                                 }
@@ -3462,7 +4054,9 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                                         if pool_cursor.read_exact(&mut comp_mesh).is_ok() {
                                             original_comp_mesh = comp_mesh.clone();
                                             original_decomp_mesh_len = decomp_mesh_len;
-                                            if let Ok(decomp_mesh) = xpress::decompress(&comp_mesh, decomp_mesh_len as usize) {
+                                            if comp_mesh_len == decomp_mesh_len {
+                                                original_mesh_pool = comp_mesh.clone();
+                                            } else if let Ok(decomp_mesh) = xpress::decompress(&comp_mesh, decomp_mesh_len as usize) {
                                                 original_mesh_pool = decomp_mesh;
                                             }
                                         }
@@ -3474,7 +4068,9 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                                         if pool_cursor.read_exact(&mut comp_face).is_ok() {
                                             original_comp_face = comp_face.clone();
                                             original_decomp_face_len = decomp_face_len;
-                                            if let Ok(decomp_face) = xpress::decompress(&comp_face, decomp_face_len as usize) {
+                                            if comp_face_len == decomp_face_len {
+                                                original_face_pool = comp_face.clone();
+                                            } else if let Ok(decomp_face) = xpress::decompress(&comp_face, decomp_face_len as usize) {
                                                 original_face_pool = decomp_face;
                                             }
                                         }
@@ -3513,7 +4109,16 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
         }
     }
 
-    if meshes_modified {
+    // For HOD 2.0, always regenerate mesh pool from model data to ensure correct vertex attributes.
+    // For HOD 1.0, only update if meshes were actually modified (mesh data is inline in BMSH).
+    if is_v2 && updated_model.meshes.iter().any(|m| !m.parts.is_empty()) {
+        // Target HVMD children specifically, not top-level chunks
+        for chunk in &mut chunks {
+            if chunk.id == "HVMD" {
+                update_mesh_chunks(&mut chunk.children, updated_model, is_v2, &mut new_mesh_pool, &mut new_face_pool, "")?;
+            }
+        }
+    } else if meshes_modified {
         update_mesh_chunks(&mut chunks, updated_model, is_v2, &mut new_mesh_pool, &mut new_face_pool, "")?;
     } else {
         new_mesh_pool = original_mesh_pool;
@@ -3529,26 +4134,17 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
         pool_data.write_u32::<LittleEndian>(original_decomp_tex_len).map_err(|e| e.to_string())?;
         pool_data.extend_from_slice(&original_comp_tex);
 
-        if meshes_modified {
-            let comp_mesh = xpress::compress(&new_mesh_pool);
-            let comp_face = xpress::compress(&new_face_pool);
+        // For v2, always use regenerated mesh/face pools to ensure correct vertex data
+        let comp_mesh = xpress::compress_or_raw(&new_mesh_pool);
+        let comp_face = xpress::compress_or_raw(&new_face_pool);
 
-            pool_data.write_u32::<LittleEndian>(comp_mesh.len() as u32).map_err(|e| e.to_string())?;
-            pool_data.write_u32::<LittleEndian>(new_mesh_pool.len() as u32).map_err(|e| e.to_string())?;
-            pool_data.extend_from_slice(&comp_mesh);
+        pool_data.write_u32::<LittleEndian>(comp_mesh.len() as u32).map_err(|e| e.to_string())?;
+        pool_data.write_u32::<LittleEndian>(new_mesh_pool.len() as u32).map_err(|e| e.to_string())?;
+        pool_data.extend_from_slice(&comp_mesh);
 
-            pool_data.write_u32::<LittleEndian>(comp_face.len() as u32).map_err(|e| e.to_string())?;
-            pool_data.write_u32::<LittleEndian>(new_face_pool.len() as u32).map_err(|e| e.to_string())?;
-            pool_data.extend_from_slice(&comp_face);
-        } else {
-            pool_data.write_u32::<LittleEndian>(original_comp_mesh.len() as u32).map_err(|e| e.to_string())?;
-            pool_data.write_u32::<LittleEndian>(original_decomp_mesh_len).map_err(|e| e.to_string())?;
-            pool_data.extend_from_slice(&original_comp_mesh);
-
-            pool_data.write_u32::<LittleEndian>(original_comp_face.len() as u32).map_err(|e| e.to_string())?;
-            pool_data.write_u32::<LittleEndian>(original_decomp_face_len).map_err(|e| e.to_string())?;
-            pool_data.extend_from_slice(&original_comp_face);
-        }
+        pool_data.write_u32::<LittleEndian>(comp_face.len() as u32).map_err(|e| e.to_string())?;
+        pool_data.write_u32::<LittleEndian>(new_face_pool.len() as u32).map_err(|e| e.to_string())?;
+        pool_data.extend_from_slice(&comp_face);
 
         for chunk in &mut chunks {
             if chunk.id == "POOL" {
@@ -3558,12 +4154,45 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
         }
     }
 
+    let default_root_pos = Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let default_root_rot = Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    let default_root_scale = Vector3 {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+    };
+    let default_root_joint = HODJoint {
+        name: "Root".to_string(),
+        parent_name: None,
+        local_transform: compose_transform_matrix(
+            default_root_pos.clone(),
+            default_root_rot.clone(),
+            default_root_scale.clone(),
+        ),
+        position: Some(default_root_pos),
+        rotation: Some(default_root_rot),
+        scale: Some(default_root_scale),
+    };
+    let joints_to_write: Vec<&HODJoint> = if updated_model.joints.is_empty() {
+        vec![&default_root_joint]
+    } else {
+        updated_model.joints.iter().collect()
+    };
+
     let mut hier_data = Vec::new();
     if is_v2 {
-        let joint_count = updated_model.joints.len() as i32;
+        let joint_count = joints_to_write.len() as i32;
         let first_val = (0xFFFFFF00u32 | ((-joint_count) as u32 & 0xFF)) as u32;
         hier_data.write_u32::<LittleEndian>(first_val).map_err(|e| e.to_string())?;
-        for joint in &updated_model.joints {
+        for joint in &joints_to_write {
             write_len_string(&mut hier_data, &joint.name)?;
             let parent_str = joint.parent_name.clone().unwrap_or_default();
             write_len_string(&mut hier_data, &parent_str)?;
@@ -3588,8 +4217,8 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
             hier_data.write_f32::<LittleEndian>(scale.z).map_err(|e| e.to_string())?;
         }
     } else {
-        hier_data.write_u32::<LittleEndian>(updated_model.joints.len() as u32).map_err(|e| e.to_string())?;
-        for joint in &updated_model.joints {
+        hier_data.write_u32::<LittleEndian>(joints_to_write.len() as u32).map_err(|e| e.to_string())?;
+        for joint in &joints_to_write {
             write_len_string(&mut hier_data, &joint.name)?;
             let parent_str = joint.parent_name.clone().unwrap_or_default();
             write_len_string(&mut hier_data, &parent_str)?;
@@ -3726,6 +4355,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
             }
 
             let mut new_children = Vec::new();
+            let mut hier_written = false;
             let mut mrks_written = false;
             let mut navl_written = false;
             let mut burn_written = false;
@@ -3741,6 +4371,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                             data: hier_data.clone(),
                             children: Vec::new(),
                         });
+                        hier_written = true;
                     }
                     "MRKS" | "MRKR" => {
                         if is_v2 {
@@ -3889,6 +4520,15 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                 }
             }
 
+            if !hier_written {
+                new_children.push(IffChunk {
+                    id: "HIER".to_string(),
+                    chunk_type: crate::iff::ChunkType::Form,
+                    version: 0,
+                    data: hier_data.clone(),
+                    children: Vec::new(),
+                });
+            }
             if is_v2 && !mrks_written && !updated_model.markers.is_empty() {
                 new_children.push(IffChunk {
                     id: "MRKS".to_string(),
@@ -4653,4 +5293,3 @@ pub fn serialize_mad_companion(model: &HODModel) -> Result<Vec<u8>, String> {
     mad_root.write_chunk(&mut output).map_err(|e| e.to_string())?;
     Ok(output)
 }
-

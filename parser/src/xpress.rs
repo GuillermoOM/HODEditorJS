@@ -152,8 +152,8 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
                 }
 
                 if len >= 3 && len > best_length {
-                    // best_length = len;
-                    // best_offset = offset;
+                    best_length = len;
+                    best_offset = offset;
                 }
 
                 start = prev[start_idx];
@@ -264,6 +264,20 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
     compressed[indicator_pos..indicator_pos + 4].copy_from_slice(&bytes);
 
     compressed
+}
+
+/// Compresses when useful, otherwise returns the input unchanged.
+///
+/// HOD POOL streams store both compressed and decompressed sizes. Existing
+/// save code uses equal sizes to mean an uncompressed/raw stream, avoiding the
+/// game-side decompressor path for incompressible data.
+pub fn compress_or_raw(input: &[u8]) -> Vec<u8> {
+    let compressed = compress(input);
+    if compressed.len() >= input.len() {
+        input.to_vec()
+    } else {
+        compressed
+    }
 }
 
 #[cfg(test)]
