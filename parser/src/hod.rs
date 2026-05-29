@@ -2619,77 +2619,47 @@ fn encode_b64_png_thumbnail(rgba: &[u8], width: u32, height: u32, max_dim: u32) 
 fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTexture, String> {
     let mut reader = Cursor::new(&chunk.data);
 
-    let (name, format, width, height, _mip_levels) = if context.is_v2 {
-        let name_base = read_len_string(&mut reader)?;
-        let mut format_bytes = [0u8; 4];
-        reader
-            .read_exact(&mut format_bytes)
-            .map_err(|e| e.to_string())?;
-        let format_str = String::from_utf8_lossy(&format_bytes)
-            .trim()
-            .to_string();
-        
-        let mip_count = reader
+    let name_base = read_len_string(&mut reader)?;
+    let mut format_bytes = [0u8; 4];
+    reader
+        .read_exact(&mut format_bytes)
+        .map_err(|e| e.to_string())?;
+    let format_str = String::from_utf8_lossy(&format_bytes)
+        .trim()
+        .to_string();
+
+    let mip_count = reader
+        .read_u32::<LittleEndian>()
+        .map_err(|e| e.to_string())? as usize;
+
+    let mut width = 0u32;
+    let mut height = 0u32;
+    if mip_count > 0 {
+        width = reader
             .read_u32::<LittleEndian>()
-            .map_err(|e| e.to_string())? as usize;
-        
-        let mut width = 0u32;
-        let mut height = 0u32;
-        if mip_count > 0 {
-            width = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| e.to_string())?;
-            height = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| e.to_string())?;
-            // Skip the remaining mip dimensions
-            for _ in 1..mip_count {
-                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-            }
+            .map_err(|e| e.to_string())?;
+        height = reader
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())?;
+        // Skip the remaining mip dimensions
+        for _ in 1..mip_count {
+            let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+            let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
         }
-        
-        let name = format!("{}{}", name_base, format_str);
-        (name, format_str, width, height, mip_count as u32)
+    }
+
+    let name = if context.is_v2 {
+        format!("{}{}", name_base, format_str)
     } else {
-        // Header details
-        let mut name_bytes = [0u8; 32];
-        reader
-            .read_exact(&mut name_bytes)
-            .map_err(|e| e.to_string())?;
-        let name = String::from_utf8_lossy(&name_bytes)
-            .trim_matches('\0')
-            .to_string();
-
-        let format_val = reader
-            .read_u32::<LittleEndian>()
-            .map_err(|e| e.to_string())?;
-        let format = match format_val {
-            0 => "RGBA".to_string(),
-            1 => "DXT1".to_string(),
-            5 => "DXT5".to_string(),
-            _ => format!("Format_{}", format_val),
-        };
-
-        let mut width = 0u32;
-        let mut height = 0u32;
-        let mut _mip_levels = 0u32;
-        if chunk.data.len() >= 48 {
-            width = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| e.to_string())?;
-            height = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| e.to_string())?;
-            _mip_levels = reader
-                .read_u32::<LittleEndian>()
-                .map_err(|e| e.to_string())?;
-        }
-        (name, format, width, height, _mip_levels)
+        // HOD 1.0 names are often full paths (e.g. "G:\GOG.com\centaur\support01.dds"). Extract just the stem.
+        let path = std::path::Path::new(&name_base);
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+        format!("{}{}", stem, format_str)
     };
+    
+    let format = format_str;
+    let _mip_levels = mip_count as u32;
 
-    // In a HOD 2.0 file, raw mip pixels are loaded from context.texture_pool.
-    // In HOD 1.0, they would be read inline from child MIPS chunks (we will support this as well!).
     let mut raw_pixels = Vec::new();
     if context.is_v2 {
         let expected_size = if format == "DXT1" {
@@ -2704,9 +2674,14 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
             raw_pixels = buf;
         }
     } else {
-        // Read raw inline mips from child chunks (standard HW2)
+        // Read raw inline mips from child chunks if present, else read inline
         if let Some(mips_chunk) = chunk.find_child("MIPS") {
             raw_pixels = mips_chunk.data.clone();
+        } else {
+            let current_pos = reader.position() as usize;
+            if current_pos < chunk.data.len() {
+                raw_pixels = chunk.data[current_pos..].to_vec();
+            }
         }
     }
 

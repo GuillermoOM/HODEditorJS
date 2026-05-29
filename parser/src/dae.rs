@@ -376,9 +376,15 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             vertices: Vec::new(),
         });
     } else {
-        // Just a generic node (e.g. ROOT_COL, MULT[Root_mesh])
+        // Just a generic node (e.g. MULT[Root_mesh])
         // Let's add it as a joint so its transform is kept in the hierarchy
-        if !name.starts_with("MULT[") && !name.starts_with("Flame[") && !name.starts_with("Class[")
+        if !name.starts_with("MULT[") 
+            && !name.starts_with("Flame[") 
+            && !name.starts_with("Class[")
+            && !name.starts_with("ROOT_")
+            && !name.starts_with("UVSets[")
+            && !name.starts_with("COL[")
+            && !name.starts_with("HOLD_")
         {
             model.joints.push(HODJoint {
                 name: name.clone(),
@@ -391,8 +397,14 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
         }
     }
 
+    let next_parent = if name.starts_with("ROOT_") || name.starts_with("HOLD_") {
+        Some("Root") // Or None, since HOD defaults to Root when not specified
+    } else {
+        Some(name.as_str())
+    };
+
     // Parse children
     for child in node.children().filter(|n| n.has_tag_name("node")) {
-        parse_scene_node(child, Some(&name), model);
+        parse_scene_node(child, next_parent, model);
     }
 }
