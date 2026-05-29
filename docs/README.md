@@ -16,6 +16,7 @@ Documentation defining the frontend behaviors, node trees, and the React archite
 
 ### 3. Backend & Format Specifications ⚙️ (Active Source of Truth)
 This directory contains the **current**, active specifications for the `.HOD` formats and `.DAE` pipelines. If you need to understand how bytes are structured or how pipelines work *today*, read these:
+- [HOD 2.0 Reverse Engineering Knowledge Base](hod2-reverse-engineering/hod2_reverse_engineering_knowledge_base.md) - The foundational reverse-engineering knowledge (Flat file structure, Endianness inconsistencies, MULT padding). *(Migrated from legacy `agents_info/` directory).*
 - [HOD 2.0 Creation Specification](hod2-reverse-engineering/hod2-creation-specification.md) - How we construct HOD 2.0 files.
 - [POOL Chunk Spec](hod2-reverse-engineering/pool-chunk-specification.md) - How vertices, faces, and materials are packed.
 - [HOD 1.0 vs HOD 2.0 Comparison](hod2-reverse-engineering/hod1-vs-hod2-comparison.md) - Key differences between legacy and modern formats.
@@ -28,7 +29,7 @@ This single file is the source of truth for current project status, blockers, an
 
 ### 5. Historical Archive 🗄️ (Stale/Logs)
 During the reverse engineering of HODOR's MS-XCA LZ77 compression and Homeworld's tangents, agents produced dozens of analysis documents, phase summaries, and fix plans. 
-These have been safely moved to prevent context confusion. **Do not treat these as active instructions.**
+These have been safely moved here to prevent context confusion, along with the legacy `agents_info/` walkthroughs. **Do not treat these as active instructions.**
 - [Archived Logs Directory](hod2-reverse-engineering/archive_logs/)
 
 ---

@@ -8,7 +8,7 @@ Primary sources:
 
 - `src/components/HierarchyTree.tsx`
 - `src/components/Inspector.tsx`
-- `README.md` and `agents_info/walkthrough.md` only after confirming against source
+- `README.md` and `docs/hod2-reverse-engineering/archive_logs/walkthrough.md` only after confirming against source
 
 ## Weapon Assemblies
 

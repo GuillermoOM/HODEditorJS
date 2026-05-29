@@ -39,10 +39,10 @@ docs/hod2-reverse-engineering/
 - `testing/pebble_2/` - Additional test case
 
 ### Reference Documentation
-- `agents_info/hod2_reverse_engineering_knowledge_base.md` - Core knowledge base
-- `agents_info/hod2_serialization_walkthrough.md` - Implementation history
-- `agents_info/implementation_plan.md` - Project goals and plan
-- `.opencode/skills/hod-binary-layout/SKILL.md` - Binary layout specs
+- `hod2_reverse_engineering_knowledge_base.md` - Core knowledge base (Migrated from `agents_info`)
+- `archive_logs/hod2_serialization_walkthrough.md` - Implementation history (Archived)
+- `archive_logs/implementation_plan.md` - Legacy project goals and plan (Archived)
+- `../../../.opencode/skills/hod-binary-layout/SKILL.md` - Binary layout specs
 
 ### External Tools
 - `GBXTools/HODOR/RODOH.exe` - Official conversion tool
@@ -182,10 +182,10 @@ cargo run --bin verify_lossless      # Mandatory roundtrip + DAE verification
 
 - [HOD 2.0 Creation Specification](hod2-creation-specification.md)
 - [Testing Guide](testing-guide.md)
-- [Phase 1 Summary](phase1-summary.md)
-- [RODOH Conversion Analysis](rodoh-hod-conversion-analysis.md)
-- [Knowledge Base](../../agents_info/hod2_reverse_engineering_knowledge_base.md)
-- [Serialization Walkthrough](../../agents_info/hod2_serialization_walkthrough.md)
+- [Phase 1 Summary](archive_logs/phase1-summary.md)
+- [RODOH Conversion Analysis](archive_logs/rodoh-hod-conversion-analysis.md)
+- [Knowledge Base](hod2_reverse_engineering_knowledge_base.md)
+- [Serialization Walkthrough](archive_logs/hod2_serialization_walkthrough.md)
 
 ### Source Code
 

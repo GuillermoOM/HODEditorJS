@@ -275,8 +275,8 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 - [HOD 2.0 Creation Specification](hod2-creation-specification.md)
 - [DAE Pipeline Specification](daenerys-obj-to-dae-pipeline.md)
 - [Testing Guide](testing-guide.md)
-- [Knowledge Base](../../../agents_info/hod2_reverse_engineering_knowledge_base.md)
-- [Serialization Walkthrough](../../../agents_info/hod2_serialization_walkthrough.md)
+- [Knowledge Base](hod2_reverse_engineering_knowledge_base.md)
+- [Serialization Walkthrough](archive_logs/hod2_serialization_walkthrough.md)
 
 *Note: Phase summaries and legacy fix plans have been moved to `archive_logs/`.*
 

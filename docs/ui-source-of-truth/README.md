@@ -8,7 +8,7 @@ This directory is the agent-facing source of truth for how the current UI is exp
 - Verify behavior against the listed source files before changing it.
 - If a spec and source disagree, treat source as canonical unless the task explicitly asks to change behavior.
 - When changing behavior, update the relevant spec in the same work item.
-- Do not use `README.md`, `TODO.md`, or `agents_info/*` as authoritative without checking source code.
+- Do not use `README.md`, `TODO.md`, or `docs/hod2-reverse-engineering/archive_logs/*` as authoritative without checking source code.
 - Do not broaden behavior across other assembly types unless the user asks for that scope.
 
 ## Specs
@@ -27,7 +27,7 @@ This directory is the agent-facing source of truth for how the current UI is exp
 
 1. Current component code in `src/`.
 2. Tauri commands in `src-tauri/src/lib.rs` when UI invokes backend actions.
-3. Existing docs such as `README.md`, `TODO.md`, `agents.md`, and `agents_info/*` only as secondary context.
+3. Existing docs such as `README.md`, `TODO.md`, `agents.md`, and `docs/hod2-reverse-engineering/archive_logs/*` only as secondary context.
 
 ## Verification Pattern
 
