@@ -40,10 +40,22 @@ cd parser && cargo run --bin testing_diff
 
 ### Mandatory verification suite
 
-Runs roundtrip, DAE fallback, and other checks:
+Runs roundtrip, DAE fallback, and structural preservation checks:
 
 ```bash
 cd parser && cargo run --bin verify_lossless
+```
+
+### HODOR Source-Asset Replication Suite
+
+The true test of the compiler is whether it natively generates byte-accurate outputs identical to HODOR when parsing raw `.dae` files.
+
+```bash
+# Validates DAE complex materials, Xpress compression, and tangent calculation vs HODOR.exe
+cd parser && cargo run --bin test_hodor_replication
+
+# Validates empty-original save paths
+cd parser && cargo run --bin test_fenris
 ```
 
 ### Other diagnostic binaries
@@ -72,6 +84,8 @@ cd parser && cargo run --bin face_pool_compare -- <vanilla_hod> <generated_hod>
 | `replicate_testing` | Model building from OBJ/TGA/JSON, KDOP/COLD/INFO preservation from vanilla |
 | `testing_diff` | Chunk layout matches vanilla, POOL stream sizes, Xpress compression stats |
 | `verify_lossless` | Roundtrip fidelity (parse → generate → reparse), DAE generation |
+| `test_hodor_replication` | Source-asset generation parity against HODOR.exe (Xpress logic, Tangents, Dedup) |
+| `test_fenris` | Validates `.dae` generation fallback behavior when no original payload exists |
 | `face_pool_compare` | Byte-identical decompressed face pool between vanilla and generated |
 | `dump_mult` | Recursive chunk tree structure (HVMD → MULT → NRML BMSH) |
 
