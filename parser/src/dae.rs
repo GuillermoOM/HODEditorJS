@@ -275,6 +275,13 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
 
                 // Extract the MULT[name] tag and LOD
                 let mut mesh_target_name = geom_name.to_string();
+
+                // Skip collision meshes — they belong in collision_meshes,
+                // not as regular visible meshes.
+                if mesh_target_name.starts_with("COL[") {
+                    continue;
+                }
+
                 let mut lod = 0i32;
                 if mesh_target_name.starts_with("MULT[") {
                     if let Some(end) = mesh_target_name.find("]") {
@@ -466,6 +473,7 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
         // Generic node — add as joint so the hierarchy tree can display it.
         // MULT[...] nodes are mesh containers: MULT[Root_mesh]_LOD[0] etc.
         // We strip the prefix to get the clean name (e.g. "Root_mesh").
+        // The _LOD[x] suffix is also stripped so all LODs share one parent.
         // Filtered prefixes: Flame[], Class[], ROOT_, UVSets[], COL[], HOLD_
         if !name.starts_with("Flame[") 
             && !name.starts_with("Class[")
@@ -480,14 +488,19 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
                     name = name[5..end].to_string();
                 }
             }
-            model.joints.push(HODJoint {
-                name: name.clone(),
-                parent_name: p_name.clone(),
-                local_transform: transform.clone(),
-                position: None,
-                rotation: None,
-                scale: None,
-            });
+            // Only add joint if one with this name doesn't already exist.
+            // MULT[Root_mesh]_LOD[0], _LOD[1], _LOD[2] all map to "Root_mesh".
+            let already_exists = model.joints.iter().any(|j| j.name == name);
+            if !already_exists {
+                model.joints.push(HODJoint {
+                    name: name.clone(),
+                    parent_name: p_name.clone(),
+                    local_transform: transform.clone(),
+                    position: None,
+                    rotation: None,
+                    scale: None,
+                });
+            }
         }
     }
 

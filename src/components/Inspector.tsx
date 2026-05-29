@@ -418,7 +418,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   visibleMeshes,
   onToggleVisibility,
 }) => {
-  const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "bay", "thruster"]);
+  const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "badgeglow", "bay", "thruster", "innateSS", "matte", "mattealpha", "mattescissor", "matte2s", "mattealpha2s", "mattescissor2s", "shipglow", "shipglow_ns"]);
   const [renameWeaponName, setRenameWeaponName] = useState("");
   const [sourceMeshName, setSourceMeshName] = useState("");
 

@@ -197,7 +197,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   const [isAddMatOpen, setIsAddMatOpen] = useState(false);
   const [newMatName, setNewMatName] = useState("");
   const [newMatShader, setNewMatShader] = useState("ship");
-  const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "bay", "thruster"]);
+  const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "badgeglow", "bay", "thruster", "innateSS", "matte", "mattealpha", "mattescissor", "matte2s", "mattealpha2s", "mattescissor2s", "shipglow", "shipglow_ns"]);
 
   React.useEffect(() => {
     if (!model) return;
