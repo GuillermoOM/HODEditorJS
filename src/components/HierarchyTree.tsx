@@ -239,9 +239,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   React.useEffect(() => {
     const fetchPipelines = async () => {
       try {
-        const keeperTxtPath = localStorage.getItem("keeperTxtPath") || "";
-        if (keeperTxtPath) {
-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPath: keeperTxtPath });
+        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
+        if (keeperTxtPaths.length > 0) {
+          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
           setPipelines(list);
         }
       } catch (e) {

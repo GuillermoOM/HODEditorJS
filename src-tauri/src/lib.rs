@@ -388,18 +388,18 @@ fn save_hod_as(
 }
 
 #[tauri::command]
-fn get_shader_pipelines(keeper_path: Option<String>) -> Result<Vec<String>, String> {
+fn get_shader_pipelines(keeper_paths: Vec<String>) -> Result<Vec<String>, String> {
     write_log(
         "INFO",
         &format!(
-            "Scanning shader pipelines from keeper_path: {:?}",
-            keeper_path
+            "Scanning shader pipelines from {} keeper path(s)",
+            keeper_paths.len()
         ),
     );
     let mut pipelines: Vec<String> = Vec::new();
 
-    if let Some(path_str) = keeper_path {
-        let keeper_file = std::path::Path::new(&path_str);
+    for path_str in &keeper_paths {
+        let keeper_file = std::path::Path::new(path_str);
         if let Some(uncompressed_root) = keeper_file.parent() {
             let shaders_dir = uncompressed_root.join("shaders").join("gl_prog");
             if shaders_dir.is_dir() {

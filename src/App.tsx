@@ -77,7 +77,19 @@ function App() {
   const [renderMode, setRenderMode] = useState<"untextured" | "textured" | "shaded" | "wireframe" | "shaded_team" | "textured_team">("shaded");
   const [teamColor, setTeamColor] = useState("#4278a3");
   const [stripeColor, setStripeColor] = useState("#e5d94c");
-  const [keeperTxtPath, setKeeperTxtPath] = useState(() => localStorage.getItem("keeperTxtPath") || "");
+  const [keeperTxtPaths, setKeeperTxtPaths] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("keeperTxtPaths");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    // Migrate from old single-path format
+    const old = localStorage.getItem("keeperTxtPath");
+    if (old) {
+      localStorage.setItem("keeperTxtPaths", JSON.stringify([old]));
+      return [old];
+    }
+    return [];
+  });
 
   // Log application startup
   useEffect(() => {
@@ -161,8 +173,11 @@ function App() {
             dirPath = dirPath.substring(0, dirPath.length - 1);
           }
         }
-        setKeeperTxtPath(dirPath);
-        localStorage.setItem("keeperTxtPath", dirPath);
+        if (!keeperTxtPaths.includes(dirPath)) {
+          const updated = [...keeperTxtPaths, dirPath];
+          setKeeperTxtPaths(updated);
+          localStorage.setItem("keeperTxtPaths", JSON.stringify(updated));
+        }
         setStatusMsg("Successfully linked and persisted uncompressed directory!");
       }
     } catch (e: any) {
@@ -196,7 +211,7 @@ function App() {
       try {
         const parsedModel = await invoke<HODModel>("load_hod", { 
           filePath: path, 
-          keeperPath: keeperTxtPath || null 
+          keeperPath: keeperTxtPaths.length > 0 ? keeperTxtPaths[0] : null 
         });
         
         // Ensure collections are arrays to prevent undefined issues
@@ -899,7 +914,7 @@ function App() {
         <div style={{ position: "relative", height: "100%", overflow: "hidden", display: "flex", flexDirection: "column", flex: 1 }}>
           {model ? (
             <div style={{ position: "relative", width: "100%", height: "100%", flex: 1, minHeight: 0 }}>
-              {!keeperTxtPath && (
+              {keeperTxtPaths.length === 0 && (
                 <div
                   onClick={selectAndSaveKeeperPath}
                   style={{
@@ -1101,7 +1116,7 @@ function App() {
                 Browse or enter the absolute path of a Homeworld Remastered HOD file to load and edit its joint bones, markers, meshes, and textures natively.
               </div>
               
-              {!keeperTxtPath && (
+              {keeperTxtPaths.length === 0 && (
                 <div
                   style={{
                     background: "rgba(255, 171, 0, 0.06)",
@@ -1122,19 +1137,33 @@ function App() {
                     <span>HWRM Uncompressed .big Path Required</span>
                   </div>
                   <div style={{ fontSize: "12px", lineHeight: "1.5", color: "rgba(255, 255, 255, 0.85)" }}>
-                    Configure your uncompressed game data directory (containing 'keeper.txt') to automatically render .TGA textures and high-fidelity shader materials.
+                    Configure your uncompressed game data directories (containing 'keeper.txt') to automatically render .TGA textures and high-fidelity shader materials. You can add multiple paths.
                   </div>
+                  {keeperTxtPaths.map((p, i) => (
+                    <div key={i} style={{ display: "flex", gap: "8px", width: "100%" }}>
+                      <input
+                        value={p}
+                        onChange={(e) => {
+                          const updated = [...keeperTxtPaths];
+                          updated[i] = e.target.value;
+                          setKeeperTxtPaths(updated);
+                          localStorage.setItem("keeperTxtPaths", JSON.stringify(updated));
+                        }}
+                        style={{ height: "32px", fontSize: "12px", flex: 1, padding: "0 8px", borderRadius: "4px", background: "rgba(13, 22, 37, 0.6)", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}
+                      />
+                      <button
+                        onClick={() => {
+                          const updated = keeperTxtPaths.filter((_, j) => j !== i);
+                          setKeeperTxtPaths(updated);
+                          localStorage.setItem("keeperTxtPaths", JSON.stringify(updated));
+                        }}
+                        style={{ height: "32px", fontSize: "12px", padding: "0 8px", background: "#c62828", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                   <div style={{ display: "flex", gap: "8px", width: "100%" }}>
-                    <input
-                      placeholder="e.g. C:\Homeworld2\GBXTools\WorkshopTool\mod-tools\uncompressed"
-                      value={keeperTxtPath}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setKeeperTxtPath(val);
-                        localStorage.setItem("keeperTxtPath", val);
-                      }}
-                      style={{ height: "32px", fontSize: "12px", flex: 1, padding: "0 8px", borderRadius: "4px", background: "rgba(13, 22, 37, 0.6)", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}
-                    />
                     <button 
                       onClick={selectAndSaveKeeperPath}
                       style={{
@@ -1153,7 +1182,7 @@ function App() {
                       }}
                     >
                       <FolderOpen size={14} />
-                      Browse keeper.txt...
+                      Add keeper.txt...
                     </button>
                   </div>
                 </div>
