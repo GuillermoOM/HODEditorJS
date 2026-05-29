@@ -418,7 +418,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   visibleMeshes,
   onToggleVisibility,
 }) => {
-  const pipelines = Object.keys(SHADER_SLOTS);
+  const [pipelines, setPipelines] = useState<string[]>([]);
   const [renameWeaponName, setRenameWeaponName] = useState("");
   const [sourceMeshName, setSourceMeshName] = useState("");
 
@@ -447,6 +447,22 @@ export const Inspector: React.FC<InspectorProps> = ({
       }
     }
   }, [selectedNode, model]);
+
+  useEffect(() => {
+    const fetchPipelines = async () => {
+      try {
+        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
+        if (keeperTxtPaths.length > 0) {
+          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
+          setPipelines(list);
+        }
+      } catch (e) {
+        console.error("Failed to fetch shader pipelines:", e);
+      }
+    };
+    fetchPipelines();
+  }, []);
+
 
   // Generic handlers
   const handleNavLightChange = (fieldName: keyof HODNavLight, value: any) => {
