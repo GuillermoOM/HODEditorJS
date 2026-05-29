@@ -162,6 +162,12 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ## Decision Log
 
+### 2026-05-29: Final Test Suite Validation
+
+**Decision:** Ran the complete test suite (`cargo test`, `verify_lossless`, `test_hodor_replication`) to validate the final state of the Rust backend.
+**Reason:** Ensures the Type 2 max-offset compression fix, the vertex deduplication logic, and the serialization routines are stable.
+**Result:** 100% Success Rate. The generator successfully built `ter_centaur_generated.hod` directly from the raw `ter_centaur` assets.
+
 ### 2026-05-29: Pipeline Workflow Consolidation
 
 **Decision:** Formally documented the full data transmutation pipeline (OBJ -> DAEnerys -> HODOR) in `daenerys-obj-to-dae-pipeline.md` and `architecture-overview.md`.
