@@ -197,7 +197,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   const [isAddMatOpen, setIsAddMatOpen] = useState(false);
   const [newMatName, setNewMatName] = useState("");
   const [newMatShader, setNewMatShader] = useState("ship");
-  const [pipelines, setPipelines] = useState<string[]>([]);
+  const pipelines = ["ship", "badge", "badgeglow", "bay", "thruster", "innateSS", "matte", "mattealpha", "mattescissor", "matte2s", "mattealpha2s", "mattescissor2s", "shipglow", "shipglow_ns"];
 
   React.useEffect(() => {
     if (!model) return;
@@ -235,21 +235,6 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     }
     setNewNodeName(defName);
   }, [addNodeType, isAddNodeOpen, model]);
-
-  React.useEffect(() => {
-    const fetchPipelines = async () => {
-      try {
-        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
-        if (keeperTxtPaths.length > 0) {
-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
-          setPipelines(list);
-        }
-      } catch (e) {
-        console.error("Failed to fetch shader pipelines:", e);
-      }
-    };
-    fetchPipelines();
-  }, []);
 
   // Weapon Grouping helpers
   const getWeaponGroupInfo = (name: string) => {
