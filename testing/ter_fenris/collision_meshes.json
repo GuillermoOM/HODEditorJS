@@ -1,0 +1,35 @@
+[
+  {
+    "name": "Root",
+    "min_extents": {
+      "x": -34.6876,
+      "y": -78.4964,
+      "z": -110.794
+    },
+    "max_extents": {
+      "x": 34.4946,
+      "y": 63.7456,
+      "z": 132.348
+    },
+    "center": {
+      "x": 7.651172,
+      "y": 18.113113,
+      "z": 7.5370674
+    },
+    "radius": 127.773735,
+    "mesh": {
+      "name": "CollisionMesh",
+      "parent_name": "",
+      "lod": 0,
+      "has_mult_tags": false,
+      "parts": [
+        {
+          "material_index": 0,
+          "vertex_mask": 1,
+          "vertices": [],
+          "indices": []
+        }
+      ]
+    }
+  }
+]

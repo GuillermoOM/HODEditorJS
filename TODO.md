@@ -37,11 +37,14 @@
 - [x] Since Weapon and Turret assemblies are similar, we should be able to have an option to convert Weapon into Turret assembly in the inspector, which would add any missing nodes (must be repaired first).
 - [x] Creation and Loading of Animations and proper inspector / editor (ter_orion and hgn_mothership are examples that use this) - Added Create Animation, Add Track, and Add Keyframe controls.
 - [x] Make Hardpoint nodes assemblies
+- [x] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`
 
-- [ ] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`
+- [ ] Renaming an Assembly should only be done via the Assembly node (not position node), and make sure the assembly isn't broken when renamed (i.e. I renamed a Repair assembly node and it disbanded into normal joint nodes with the assembly gone!)
 - [ ] fix loading of HOD 1.0 files into the editor.
-- [ ] HOD 1.0 File animation proper loading (able to be later saved on to HOD 2.0 file), Animations aren't detected when loading them currently.
-- [ ] Full Test migrating a HOD 1.0 ship to HOD 2.0 with the editor and running it in game
+- [ ] Fix the following HOD 1.0 loading issues:
+    - Animations not being loaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
+    - Docking Paths not being loeaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
+- [ ] Saving a loaded HOD 1.0 file (which creates a HOD 2.0) renders wrong in game, showing the whole mesh being turned some degrees to the left and down.
 
 ## As a final test for HOD modifying:
 

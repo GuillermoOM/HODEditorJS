@@ -1,0 +1,14 @@
+[
+  {
+    "name": "fenris_DIFF",
+    "format": "DXT1"
+  },
+  {
+    "name": "fenris_GLOW",
+    "format": "DXT1"
+  },
+  {
+    "name": "fenris_TEAM",
+    "format": "DXT1"
+  }
+]

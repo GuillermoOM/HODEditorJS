@@ -39,15 +39,42 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
     for node in doc.descendants() {
         if node.has_tag_name("material") {
             if let Some(name) = node.attribute("name") {
-                // e.g. MAT[fighter2S-01]_SHD[ship]
+                // DAEnerys format: MAT[texture]_SHD[shader]
+                // Extract core name and shader separately
+                let (mat_name, shader_name) = if name.starts_with("MAT[") {
+                    let core = name
+                        .find("]_SHD[")
+                        .map(|end| name[4..end].to_string())
+                        .unwrap_or_else(|| name.to_string());
+                    let shader = name
+                        .find("]_SHD[")
+                        .and_then(|start| {
+                            let rest = &name[start + 6..];
+                            rest.find(']').map(|end| rest[..end].to_string())
+                        })
+                        .unwrap_or_else(|| "default".to_string());
+                    (core, shader)
+                } else {
+                    (name.to_string(), "default".to_string())
+                };
+
                 material_names.push(name.to_string());
                 model.materials.push(HODMaterial {
-                    name: name.to_string(),
-                    shader_name: "default".to_string(),
+                    name: mat_name,
+                    shader_name,
                     texture_maps: Vec::new(),
                 });
             }
         }
+    }
+
+    if doc.descendants().any(|node| (node.has_tag_name("triangles") || node.has_tag_name("polylist")) && node.attribute("material").is_none()) {
+        material_names.push("nameplate.bmp".to_string());
+        model.materials.push(HODMaterial {
+            name: "nameplate.bmp".to_string(),
+            shader_name: "default".to_string(),
+            texture_maps: Vec::new(),
+        });
     }
 
     // Build meshes from library_geometries
@@ -85,17 +112,29 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                 .children()
                 .filter(|n| n.has_tag_name("triangles") || n.has_tag_name("polylist"))
             {
+                let has_material = triangles.attribute("material").is_some();
+
+                // HODOR behavior: parts without a material attribute get
+                // mask=0xB (pos+normal+UV, no tangent/binormal) and are
+                // deduplicated by source indices. Parts with a material
+                // get mask=0x600B (includes tangent/binormal) and are
+                // kept as flat per-corner vertices.
+                let vertex_mask = if has_material {
+                    0x01 | 0x02 | 0x08 | 0x2000 | 0x4000
+                } else {
+                    0x01 | 0x02 | 0x08
+                };
+
                 let mut mesh_part = HODMeshPart {
                     material_index: 0,
-                    vertex_mask: 0x01 | 0x02 | 0x08 | 0x2000 | 0x4000,
+                    vertex_mask,
                     vertices: Vec::new(),
                     indices: Vec::new(),
                 };
 
-                if let Some(mat) = triangles.attribute("material") {
-                    if let Some(idx) = material_names.iter().position(|m| m == mat) {
-                        mesh_part.material_index = idx;
-                    }
+                let mat = triangles.attribute("material").unwrap_or("nameplate.bmp");
+                if let Some(idx) = material_names.iter().position(|m| m == mat) {
+                    mesh_part.material_index = idx;
                 }
 
                 let mut pos_offset = 0;
@@ -138,9 +177,37 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                         let norm_data = source_map.get(&norm_source_id);
                         let uv_data = source_map.get(&uv_source_id);
 
+                        // For parts without material: deduplicate by source
+                        // indices (pos, norm, uv) to match HODOR's indexed
+                        // vertex output.
+                        let mut vertex_dedup: HashMap<(usize, usize, usize), u16> =
+                            HashMap::new();
+
                         let mut v_idx = 0;
                         while v_idx + stride <= indices.len() {
                             let p_i = indices[v_idx + pos_offset as usize];
+                            let n_i = if norm_offset >= 0 {
+                                indices[v_idx + norm_offset as usize]
+                            } else {
+                                0
+                            };
+                            let u_i = if uv_offset >= 0 {
+                                indices[v_idx + uv_offset as usize]
+                            } else {
+                                0
+                            };
+
+                            if !has_material {
+                                let key = (p_i, n_i, u_i);
+                                if let Some(&existing_idx) = vertex_dedup.get(&key) {
+                                    mesh_part.indices.push(existing_idx);
+                                    v_idx += stride;
+                                    continue;
+                                }
+                                let new_idx = mesh_part.vertices.len() as u16;
+                                vertex_dedup.insert(key, new_idx);
+                            }
+
                             let mut vertex = HODVertex {
                                 position: Vector3 {
                                     x: 0.0,
@@ -176,7 +243,6 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                             }
 
                             if norm_offset >= 0 {
-                                let n_i = indices[v_idx + norm_offset as usize];
                                 if let Some(nd) = norm_data {
                                     if n_i * 3 + 2 < nd.len() {
                                         if let Some(ref mut n) = vertex.normal {
@@ -189,7 +255,6 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                             }
 
                             if uv_offset >= 0 {
-                                let u_i = indices[v_idx + uv_offset as usize];
                                 if let Some(ud) = uv_data {
                                     if u_i * 2 + 1 < ud.len() {
                                         if let Some(ref mut uv_coords) = vertex.uv {
@@ -258,6 +323,28 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
         for child in visual_scene.children().filter(|n| n.has_tag_name("node")) {
             parse_scene_node(child, None, &mut model);
         }
+    }
+
+    // Ensure a "Root" joint exists so the frontend can display the full
+    // hierarchy tree. Meshes are assigned parent_name="Root" during
+    // geometry parsing, but the scene parser skips ROOT_ wrapper nodes.
+    // Without this, the HierarchyTree has no root to attach meshes under.
+    if !model.joints.iter().any(|j| j.name == "Root") {
+        model.joints.insert(0, HODJoint {
+            name: "Root".to_string(),
+            parent_name: None,
+            local_transform: Matrix4 {
+                m: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+            position: None,
+            rotation: None,
+            scale: None,
+        });
     }
 
     Ok(model)
@@ -376,16 +463,23 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             vertices: Vec::new(),
         });
     } else {
-        // Just a generic node (e.g. MULT[Root_mesh])
-        // Let's add it as a joint so its transform is kept in the hierarchy
-        if !name.starts_with("MULT[") 
-            && !name.starts_with("Flame[") 
+        // Generic node — add as joint so the hierarchy tree can display it.
+        // MULT[...] nodes are mesh containers: MULT[Root_mesh]_LOD[0] etc.
+        // We strip the prefix to get the clean name (e.g. "Root_mesh").
+        // Filtered prefixes: Flame[], Class[], ROOT_, UVSets[], COL[], HOLD_
+        if !name.starts_with("Flame[") 
             && !name.starts_with("Class[")
             && !name.starts_with("ROOT_")
             && !name.starts_with("UVSets[")
             && !name.starts_with("COL[")
             && !name.starts_with("HOLD_")
         {
+            // Strip MULT[...] prefix to get clean mesh name
+            if name.starts_with("MULT[") {
+                if let Some(end) = name.find("]") {
+                    name = name[5..end].to_string();
+                }
+            }
             model.joints.push(HODJoint {
                 name: name.clone(),
                 parent_name: p_name.clone(),

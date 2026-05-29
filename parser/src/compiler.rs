@@ -434,47 +434,34 @@ pub fn compile_hodor_style_tangent_part(
     source_vertices: &[HODVertex],
     source_indices: &[u16],
 ) -> (Vec<HODVertex>, Vec<u16>) {
-    let mut vertices = Vec::new();
-    let mut indices = Vec::with_capacity(source_indices.len());
+    let mut raw_vertices = source_vertices.to_vec();
 
-    for (tri_num, tri) in source_indices.chunks_exact(3).enumerate() {
-        let mut compiled_tri = [0u16; 3];
-
-        for (tri_pos, &source_idx) in tri.iter().enumerate() {
-            let Some(source_vertex) = source_vertices.get(source_idx as usize) else {
-                continue;
-            };
-            let mut vertex = source_vertex.clone();
-            vertex.tangent = Some(Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            });
-            vertex.binormal = Some(Vector3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            });
-            let out_idx = find_or_add_current_vertex(&mut vertices, vertex);
-            compiled_tri[tri_pos] = out_idx;
-            
-            // Debug first 25 source vertices
-            if source_idx < 25 {
-                let existing = vertices.len() - if out_idx as usize == vertices.len() - 1 { 1 } else { 0 };
-                eprintln!("DEDUP tri_num={} source_idx={} -> out_idx={} (buf_size={}) pos=({:.6},{:.6},{:.6})",
-                    tri_num, source_idx, out_idx, vertices.len(),
-                    source_vertices[source_idx as usize].position.x,
-                    source_vertices[source_idx as usize].position.y,
-                    source_vertices[source_idx as usize].position.z);
-            }
-        }
-
-        indices.extend_from_slice(&compiled_tri);
-        add_tangent_contribution(&mut vertices, compiled_tri);
+    // 1. Zero out tangents so we can accumulate properly
+    for v in &mut raw_vertices {
+        v.tangent = Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
+        v.binormal = Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
     }
 
-    finalize_tangent_space(&mut vertices);
-    (vertices, indices)
+    // 2. Accumulate tangents onto the raw unmerged vertices
+    for tri in source_indices.chunks_exact(3) {
+        let compiled_tri = [tri[0], tri[1], tri[2]];
+        add_tangent_contribution(&mut raw_vertices, compiled_tri);
+    }
+
+    // 3. Normalize the tangents
+    finalize_tangent_space(&mut raw_vertices);
+
+    // 4. Deduplicate AFTER tangent space is computed (this prevents smoothing across sharp edges)
+    let mut deduplicator = MeshDeduplicator::new();
+    let mut indices = Vec::with_capacity(source_indices.len());
+
+    for &idx in source_indices {
+        let v = &raw_vertices[idx as usize];
+        let new_idx = deduplicator.add_vertex(v);
+        indices.push(new_idx);
+    }
+
+    (deduplicator.get_vertices().to_vec(), indices)
 }
 
 fn should_generate_tangent_space(part: &HODMeshPart, vertices: &[HODVertex]) -> bool {
@@ -489,21 +476,23 @@ fn prepare_vertices_for_hwrm(part: &HODMeshPart) -> Vec<HODVertex> {
     vertices
 }
 
-pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
+pub fn compile_model_meshes(model: &mut HODModel) -> Vec<CompiledMesh> {
     let mut compiled_meshes = Vec::new();
 
-    for mesh in &model.meshes {
+    for mesh in &mut model.meshes {
+        println!("[DEBUG] Compiling mesh: {} lod={}", mesh.name, mesh.lod);
         let mut new_parts = Vec::new();
-
-        for part in &mesh.parts {
-            if !part.indices.is_empty() {
-                let should_generate_tangents = should_generate_tangent_space(part, &part.vertices);
+        if !mesh.has_mult_tags {
+            for part in &mut mesh.parts {
                 let is_flat_triangle_list = part.indices.len() == part.vertices.len()
                     && part
                         .indices
                         .iter()
                         .enumerate()
                         .all(|(idx, &vertex_idx)| vertex_idx as usize == idx);
+
+                let should_generate_tangents = should_generate_tangent_space(part, &part.vertices);
+                println!("[DEBUG]   Part verts={}, indices={}, is_flat={}, should_gen_tangents={}", part.vertices.len(), part.indices.len(), is_flat_triangle_list, should_generate_tangents);
 
                 let (vertices, indices) = if is_flat_triangle_list {
                     if should_generate_tangents {
@@ -521,7 +510,9 @@ pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
                     vertices,
                     indices,
                 });
-            } else {
+            }
+        } else {
+            for part in &mut mesh.parts {
                 let vertices = prepare_vertices_for_hwrm(part);
                 let mut dedup = MeshDeduplicator::new();
                 let mut new_indices = Vec::new();
@@ -550,6 +541,7 @@ pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
         });
     }
 
+    println!("[DEBUG] Finished compile_meshes.");
     compiled_meshes
 }
 
@@ -559,6 +551,7 @@ pub fn generate_pool_data(
     decomp_tex_len: u32,
     pool_type: u32,
 ) -> std::io::Result<Vec<u8>> {
+    println!("[DEBUG] Starting generate_pool_data...");
     let mut decomp_mesh = Vec::new();
     let mut decomp_face = Vec::new();
 

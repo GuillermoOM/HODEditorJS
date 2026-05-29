@@ -9,8 +9,8 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ## Current Status
 
 **Phase:** Phase 5 — HODOR Replication Passing  
-**Status:** MS Xpress compression is replicated, DAE multi-material import works, the empty-original V2 POOL overwrite path is guarded, and HODOR-style incremental vertex sharing now matches `ter_pharos` and `ter_centaur`. `cargo run --bin test_hodor_replication` passes 2/2.  
-**Last Updated:** 2026-05-28 23:30 UTC  
+**Status:** `test_hodor_replication` passes 3/3 (`ter_pharos`, `ter_centaur`, `ter_fenris`). The `ter_fenris` vertex deduplication issue (8 vs 12) was resolved by discovering HODOR's mask-based dedup rule: parts without a material attribute get `mask=0xB` (no tangent/binormal) and are deduplicated by source indices. Parts with material get `mask=0x600B` and kept as flat per-corner vertices. Additionally, the DAE parser now creates a "Root" joint for the hierarchy tree, adds MULT nodes as joints with clean names, and parses DAEnerys material names (`MAT[name]_SHD[shader]`) into separate name/shader fields.
+**Last Updated:** 2026-05-29 23:45 UTC  
 **Updated By:** OpenCode Agent
 
 ---
@@ -122,6 +122,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 - [x] DAE parser fixed to merge consecutive parts with same material
 - [x] HODOR-style DAE vertex/index sharing implemented for generated tangent-space parts
 - [x] HODOR replication test passes for `ter_pharos` and `ter_centaur`
+- [x] `ter_fenris` asset fixture integrated into `test_hodor_replication`
 
 ### Key Findings: HODOR's Compression Algorithm
 
@@ -162,6 +163,21 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ## Decision Log
 
+### 2026-05-29: HODOR Mask-Based Vertex Deduplication Rule
+**Decision:** Updated `parser/src/dae.rs` to set `vertex_mask=0xB` (pos+normal+UV, no tangent/binormal) for `<triangles>` elements without a material attribute, and deduplicate those vertices by source indices (pos_idx, norm_idx, uv_idx). Parts WITH a material attribute keep `mask=0x600B` and remain as flat per-corner vertices (no dedup).
+**Reason:** Reverse engineering of HODOR's BMSH binary output for `ter_fenris` revealed that the nameplate part (4 triangles, no material) is stored with `mask=0xB`, 8 vertices, and 12 remapped indices. The main ship part (with material "MAT[Fenris-HTL.bmp]_SHD[ship]") has `mask=0x600B` and 17659 vertices. HODOR uses the presence/absence of a material attribute to decide whether to include tangent/binormal in the vertex format and whether to deduplicate. Parts without material don't need tangent/binormal (no shader that uses normal maps), so HODOR strips them and deduplicates by source indices.
+**Impact:** `test_hodor_replication` passes 3/3. The `ter_fenris` vertex count mismatch (8 vs 12) is resolved.
+
+### 2026-05-29: DAE Parser Root Joint & MULT Node Hierarchy
+**Decision:** Updated `parser/src/dae.rs` to: (1) create a "Root" joint if none exists after scene parsing, (2) add MULT[...] nodes as joints with the prefix stripped (e.g., "MULT[Root_mesh]_LOD[0]" → "Root_mesh"). Also updated `test_hodor_replication.rs` to skip MTL validation when no MTL files exist (DAE pipeline only needs TGA files).
+**Reason:** The DAE parser skipped MULT[...] nodes entirely, leaving no "Root" joint for the frontend HierarchyTree to attach meshes under. The frontend's `renderJointNode` finds meshes by `parent_name`, but without a "Root" joint, no meshes were displayed. MULT nodes provide the mesh hierarchy structure (LOD children) that users expect to see.
+**Impact:** DAE imports now display the full node hierarchy in the editor UI, including Root node, mesh nodes, and LOD children.
+
+### 2026-05-29: DAEnerys Material Name Parsing
+**Decision:** Updated `parser/src/dae.rs` to parse DAEnerys material names `MAT[name]_SHD[shader]` into separate `name` and `shader_name` fields. E.g., `MAT[centaur]_SHD[matte]` → name="centaur", shader_name="matte". The original format is still used internally for triangle material attribute matching.
+**Reason:** Material names weren't correctly represented when imported. They showed up with full DAEnerys formatting as `"MAT[centaur]_SHD[matte]"` instead of just `"centaur"` with shader `"matte"`.
+**Impact:** Materials now display correctly in the editor UI with separate name and shader fields.
+
 ### 2026-05-29: Documentation Restructuring & Knowledge Graph
 **Decision:** Created `docs/README.md` to serve as a central Knowledge Graph, bridging the UI source of truth, active backend specifications, and agent handbooks. Moved all stale phase logs and legacy test results into `archive_logs/`.
 **Reason:** The root `docs/` folder became heavily cluttered with outdated historical tracking plans. Future agents need a strict separation between "what is true today" (active spec) and "what happened last week" (archived log) to prevent regressions.
@@ -200,6 +216,12 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 **Decision:** Fixed `find_best_match_type` in `xpress.rs` to limit Type 2 matches to a maximum offset of 1023 (was incorrectly 4095).
 **Reason:** Reverse engineering of HODOR's `FUN_00448600` decompressor and its match table (`DAT_00479778`) revealed that Type 2 matches only use 10 bits for the offset. The previous implementation allowed 12 bits, causing the offset to overflow and truncate when cast to `u16` during encoding. This resulted in the game engine's decompressor reading the wrong offsets and corrupting the stream, explaining the "vertex explosion" and spikiness seen in-game despite structural parsing passing.
 **Impact:** Compression is now fully verified against the binary logic of HODOR's match tables. `ter_centaur` generated models should no longer exhibit spikiness in-game.
+
+### 2026-05-29: ter_fenris Test Suite Integration
+
+**Decision:** Modified `test_hodor_replication` and `dae.rs` to handle DAEnerys export quirks for `ter_fenris.DAE`.
+**Reason:** DAEnerys exported `<triangles>` without a `material` attribute. This caused the parser and test suite to crash when expecting a mapped material. The parser was updated to assign `nameplate.bmp` as a fallback dummy material matching HODOR's behavior, and the test suite was relaxed to gracefully handle local TGA path extraction from DAEnerys absolute path outputs. Additionally, created a `dump_metadata.rs` utility script to rip JSON metadata configurations (like `joints.json`, `markers.json`, etc.) from reference HODOR files directly into the testing directory, completing the necessary files to test `ter_fenris`.
+**Impact:** `ter_fenris` is now fully integrated into `cargo run --bin test_hodor_replication`. It currently fails on a vertex count mismatch (8 vs 12) for `Root_mesh` lod 0 part 1.
 
 ### 2026-05-28: Compression Algorithm Replication
 
@@ -247,23 +269,21 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ## Current Issues
 
-1. **No current HODOR structural mismatch for tracked fixtures:** `cargo run --bin test_hodor_replication` passes `ter_pharos` and `ter_centaur` after HODOR-style incremental tangent deduplication.
+1. **Compression size parity remains non-byte-exact:** Generated compressed POOL sizes still differ from HODOR because compressor choices differ, but decompressed structures and round-trip parsing pass.
 
-2. **Compression size parity remains non-byte-exact:** Generated compressed POOL sizes still differ from HODOR because compressor choices differ, but decompressed structures and round-trip parsing pass.
+2. **In-Game Re-test Pending:** Re-test generated `ter_centaur` and `ter_fenris` in Homeworld Remastered now that vertex and index counts match HODOR exactly.
 
-3. **In-Game Re-test Pending:** Re-test generated `ter_centaur` in Homeworld Remastered now that vertex and index counts match HODOR.
-
-4. **ter_fenris Source-Asset Fixture Not Integrated:** `cargo run --bin test_fenris` passes the empty-original save/parse path, but `ter_fenris` still needs full source metadata/test integration.
+3. **Verify Lossless size diffs expected:** `verify_lossless` shows "Sizes do not match" for all test files — this is the known compression size parity issue, not a structural problem. Round-trip parsing succeeds for all files.
 
 ---
 
 ## Next Steps
 
-1. **Re-test in-game** with the new `ter_centaur_generated.hod` that matches HODOR vertex/index counts
-2. **Add ter_fenris to the HODOR replication suite** with proper JSON metadata
-3. **Verify OBJ pipeline** produces the same results as the DAE pipeline for editor workflow
-4. **Reduce noisy parser diagnostics** in normal test output once no longer needed for reverse-engineering
-5. **Investigate remaining compression size differences** only if byte-size parity becomes a requirement
+1. **Re-test in-game** with the new generated HOD files for `ter_centaur` and `ter_fenris` that match HODOR vertex/index counts.
+2. **Verify OBJ pipeline** produces the same results as the DAE pipeline for editor workflow.
+3. **Reduce noisy parser diagnostics** in normal test output once no longer needed for reverse-engineering.
+4. **Investigate remaining compression size differences** only if byte-size parity becomes a requirement.
+5. **Test DAE import in the editor UI** to verify the Root joint, MULT node hierarchy, and material name parsing work correctly end-to-end.
 
 ---
 
@@ -307,13 +327,13 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 - `testing/ter_centaur/` — Multi-material test (centaur + glass), DAE available
 - `testing/ter_pharos/` — Single material test, DAE available
-- `testing/ter_fenris/` — OBJ from DAE (via Blender), DAE available
+- `testing/ter_fenris/` — DAE-only test (OBJ files removed), TGA textures available
 - `testing/ter_centaur/rtl_test/` — Decompressed and HODOR-compressed pool binaries
 
 ---
 
-**Latest Test Results:** `cargo run --bin test_hodor_replication` passes 2/2 (`ter_pharos`, `ter_centaur`) with `ter_centaur` reparsing as `centaur=3845` and `glass=778` per LOD. `cargo run --bin verify_lossless` reparsed generated files structurally successfully with expected size mismatches. `cargo run --bin test_fenris` passed the empty-original save/parse path.  
+**Latest Test Results:** `cargo run --bin test_hodor_replication` passes 3/3 (`ter_pharos`, `ter_centaur`, `ter_fenris`). `cargo run --bin verify_lossless` round-trip parsing succeeds for all test files (compressed sizes differ as expected). `cargo check` on `src-tauri` succeeds.
 
-**Document Version:** 6.2  
-**Last Updated:** 2026-05-28  
-**Status:** Compression fully replicated. DAE parser fixed. HODOR structural replication passing for tracked fixtures.
+**Document Version:** 7.0  
+**Last Updated:** 2026-05-29  
+**Status:** HODOR structural replication passing for all 3 fixtures. DAE parser handles mask-based deduplication, Root joint creation, MULT node hierarchy, and DAEnerys material name parsing. Compression fully replicated (size parity non-exact).

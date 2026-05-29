@@ -1,0 +1,66 @@
+[
+  {
+    "name": "e1",
+    "section": 0,
+    "size": 80.0,
+    "phase": 0.0,
+    "frequency": 0.0,
+    "style": "default",
+    "color": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 1.0
+    },
+    "distance": 150.0,
+    "sprite_visible": true,
+    "high_end_only": false
+  },
+  {
+    "name": "e2",
+    "section": 0,
+    "size": 80.0,
+    "phase": 0.0,
+    "frequency": 0.0,
+    "style": "default",
+    "color": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 1.0
+    },
+    "distance": 150.0,
+    "sprite_visible": true,
+    "high_end_only": false
+  },
+  {
+    "name": "e3",
+    "section": 0,
+    "size": 80.0,
+    "phase": 0.0,
+    "frequency": 0.0,
+    "style": "default",
+    "color": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 1.0
+    },
+    "distance": 150.0,
+    "sprite_visible": true,
+    "high_end_only": false
+  },
+  {
+    "name": "e4",
+    "section": 0,
+    "size": 80.0,
+    "phase": 0.0,
+    "frequency": 0.0,
+    "style": "default",
+    "color": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 1.0
+    },
+    "distance": 150.0,
+    "sprite_visible": true,
+    "high_end_only": false
+  }
+]

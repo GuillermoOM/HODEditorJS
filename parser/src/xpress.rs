@@ -197,7 +197,8 @@ pub fn compress(input: &[u8]) -> Vec<u8> {
         let mut best_length = 0usize;
         let mut best_offset = 0usize;
 
-        while start != -1 && chain_len < 4096 {
+        let max_chain = if input_len > 100_000 { 32 } else { 256 };
+        while start != -1 && chain_len < max_chain {
             let start_idx = start as usize;
             let offset = pos - start_idx;
             if offset > 0x1FFFFF {

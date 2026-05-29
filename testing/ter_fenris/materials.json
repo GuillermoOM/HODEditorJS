@@ -1,0 +1,12 @@
+[
+  {
+    "name": "Fenris-HTL.bmp",
+    "shader_name": "ship",
+    "texture_maps": ["fenris_DIFF", "fenris_GLOW", "fenris_TEAM"]
+  },
+  {
+    "name": "nameplate.bmp",
+    "shader_name": "innateSS",
+    "texture_maps": []
+  }
+]

@@ -4873,7 +4873,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     use crate::xpress;
     let mut model = model.clone();
     generate_collision_mesh(&mut model);
-    let mut compiled = crate::compiler::compile_model_meshes(&model);
+    let mut compiled = crate::compiler::compile_model_meshes(&mut model);
 
     // Sort meshes by LOD within each base name group so POOL and BMSH ordering
     // matches HODOR's expected sequential LOD layout.
