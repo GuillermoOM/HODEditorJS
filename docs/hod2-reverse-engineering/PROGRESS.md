@@ -9,8 +9,8 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ## Current Status
 
 **Phase:** Phase 4 Ongoing  
-**Status:** BREAKTHROUGH: Game engine uses zlib inflate, NOT MS Xpress LZ77. Need to switch compressor.  
-**Last Updated:** 2026-05-29 02:00 UTC  
+**Status:** BREAKTHROUGH: Found HODOR's MS Xpress decompressor via Ghidra. Decompressor uses lookup tables with 8 match types (3-bit selector) and batch literal processing. Our decompressor uses different bit layout — must rewrite to match HODOR's.  
+**Last Updated:** 2026-05-29 04:00 UTC  
 **Updated By:** OpenCode Agent
 
 ---
@@ -162,14 +162,42 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 6. **Uncompressed Textures Look Blocky:** DXT encoder quality issue, separate from compression.
 
+7. **HODOR's MS Xpress Decompressor Found (FUN_00448600, 316 bytes at VA 0x448600):**
+   - Uses lookup tables at `DAT_00479778` (match decode) and `DAT_00479764` (literal count)
+   - **8 match types** (3-bit selector: `word & 7`), not 5 as we assumed
+   - **Batch literal processing**: copies 1-4 literal bytes at once using literal count table
+   - Indicator starts at `uVar11 = 1` (reads first word immediately on first iteration)
+   - Match decode table entries: `(mask, shift_lo, mask2, shift_hi, consumed_bytes)`
+     - Type 0: `(0xFF, 2, 0x00, 0, 1)` — 1-byte match, offset 6 bits, length 3
+     - Type 1: `(0xFFFF, 2, 0x00, 0, 2)` — 2-byte match, offset 14 bits, length 3
+     - Type 2: `(0xFFFF, 6, 0x0F, 2, 2)` — 2-byte match, offset 12 bits, length 3-18
+     - Type 3: `(0xFFFFFF, 8, 0x1F, 3, 3)` — 3-byte match, offset 21 bits, length 3-34
+     - Type 4: `(0xFF, 2, 0x00, 0, 1)` — same as Type 0
+     - Type 5: `(0xFFFF, 2, 0x00, 0, 2)` — same as Type 1
+     - Type 6: `(0xFFFF, 6, 0x0F, 2, 2)` — same as Type 2
+     - Type 7: `(0xFFFFFFFF, 11, 0xFF, 3, 4)` — 4-byte match, offset 21 bits, length 3-258
+   - Literal count table (indexed by `indicator & 0xF`):
+     - `[0]=4, [1]=0, [2]=1, [3]=0, [4]=2, [5]=0, [6]=1, [7]=0, [8]=3, [9]=0, [10]=1, [11]=0, [12]=2, [13]=0, [14]=1, [15]=0`
+     - `0` means "treat as 1" (single literal byte)
+
+8. **POOL Chunk Reader (FUN_00434f60, 177 bytes):**
+   - Reads pool count (u32), then 3 sub-pools via `FUN_00434ea0`
+   - Each sub-pool: `compressed_size(u32), decompressed_size(u32), data`
+   - If `compressed_size != decompressed_size`, decompresses via `FUN_00448600`
+
+9. **HOD File Writer (FUN_00421070, 286 bytes):**
+   - Called at end of main DAE->HOD converter (`FUN_00411b90`)
+   - Creates writer object (24 bytes) via `FUN_00421190`
+   - Actual write happens via virtual function call
+
+10. **Compression Bypass Still Active:** `compress_or_raw()` in `xpress.rs` returns raw data. Files render correctly but are 3-4x larger.
+
 ### Next Steps
 
-1. **Test if POOL data is raw zlib** — compress decompressed mesh pool with zlib deflate, compare with HODOR's bytes
-2. **Replace MS Xpress compressor with zlib** — use `flate2` crate in `parser/src/xpress.rs`
-3. **Test in-game** — verify no spikiness and correct textures
-4. **Compare bytes with HODOR** — verify byte-for-byte match (or close enough)
-3. **Try Windows RtlCompressBuffer API** — the game engine might use the Windows NT compression API
-4. **Match HODOR's compressor byte-for-byte** — fix match selection strategy to produce identical bytes
+1. **Rewrite decompressor to match HODOR's** — use lookup tables from `DAT_00479778` and `DAT_00479764`, implement 8 match types, batch literal processing
+2. **Rewrite compressor to match HODOR's** — produce bytes that HODOR's decompressor can handle (8 match types, batch literals)
+3. **Test round-trip** — compress → decompress → verify identical output
+4. **Test in-game** — verify no spikiness and correct textures
 5. Fix face pool size mismatch (27KB missing data)
 6. Fix serialization asymmetries (alignment, stride, prim_group_count)
 
@@ -196,6 +224,6 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ---
 
-**Document Version:** 4.0  
+**Document Version:** 5.0  
 **Last Updated:** 2026-05-29  
-**Status:** Xpress compression bypass workaround being implemented. Hybrid swap tests completed.  
+**Status:** HODOR's MS Xpress decompressor fully reverse-engineered via Ghidra. Decompressor uses 8 match types and batch literal processing via lookup tables. Must rewrite our compressor/decompressor to match.  
