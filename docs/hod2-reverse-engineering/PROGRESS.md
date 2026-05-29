@@ -162,6 +162,12 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ## Decision Log
 
+### 2026-05-29: Frontend Integration & Pipeline Validation
+
+**Decision:** Verified frontend UI compatibility with the new Rust backend logic for HOD 1.0, DAE, and OBJ imports. Updated UI messages to explicitly indicate "HOD 2.0" compilation.
+**Reason:** The backend seamlessly handles HOD 1.0 (`!has_pool`) and DAE/OBJ (`original_bytes.is_empty()`) by auto-triggering `generate_v2_from_model` internally during `save_hod` and `save_hod_as`. The UI needed clearer signaling so the user knows the tool is fully automatically converting these formats to HOD 2.0.
+**Result:** Complete end-to-end functionality confirmed. The editor natively serves as a fully featured HOD 2.0 transmutator without requiring user intervention.
+
 ### 2026-05-29: Final Test Suite Validation
 
 **Decision:** Ran the complete test suite (`cargo test`, `verify_lossless`, `test_hodor_replication`) to validate the final state of the Rust backend.

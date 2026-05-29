@@ -759,13 +759,13 @@ function App() {
       // Phase 4: Trigger native Rust HOD v2 compression and writer
       await invoke("save_hod", { filePath, model });
       setIsDirty(false);
-      invoke("log_event", { level: "INFO", message: `Successfully saved patched HOD to path: ${filePath}` }).catch(console.error);
-      setStatusMsg("HOD file saved successfully");
+      invoke("log_event", { level: "INFO", message: `Successfully compiled and saved HOD 2.0 to path: ${filePath}` }).catch(console.error);
+      setStatusMsg("HOD 2.0 file compiled successfully");
     } catch (e: any) {
-      const err = `Frontend failed to save HOD to path ${filePath}: ${e.toString()}`;
+      const err = `Frontend failed to save HOD 2.0 to path ${filePath}: ${e.toString()}`;
       invoke("log_event", { level: "ERROR", message: err }).catch(console.error);
       setErrorMsg(e.toString());
-      setStatusMsg("Error saving file");
+      setStatusMsg("Failed to save HOD 2.0");
     } finally {
       setIsSaving(false);
     }
@@ -790,14 +790,14 @@ function App() {
       
       setFilePath(selectedPath);
       setIsDirty(false);
-      invoke("log_event", { level: "INFO", message: `Successfully saved patched HOD as a new file at: ${selectedPath}` }).catch(console.error);
-      setStatusMsg("HOD file saved as new file successfully");
-      alert(`HOD file saved successfully to new path:\n${selectedPath}`);
+      invoke("log_event", { level: "INFO", message: `Successfully compiled HOD 2.0 as a new file at: ${selectedPath}` }).catch(console.error);
+      setStatusMsg("HOD 2.0 file compiled successfully");
+      alert(`HOD 2.0 file compiled successfully to new path:\n${selectedPath}\n\nMeshes are natively uncompressed, and textures are compressed (if TGA/PNG mapping existed).`);
     } catch (e: any) {
-      const err = `Frontend failed to Save HOD As: ${e.toString()}`;
+      const err = `Frontend failed to Compile/Save HOD 2.0 As: ${e.toString()}`;
       invoke("log_event", { level: "ERROR", message: err }).catch(console.error);
-      setErrorMsg(e.toString());
-      setStatusMsg("Error saving file as new path");
+      setStatusMsg("Failed to save HOD 2.0");
+      setErrorMsg(err);
       alert(`Save As failed: ${e.toString()}`);
     } finally {
       setIsSaving(false);
