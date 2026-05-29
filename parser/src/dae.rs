@@ -2,6 +2,9 @@ use crate::hod::*;
 use roxmltree::{Document, Node};
 use std::collections::HashMap;
 
+/// Hashable key for vertex deduplication: (position_index, normal_index, uv_index)
+type VertexKey = (usize, usize, usize);
+
 fn parse_float_array(node: Node) -> Result<Vec<f32>, String> {
     if let Some(text) = node.text() {
         let floats: Result<Vec<f32>, _> =
@@ -48,7 +51,7 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
     }
 
     // Build meshes from library_geometries
-    let mut parsed_meshes: HashMap<String, HODMeshPart> = HashMap::new();
+    let mut parsed_meshes_with_lod: Vec<(String, i32, String, HODMeshPart)> = Vec::new();
 
     for geometry in doc.descendants().filter(|n| n.has_tag_name("geometry")) {
         let geom_id = geometry.attribute("id").unwrap_or("unknown");
@@ -77,18 +80,18 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                 }
             }
 
-            // Parse triangles
-            let mut mesh_part = HODMeshPart {
-                material_index: 0,
-                vertex_mask: 0x01 | 0x02 | 0x08 | 0x2000 | 0x4000,
-                vertices: Vec::new(),
-                indices: Vec::new(),
-            };
-
-            if let Some(triangles) = mesh
+            // Parse ALL triangles/polylist groups (one per material)
+            for triangles in mesh
                 .children()
-                .find(|n| n.has_tag_name("triangles") || n.has_tag_name("polylist"))
+                .filter(|n| n.has_tag_name("triangles") || n.has_tag_name("polylist"))
             {
+                let mut mesh_part = HODMeshPart {
+                    material_index: 0,
+                    vertex_mask: 0x01 | 0x02 | 0x08 | 0x2000 | 0x4000,
+                    vertices: Vec::new(),
+                    indices: Vec::new(),
+                };
+
                 if let Some(mat) = triangles.attribute("material") {
                     if let Some(idx) = material_names.iter().position(|m| m == mat) {
                         mesh_part.material_index = idx;
@@ -137,6 +140,7 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
 
                         let mut v_idx = 0;
                         while v_idx + stride <= indices.len() {
+                            let p_i = indices[v_idx + pos_offset as usize];
                             let mut vertex = HODVertex {
                                 position: Vector3 {
                                     x: 0.0,
@@ -163,7 +167,6 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                                 skinning_data: None,
                             };
 
-                            let p_i = indices[v_idx + pos_offset as usize];
                             if let Some(pd) = pos_data {
                                 if p_i * 3 + 2 < pd.len() {
                                     vertex.position.x = pd[p_i * 3];
@@ -197,40 +200,48 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                                 }
                             }
 
+                            let idx = mesh_part.vertices.len() as u16;
                             mesh_part.vertices.push(vertex);
-                            // We construct un-indexed flat arrays here, so indices are just 0, 1, 2...
-                            mesh_part
-                                .indices
-                                .push((mesh_part.vertices.len() - 1) as u16);
+                            mesh_part.indices.push(idx);
                             v_idx += stride;
                         }
                     }
                 }
-            }
 
-            // Extract the MULT[name] tag
-            let mut mesh_target_name = geom_name.to_string();
-            if mesh_target_name.starts_with("MULT[") {
-                if let Some(end) = mesh_target_name.find("]") {
-                    mesh_target_name = mesh_target_name[5..end].to_string();
+                // Extract the MULT[name] tag and LOD
+                let mut mesh_target_name = geom_name.to_string();
+                let mut lod = 0i32;
+                if mesh_target_name.starts_with("MULT[") {
+                    if let Some(end) = mesh_target_name.find("]") {
+                        mesh_target_name = mesh_target_name[5..end].to_string();
+                    }
+                    // Extract LOD from "MULT[name]_LOD[N]"
+                    if let Some(lod_start) = geom_name.find("_LOD[") {
+                        let lod_part = &geom_name[lod_start + 5..];
+                        if let Some(lod_end) = lod_part.find("]") {
+                            lod = lod_part[..lod_end].parse().unwrap_or(0);
+                        }
+                    }
                 }
+
+                let key = format!("{}_{}", mesh_target_name, lod);
+                parsed_meshes_with_lod.push((mesh_target_name, lod, key, mesh_part));
             }
-            parsed_meshes.insert(mesh_target_name, mesh_part);
         }
     }
 
-    // Group mesh parts into full HODMeshes
+    // Group mesh parts into full HODMeshes by (name, lod)
     let mut mesh_map: HashMap<String, HODMesh> = HashMap::new();
-    for (name, part) in parsed_meshes {
-        if let Some(mesh) = mesh_map.get_mut(&name) {
+    for (name, lod, key, part) in parsed_meshes_with_lod {
+        if let Some(mesh) = mesh_map.get_mut(&key) {
             mesh.parts.push(part);
         } else {
             mesh_map.insert(
-                name.clone(),
+                key.clone(),
                 HODMesh {
                     name: name.clone(),
                     parent_name: "Root".to_string(),
-                    lod: 0,
+                    lod,
                     has_mult_tags: false,
                     parts: vec![part],
                 },

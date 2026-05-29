@@ -297,9 +297,193 @@ fn compute_tangent_space(vertices: &mut [HODVertex], indices: &[u16]) {
     }
 }
 
+fn add_tangent_contribution(vertices: &mut [HODVertex], tri: [u16; 3]) {
+    let i0 = tri[0] as usize;
+    let i1 = tri[1] as usize;
+    let i2 = tri[2] as usize;
+    if i0 >= vertices.len() || i1 >= vertices.len() || i2 >= vertices.len() {
+        return;
+    }
+
+    let p0 = &vertices[i0].position;
+    let p1 = &vertices[i1].position;
+    let p2 = &vertices[i2].position;
+    let Some(uv0) = vertices[i0].uv.as_ref() else {
+        return;
+    };
+    let Some(uv1) = vertices[i1].uv.as_ref() else {
+        return;
+    };
+    let Some(uv2) = vertices[i2].uv.as_ref() else {
+        return;
+    };
+
+    let edge1 = sub_vec3(p1, p0);
+    let edge2 = sub_vec3(p2, p0);
+    let du1 = uv1.u - uv0.u;
+    let dv1 = uv1.v - uv0.v;
+    let du2 = uv2.u - uv0.u;
+    let dv2 = uv2.v - uv0.v;
+    let denom = du1 * dv2 - du2 * dv1;
+    // HODOR FUN_0040ea90 line 11067: if (NAN(fVar21) != (fVar21 == 0.0)) { fVar28 = 0.0; }
+    // This means: if denom is NaN OR exactly zero, set inv=0 (skip contribution).
+    if denom == 0.0 || denom.is_nan() {
+        return;
+    }
+
+    let inv = 1.0 / denom;
+    let tangent = Vector3 {
+        x: (edge1.x * dv2 - edge2.x * dv1) * inv,
+        y: (edge1.y * dv2 - edge2.y * dv1) * inv,
+        z: (edge1.z * dv2 - edge2.z * dv1) * inv,
+    };
+    let binormal = Vector3 {
+        x: (edge2.x * du1 - edge1.x * du2) * inv,
+        y: (edge2.y * du1 - edge1.y * du2) * inv,
+        z: (edge2.z * du1 - edge1.z * du2) * inv,
+    };
+
+    for idx in tri {
+        let vertex = &mut vertices[idx as usize];
+        let current_tangent = vertex.tangent.get_or_insert(Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
+        add_vec3(current_tangent, &tangent);
+
+        let current_binormal = vertex.binormal.get_or_insert(Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
+        add_vec3(current_binormal, &binormal);
+    }
+}
+
+fn finalize_tangent_space(vertices: &mut [HODVertex]) {
+    for vertex in vertices {
+        let tangent = vertex.tangent.clone().unwrap_or(Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
+        let binormal = vertex.binormal.clone().unwrap_or(Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
+
+        // Skip vertices that were never touched by any triangle
+        let tangent_len_sq = tangent.x * tangent.x + tangent.y * tangent.y + tangent.z * tangent.z;
+        let binormal_len_sq = binormal.x * binormal.x + binormal.y * binormal.y + binormal.z * binormal.z;
+        if tangent_len_sq == 0.0 && binormal_len_sq == 0.0 {
+            continue;
+        }
+
+        let normal = vertex.normal.clone().unwrap_or(Vector3 {
+            x: 0.0,
+            y: 1.0,
+            z: 0.0,
+        });
+
+        // HODOR Gram-Schmidt: tangent = tangent - normal * dot(tangent, normal)
+        let tangent_dot_normal = dot_vec3(&tangent, &normal);
+        let tangent_orthogonal = sub_vec3(&tangent, &mul_vec3(&normal, tangent_dot_normal));
+        let tangent_normalized = normalize_vec3(
+            tangent_orthogonal,
+            Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        );
+
+        // HODOR binormal = normalize(accumulated_binormal)
+        // NOT cross(normal, tangent). Ghidra FUN_0040ea90 degenerate fallback
+        // replaces the cross product with the accumulated binormal.
+        let binormal_normalized = normalize_vec3(
+            binormal,
+            Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            },
+        );
+
+        vertex.tangent = Some(tangent_normalized);
+        vertex.binormal = Some(binormal_normalized);
+    }
+}
+
+fn find_or_add_current_vertex(vertices: &mut Vec<HODVertex>, vertex: HODVertex) -> u16 {
+    let key = HashableVertex::from_hod(&vertex);
+    if let Some(index) = vertices
+        .iter()
+        .position(|existing| HashableVertex::from_hod(existing) == key)
+    {
+        return index as u16;
+    }
+
+    let index = vertices.len() as u16;
+    vertices.push(vertex);
+    index
+}
+
+pub fn compile_hodor_style_tangent_part(
+    source_vertices: &[HODVertex],
+    source_indices: &[u16],
+) -> (Vec<HODVertex>, Vec<u16>) {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::with_capacity(source_indices.len());
+
+    for (tri_num, tri) in source_indices.chunks_exact(3).enumerate() {
+        let mut compiled_tri = [0u16; 3];
+
+        for (tri_pos, &source_idx) in tri.iter().enumerate() {
+            let Some(source_vertex) = source_vertices.get(source_idx as usize) else {
+                continue;
+            };
+            let mut vertex = source_vertex.clone();
+            vertex.tangent = Some(Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            });
+            vertex.binormal = Some(Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            });
+            let out_idx = find_or_add_current_vertex(&mut vertices, vertex);
+            compiled_tri[tri_pos] = out_idx;
+            
+            // Debug first 25 source vertices
+            if source_idx < 25 {
+                let existing = vertices.len() - if out_idx as usize == vertices.len() - 1 { 1 } else { 0 };
+                eprintln!("DEDUP tri_num={} source_idx={} -> out_idx={} (buf_size={}) pos=({:.6},{:.6},{:.6})",
+                    tri_num, source_idx, out_idx, vertices.len(),
+                    source_vertices[source_idx as usize].position.x,
+                    source_vertices[source_idx as usize].position.y,
+                    source_vertices[source_idx as usize].position.z);
+            }
+        }
+
+        indices.extend_from_slice(&compiled_tri);
+        add_tangent_contribution(&mut vertices, compiled_tri);
+    }
+
+    finalize_tangent_space(&mut vertices);
+    (vertices, indices)
+}
+
+fn should_generate_tangent_space(part: &HODMeshPart, vertices: &[HODVertex]) -> bool {
+    (part.vertex_mask & 0x6000) == 0x6000 && is_default_tangent_space(vertices)
+}
+
 fn prepare_vertices_for_hwrm(part: &HODMeshPart) -> Vec<HODVertex> {
     let mut vertices = part.vertices.clone();
-    if (part.vertex_mask & 0x6000) == 0x6000 && is_default_tangent_space(&vertices) {
+    if should_generate_tangent_space(part, &vertices) {
         compute_tangent_space(&mut vertices, &part.indices);
     }
     vertices
@@ -312,15 +496,33 @@ pub fn compile_model_meshes(model: &HODModel) -> Vec<CompiledMesh> {
         let mut new_parts = Vec::new();
 
         for part in &mesh.parts {
-            let vertices = prepare_vertices_for_hwrm(part);
             if !part.indices.is_empty() {
+                let should_generate_tangents = should_generate_tangent_space(part, &part.vertices);
+                let is_flat_triangle_list = part.indices.len() == part.vertices.len()
+                    && part
+                        .indices
+                        .iter()
+                        .enumerate()
+                        .all(|(idx, &vertex_idx)| vertex_idx as usize == idx);
+
+                let (vertices, indices) = if is_flat_triangle_list {
+                    if should_generate_tangents {
+                        compile_hodor_style_tangent_part(&part.vertices, &part.indices)
+                    } else {
+                        (prepare_vertices_for_hwrm(part), part.indices.clone())
+                    }
+                } else {
+                    (prepare_vertices_for_hwrm(part), part.indices.clone())
+                };
+
                 new_parts.push(HODMeshPart {
                     material_index: part.material_index,
                     vertex_mask: normalize_hwrm_vertex_mask(part.vertex_mask),
                     vertices,
-                    indices: part.indices.clone(),
+                    indices,
                 });
             } else {
+                let vertices = prepare_vertices_for_hwrm(part);
                 let mut dedup = MeshDeduplicator::new();
                 let mut new_indices = Vec::new();
 
@@ -419,16 +621,18 @@ pub fn generate_pool_data(
         }
     }
 
+    // Force raw (uncompressed) mesh and face streams — no xpress compression.
+    // When comp_len == decomp_len, the parser reads raw bytes without decompression.
     let comp_mesh = if decomp_mesh.is_empty() {
         Vec::new()
     } else {
-        crate::xpress::compress_or_raw(&decomp_mesh)
+        decomp_mesh.clone()
     };
 
     let comp_face = if decomp_face.is_empty() {
         Vec::new()
     } else {
-        crate::xpress::compress_or_raw(&decomp_face)
+        decomp_face.clone()
     };
 
     let mut pool_buf = Vec::new();

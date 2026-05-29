@@ -55,7 +55,7 @@ Disassemble `HomeworldRM.exe` to understand the exact decompression algorithm us
 
 | Date | Agent | Finding |
 |------|-------|---------|
-| | | |
+| 2026-05-29 | Antigravity | Found decompressor `FUN_00448600`. Indicator is 31 bits LSB-first with bit 31 as sentinel. Match types extracted and verified. See `HOHOR_RE/path1-findings.md` for full layout. |
 
 ### Verification
 - Compress `ter_centaur` mesh pool with the new compressor

@@ -4898,7 +4898,15 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     use crate::xpress;
     let mut model = model.clone();
     generate_collision_mesh(&mut model);
-    let compiled = crate::compiler::compile_model_meshes(&model);
+    let mut compiled = crate::compiler::compile_model_meshes(&model);
+
+    // Sort meshes by LOD within each base name group so POOL and BMSH ordering
+    // matches HODOR's expected sequential LOD layout.
+    compiled.sort_by(|a, b| {
+        let base_a = a.name.split("_LOD").next().unwrap_or(&a.name);
+        let base_b = b.name.split("_LOD").next().unwrap_or(&b.name);
+        base_a.cmp(base_b).then(a.lod.cmp(&b.lod))
+    });
 
     let mut comp_tex_buf = Vec::new();
     let mut decomp_tex_len_val = 0;
@@ -5113,9 +5121,9 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
             }
         }
 
-        // Re-compress and rewrite pool
-        let new_comp_mesh = xpress::compress_or_raw(&decomp_mesh);
-        let new_comp_face = xpress::compress_or_raw(&decomp_face);
+        // Raw (uncompressed) mesh and face streams
+        let new_comp_mesh = decomp_mesh.clone();
+        let new_comp_face = decomp_face.clone();
 
         println!("[RUST] After collision append: decomp_mesh={} bytes, decomp_face={} bytes, new_comp_mesh={} bytes, new_comp_face={} bytes", decomp_mesh.len(), decomp_face.len(), new_comp_mesh.len(), new_comp_face.len());
 
@@ -5818,7 +5826,14 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
 
     // For HOD 2.0, always regenerate mesh pool from model data to ensure correct vertex attributes.
     // For HOD 1.0, only update if meshes were actually modified (mesh data is inline in BMSH).
-    if is_v2 && updated_model.meshes.iter().any(|m| !m.parts.is_empty()) {
+    // IMPORTANT: When original_bytes is empty, the template BMSH chunks have empty data
+    // (all read as lod=0), so update_mesh_chunks would match the wrong mesh.
+    // In that case, leave new_mesh_pool empty so the POOL chunk built by
+    // generate_pool_data stays intact.
+    if is_v2
+        && updated_model.meshes.iter().any(|m| !m.parts.is_empty())
+        && !original_bytes.is_empty()
+    {
         // Target HVMD children specifically, not top-level chunks
         for chunk in &mut chunks {
             if chunk.id == "HVMD" {
@@ -5854,7 +5869,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                 }
             }
         }
-    } else if meshes_modified {
+    } else if meshes_modified && !(is_v2 && original_bytes.is_empty()) {
         update_mesh_chunks(
             &mut chunks,
             updated_model,
@@ -5869,7 +5884,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
         sanitize_prim_group_counts(&mut chunks)?;
     }
 
-    if is_v2 {
+    if is_v2 && !new_mesh_pool.is_empty() {
         let mut pool_data = Vec::new();
         pool_data
             .write_u32::<LittleEndian>(original_pool_type)

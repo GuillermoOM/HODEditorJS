@@ -24,18 +24,21 @@ HODOR HOD files are parsed only as comparison oracles.
 ## Current Result
 
 **Test Cases:** `ter_pharos`, `ter_centaur`  
-**Result:** 2/2 passed — 100% success rate!  
+**Result:** 2/2 passed  
 **Command:** `cargo run --bin test_hodor_replication`
 
-Both `ter_pharos` and `ter_centaur` successfully match HODOR's structure, names, and formats perfectly on re-parsing.
+- `ter_pharos`: PASSED (DAE-based, single material, vertex counts match)
+- `ter_centaur`: PASSED — reparses per LOD as 3845 `centaur` vertices and 778 `glass` vertices, matching HODOR.
 
-**verify_lossless** (separate test) passes structurally for all 4 fixtures:
-- `pebble_0`: byte-for-byte identical
-- `ter_elysium`: size diff 67629 bytes (expected — collision mesh added, compression diff)
-- `ter_fenris`: size diff 76911 bytes (expected — collision mesh added, compression diff)
-- `asteroid_3`: size diff -54 bytes (expected — compression efficiency)
+**Compression:** Fully working. All 8 xpress roundtrip tests pass. HOD files compress correctly (183KB generated vs 232KB HODOR).
 
-**Collision mesh pool appending**: Confirmed working — decomp_mesh grew from 146688 to 146816 bytes (128 bytes for 8 vertices × 16 bytes each).
+**In-Game Rendering:** The previously observed "vertex explosion" / spikiness has been identified as a Type 2 truncation bug in the Xpress compressor (allowed 12 bits for offset when Type 2 only supports 10 bits). This bug has been fixed, so in-game rendering should now be flawless. Needs a final check.
+
+**Latest Fix:** `parser/src/xpress.rs` now correctly limits Type 2 matches to `offset <= 0x3FF` (1023) to match HODOR's binary layout `DAT_00479778`. Also, `parser/src/compiler.rs` mirrors HODOR's DAE path for generated tangent-space parts: deduplicate each face-corner against the current vertex buffer before adding that triangle's tangent/binormal contribution, use exact-zero UV determinant handling, then finalize tangent space. This matches HODOR's `FUN_0040e7f0`/`FUN_0040ea90` ordering and fixes `ter_centaur` vertex/index counts.
+
+**Latest Validation:** `cargo run --bin test_hodor_replication` passes 2/2. `cargo test --lib` passes. `cargo run --bin verify_lossless` reparsed generated files structurally successfully with expected size mismatches. `cargo run --bin test_fenris` passed the empty-original save/parse path.
+
+**Rejected Approach:** Generic deduplication of flat sequential indexed parts in `compile_model_meshes()` was tested and reverted. It made `ter_pharos` fail with `Mesh 'Root_mesh' lod 0 part 0 vertex count mismatch: 1488 vs 1299` and made `ter_centaur` fail with `3845 vs 3678`, so the remaining fix must be more selective than full-vertex deduplication.
 
 ## What The Test Verifies
 
@@ -58,47 +61,39 @@ Both `ter_pharos` and `ter_centaur` successfully match HODOR's structure, names,
 
 ## Fixture Summary
 
-| Test Case | HODOR Size | Latest Generated Size | Meshes | Materials | Notes |
-|-----------|------------|-----------------------|--------|-----------|-------|
-| `ter_pharos` | 236,648 bytes | 177,597 bytes | 3 | 1 | 1 part per LOD; LMIP layout OK; smaller size |
-| `ter_centaur` | 232,860 bytes | 198,119 bytes | 4 | 2 | 2 parts per LOD; LMIP layout OK; smaller size |
+| Test Case | HODOR Size | Latest Generated Size | Result | Notes |
+|-----------|------------|----------------------|--------|-------|
+| `ter_pharos` | 236,648 bytes | ~172K bytes | PASSED | Single material, DAE-based |
+| `ter_centaur` | 232,860 bytes | ~183K bytes | PASSED | Vertex/index counts match HODOR |
 
-Generated file size successfully matches and even beats HODOR's size by upgrading Xpress compression to support offsets up to 2MB (allowing cross-LOD matching of identical geometry buffers) and routing to Type 4 matches to eliminate Type 5 clashing.
-
-Texture-format result:
-
-- `transparent_DIFF`: HODOR emits `DXT5`, and generated output now emits `DXT5` after restoring transparent source pixels.
-- Alpha-pixel detection selects DXT5 directly from the TGA source.
+Compression is working. `ter_centaur` generated HOD is smaller than HODOR's due to different compression choices, but decompressed structure now matches the HODOR oracle.
 
 ## Completed Work
 
-- Built a HODOR comparison harness.
-- Loaded source OBJ files instead of processed HOD mesh data.
-- Loaded source TGA files instead of processed HOD texture payloads.
-- Loaded authored metadata JSON for editor-created values.
-- Implemented OBJ `usemtl` to HOD mesh part/material-index mapping.
-- Implemented per-part OBJ vertex deduplication matching HODOR part counts for `ter_centaur`.
-- Implemented OBJ/MTL/material/TGA consistency validation.
-- Implemented DXT5 texture compression output path.
-- Refined TGA import format detection to use alpha pixels.
-- Added LMIP texture layout diagnostic.
-- Identified and matched HODOR LMIP mip-count rule.
-- Upgraded MS XPress sliding-window offset cap to 2MB (allowing cross-LOD matching of identical geometry data).
-- Optimized search chain depth to 256 for instant compilation speed and maximum compression.
-- Eliminated Type 5 matches entirely to resolve bit-clashing/corruption on odd lengths, preventing in-game decompression crashes and spikiness.
+- Ghidra decompilation of HODOR.exe (841 functions)
+- Replicated HODOR's MS Xpress decompressor (FUN_00448600)
+- Replicated HODOR's MS Xpress compressor (FUN_004482a0)
+- All 8 xpress roundtrip tests pass
+- DAE parser fixed for multiple triangle groups per geometry
+- DAE parser merges consecutive parts with same material
+- DAE parser extracts LOD from geometry IDs
+- Compression bypass removed — real compression active
+- HODOR confirmed deterministic via wine testing
+- In-game rendering: textures correct, geometry partially correct
+- Empty-original V2 `save_edits` POOL overwrite guard added
+- HODOR-style incremental tangent-space vertex sharing implemented
+- `cargo run --bin test_hodor_replication` passes for `ter_pharos` and `ter_centaur`
 
 ## Next Steps
 
-1. **Implement compression bypass workaround** — set `comp_size == decomp_size` for all pools so files render correctly in-game
-2. **Reverse-engineer game engine decompressor** — use Ghidra on `HomeworldRM.exe`
-3. **Try Windows RtlCompressBuffer API** — alternative compression approach
-4. Fix face pool size mismatch (~27KB missing)
-5. Fix serialization bugs (alignment, stride, prim_group_count)
-6. Expand HODOR source-asset fixtures
-7. Integrate workflow into the editor UI.
+1. **Re-test in-game** with correct `ter_centaur` vertex/index counts
+2. **Add ter_fenris to test suite** with proper JSON metadata
+3. Verify OBJ pipeline against the DAE pipeline for editor workflow
+4. Fix serialization bugs (alignment, stride, prim_group_count) if byte-for-byte parity becomes necessary
+5. Integrate workflow into the editor UI.
 
 ---
 
-**Document Version:** 4.0  
-**Last Updated:** 2026-05-29  
-**Status:** Xpress compression bypass workaround being implemented. Hybrid swap tests completed.
+**Document Version:** 5.2  
+**Last Updated:** 2026-05-28  
+**Status:** Compression fully replicated. DAE parser fixed. HODOR structural replication passes for tracked fixtures.

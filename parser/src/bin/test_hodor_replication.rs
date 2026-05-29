@@ -1,5 +1,6 @@
 use base64::Engine;
 use byteorder::{LittleEndian, ReadBytesExt};
+use hwr_hod_parser::dae::parse_dae;
 use hwr_hod_parser::hod::{generate_v2_from_model, HODModel};
 use hwr_hod_parser::iff::IffChunk;
 use hwr_hod_parser::xpress;
@@ -98,11 +99,17 @@ fn run_test_case(name: &str, dir: &Path) -> Result<(), String> {
     println!("  5. Comparing structures...");
     println!("=== DEBUG TEXTURES FOR HODOR ===");
     for tex in &hodor_model.textures {
-        println!("Hodor Texture: name='{}', format='{}', width={}, height={}", tex.name, tex.format, tex.width, tex.height);
+        println!(
+            "Hodor Texture: name='{}', format='{}', width={}, height={}",
+            tex.name, tex.format, tex.width, tex.height
+        );
     }
     println!("=== DEBUG TEXTURES FOR REPARSED ===");
     for tex in &reparsed.textures {
-        println!("Reparsed Texture: name='{}', format='{}', width={}, height={}", tex.name, tex.format, tex.width, tex.height);
+        println!(
+            "Reparsed Texture: name='{}', format='{}', width={}, height={}",
+            tex.name, tex.format, tex.width, tex.height
+        );
     }
     compare_structures(&hodor_model, &reparsed)?;
     compare_texture_layouts(&hodor_bytes, &generated)?;
@@ -174,7 +181,10 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
             })
             .ok_or_else(|| format!("No TGA file found for texture '{}'", tex_name))?;
         let mut tex = load_tga_texture(&tga_path, tex_name)?;
-        if let Some(spec) = textures_specs.iter().find(|s| s["name"].as_str() == Some(tex_name)) {
+        if let Some(spec) = textures_specs
+            .iter()
+            .find(|s| s["name"].as_str() == Some(tex_name))
+        {
             if let Some(fmt) = spec["format"].as_str() {
                 tex.format = fmt.to_string();
             }
@@ -187,22 +197,117 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
 
     let material_indices = build_material_index(&materials);
 
-    // Load OBJ meshes
-    let mut obj_paths: Vec<std::path::PathBuf> = fs::read_dir(dir)
-        .map_err(|e| e.to_string())?
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("obj"))
-        .collect();
-    obj_paths.sort();
-    println!("     Found {} OBJ files", obj_paths.len());
+    // Load meshes — prefer DAE if available (same source as HODOR), fallback to OBJ
+    let dae_path = dir.join(format!(
+        "{}.DAE",
+        dir.file_name().unwrap().to_str().unwrap()
+    ));
+    let dae_path_alt = dir.join(format!(
+        "{}.dae",
+        dir.file_name().unwrap().to_str().unwrap()
+    ));
+    let dae_file = if dae_path.exists() {
+        Some(dae_path)
+    } else if dae_path_alt.exists() {
+        Some(dae_path_alt)
+    } else {
+        // Search for any .DAE or .dae file
+        fs::read_dir(dir).ok().and_then(|entries| {
+            entries.filter_map(|e| e.ok().map(|e| e.path())).find(|p| {
+                p.extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("dae"))
+                    .unwrap_or(false)
+            })
+        })
+    };
 
     let mut meshes = Vec::new();
-    for path in obj_paths {
-        if let Some((base_name, lod)) = parse_lod_filename(&path) {
-            meshes.push(parse_obj_mesh(&path, &base_name, lod, &material_indices)?);
+    if let Some(dae_path) = dae_file {
+        println!("     Loading meshes from DAE: {}", dae_path.display());
+        let dae_str =
+            fs::read_to_string(&dae_path).map_err(|e| format!("Failed to read DAE: {}", e))?;
+        let dae_model = parse_dae(&dae_str)?;
+
+        // Map DAE materials to JSON materials by name
+        let dae_mat_map: HashMap<String, usize> = dae_model
+            .materials
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.name.clone(), i))
+            .collect();
+
+        for mut mesh in dae_model.meshes {
+            // Skip collision meshes (handled separately via collision_meshes.json)
+            if mesh.name.starts_with("COL[") {
+                continue;
+            }
+            // Merge consecutive parts with the same material index
+            let mut merged_parts: Vec<hwr_hod_parser::hod::HODMeshPart> = Vec::new();
+            for part in mesh.parts.drain(..) {
+                // Remap material index from DAE to JSON
+                let mut json_mat_idx = part.material_index;
+                if let Some(dae_mat) = dae_model.materials.get(part.material_index) {
+                    let base_name = if dae_mat.name.starts_with("MAT[") {
+                        dae_mat
+                            .name
+                            .find("]_SHD[")
+                            .map(|end| dae_mat.name[4..end].to_string())
+                            .unwrap_or_else(|| dae_mat.name.clone())
+                    } else {
+                        dae_mat.name.clone()
+                    };
+                    if let Some(&json_idx) = material_indices.get(&base_name) {
+                        json_mat_idx = json_idx;
+                    }
+                }
+                // Try to merge with the last part if same material
+                if let Some(last) = merged_parts.last_mut() {
+                    if last.material_index == json_mat_idx {
+                        let base_idx = last.vertices.len() as u16;
+                        last.vertices.extend(part.vertices);
+                        for idx in part.indices {
+                            last.indices.push(base_idx + idx);
+                        }
+                        continue;
+                    }
+                }
+                // New part
+                let mut new_part = part;
+                new_part.material_index = json_mat_idx;
+                merged_parts.push(new_part);
+            }
+            mesh.parts = merged_parts;
+
+            // Debug: print first vertex of each part
+            for (i, part) in mesh.parts.iter().enumerate() {
+                if let Some(v) = part.vertices.first() {
+                    println!("     DAE mesh '{}' lod {} part {}: mat={} verts={} first_vert=({:.6}, {:.6}, {:.6})", 
+                        mesh.name, mesh.lod, i, part.material_index, part.vertices.len(),
+                        v.position.x, v.position.y, v.position.z);
+                }
+            }
+
+            meshes.push(mesh);
         }
+        println!("     Loaded {} meshes from DAE", meshes.len());
+    } else {
+        println!("     No DAE found, falling back to OBJ files");
+        let mut obj_paths: Vec<std::path::PathBuf> = fs::read_dir(dir)
+            .map_err(|e| e.to_string())?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("obj"))
+            .collect();
+        obj_paths.sort();
+        println!("     Found {} OBJ files", obj_paths.len());
+
+        for path in obj_paths {
+            if let Some((base_name, lod)) = parse_lod_filename(&path) {
+                meshes.push(parse_obj_mesh(&path, &base_name, lod, &material_indices)?);
+            }
+        }
+        println!("     Loaded {} meshes from OBJ", meshes.len());
     }
-    println!("     Loaded {} meshes", meshes.len());
 
     // Load joints from JSON
     let joints_path = dir.join("joints.json");
@@ -310,7 +415,10 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
         .into_iter()
         .filter(|t| referenced_textures.contains(&t.name))
         .collect();
-    println!("     Filtered textures: {} (from referenced)", textures.len());
+    println!(
+        "     Filtered textures: {} (from referenced)",
+        textures.len()
+    );
 
     Ok(HODModel {
         version: 512,
