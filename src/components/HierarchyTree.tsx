@@ -200,55 +200,18 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   const [pipelines, setPipelines] = useState<string[]>([]);
 
   React.useEffect(() => {
-    if (!model) return;
-    let defName = "";
-    if (addNodeType === "joint") {
-      defName = `Joint_${model.joints.length}`;
-    } else if (addNodeType === "marker") {
-      defName = `marker${model.markers.length}`;
-    } else if (addNodeType === "navlight") {
-      defName = `NavLight${model.nav_lights.length}`;
-    } else if (addNodeType === "dockpath") {
-      defName = `Dockpath_${model.dockpaths.length + 1}`;
-    } else if (addNodeType === "collision") {
-      defName = `Collision_${model.collision_meshes.length + 1}`;
-    } else if (addNodeType === "weapon_template") {
-      defName = `Weapon_${getUniqueAssemblyGroups().length}`;
-    } else if (addNodeType === "turret_template") {
-      defName = `Turret_${getUniqueAssemblyGroups().length}`;
-    } else if (addNodeType === "engine_nozzle") {
-      defName = `EngineBurn${model.engine_burns.length}`;
-    } else if (addNodeType === "mesh") {
-      defName = `Root_mesh_LOD${model.meshes.filter(m => m.name === "Root_mesh").length}`;
-    } else if (addNodeType === "repair_point_template") {
-      const count = model.joints.filter(j => j.name.startsWith("RepairPoint")).length;
-      defName = `RepairPoint${count}`;
-    } else if (addNodeType === "capture_point_template") {
-      const count = model.joints.filter(j => j.name.startsWith("CapturePoint")).length;
-      defName = `CapturePoint${count}`;
-    } else if (addNodeType === "hardpoint_template") {
-      const count = model.joints.filter(j => j.name.startsWith("Hardpoint_")).length;
-      defName = `Hardpoint_${count}`;
-    } else if (addNodeType === "salvage_point_template") {
-      const count = model.joints.filter(j => j.name.startsWith("SalvagePoint")).length;
-      defName = `SalvagePoint${count}`;
-    }
-    setNewNodeName(defName);
-  }, [addNodeType, isAddNodeOpen, model]);
-
-  React.useEffect(() => {
-    const fetchPipelines = async () => {
+    const loadPipelines = async () => {
       try {
-        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
-        if (keeperTxtPaths.length > 0) {
-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
+        const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
+        if (config.shader_directories.length > 0) {
+          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
           setPipelines(list);
         }
       } catch (e) {
-        console.error("Failed to fetch shader pipelines:", e);
+        console.error("Failed to load shader pipelines:", e);
       }
     };
-    fetchPipelines();
+    loadPipelines();
   }, []);
 
   // Weapon Grouping helpers

@@ -423,44 +423,18 @@ export const Inspector: React.FC<InspectorProps> = ({
   const [sourceMeshName, setSourceMeshName] = useState("");
 
   useEffect(() => {
-    if (selectedNode) {
-      if (
-        selectedNode.type === "weapon_group" ||
-        selectedNode.type === "turret_group" ||
-        selectedNode.type === "hardpoint_group" ||
-        selectedNode.type === "capture_point_group" ||
-        selectedNode.type === "repair_point_group" ||
-        selectedNode.type === "salvage_point_group"
-      ) {
-        setRenameWeaponName(selectedNode.name);
-      } else if (selectedNode.type === "collision" && model && model.meshes) {
-        const col = model.collision_meshes.find(c => c.name === selectedNode.name);
-        const parentName = col?.mesh?.parent_name || "";
-        const matchedMesh = model.meshes.find(m => m.parent_name === parentName || m.name === selectedNode.name || m.name === parentName);
-        if (matchedMesh) {
-          setSourceMeshName(`${matchedMesh.name}_lod_${matchedMesh.lod}`);
-        } else if (model.meshes.length > 0) {
-          setSourceMeshName(`${model.meshes[0].name}_lod_${model.meshes[0].lod}`);
-        } else {
-          setSourceMeshName("");
-        }
-      }
-    }
-  }, [selectedNode, model]);
-
-  useEffect(() => {
-    const fetchPipelines = async () => {
+    const loadPipelines = async () => {
       try {
-        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
-        if (keeperTxtPaths.length > 0) {
-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
+        const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
+        if (config.shader_directories.length > 0) {
+          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
           setPipelines(list);
         }
       } catch (e) {
-        console.error("Failed to fetch shader pipelines:", e);
+        console.error("Failed to load shader pipelines:", e);
       }
     };
-    fetchPipelines();
+    loadPipelines();
   }, []);
 
 

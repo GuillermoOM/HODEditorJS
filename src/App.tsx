@@ -77,19 +77,18 @@ function App() {
   const [renderMode, setRenderMode] = useState<"untextured" | "textured" | "shaded" | "wireframe" | "shaded_team" | "textured_team">("shaded");
   const [teamColor, setTeamColor] = useState("#4278a3");
   const [stripeColor, setStripeColor] = useState("#e5d94c");
-  const [keeperTxtPaths, setKeeperTxtPaths] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem("keeperTxtPaths");
-      if (stored) return JSON.parse(stored);
-    } catch {}
-    // Migrate from old single-path format
-    const old = localStorage.getItem("keeperTxtPath");
-    if (old) {
-      localStorage.setItem("keeperTxtPaths", JSON.stringify([old]));
-      return [old];
-    }
-    return [];
-  });
+  const [keeperTxtPaths, setKeeperTxtPaths] = useState<string[]>([]);
+
+  // Load shader directories from config file on startup
+  useEffect(() => {
+    invoke<{ shader_directories: string[] }>("load_shader_config")
+      .then((config) => {
+        if (config.shader_directories.length > 0) {
+          setKeeperTxtPaths(config.shader_directories);
+        }
+      })
+      .catch((e) => console.error("Failed to load shader config:", e));
+  }, []);
 
   // Log application startup
   useEffect(() => {
@@ -176,7 +175,7 @@ function App() {
         if (!keeperTxtPaths.includes(dirPath)) {
           const updated = [...keeperTxtPaths, dirPath];
           setKeeperTxtPaths(updated);
-          localStorage.setItem("keeperTxtPaths", JSON.stringify(updated));
+          await invoke("save_shader_config", { config: { shader_directories: updated } });
         }
         setStatusMsg("Successfully linked and persisted uncompressed directory!");
       }
@@ -1147,15 +1146,14 @@ function App() {
                           const updated = [...keeperTxtPaths];
                           updated[i] = e.target.value;
                           setKeeperTxtPaths(updated);
-                          localStorage.setItem("keeperTxtPaths", JSON.stringify(updated));
                         }}
                         style={{ height: "32px", fontSize: "12px", flex: 1, padding: "0 8px", borderRadius: "4px", background: "rgba(13, 22, 37, 0.6)", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}
                       />
                       <button
-                        onClick={() => {
+                        onClick={async () => {
                           const updated = keeperTxtPaths.filter((_, j) => j !== i);
                           setKeeperTxtPaths(updated);
-                          localStorage.setItem("keeperTxtPaths", JSON.stringify(updated));
+                          await invoke("save_shader_config", { config: { shader_directories: updated } });
                         }}
                         style={{ height: "32px", fontSize: "12px", padding: "0 8px", background: "#c62828", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}
                       >

@@ -1,10 +1,16 @@
 use chrono::Local;
 use hwr_hod_parser::hod::{HODModel, HODTexture};
+use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
+
+#[derive(Serialize, Deserialize, Default)]
+struct ShaderConfig {
+    shader_directories: Vec<String>,
+}
 
 static LOG_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
@@ -387,6 +393,36 @@ fn save_hod_as(
     Ok(())
 }
 
+fn get_config_path() -> PathBuf {
+    let exe_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+    let exe_dir = exe_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    exe_dir.join("hod_editor_config.json")
+}
+
+#[tauri::command]
+fn load_shader_config() -> Result<ShaderConfig, String> {
+    let config_path = get_config_path();
+    if config_path.exists() {
+        let data = fs::read_to_string(&config_path)
+            .map_err(|e| format!("Failed to read config: {}", e))?;
+        serde_json::from_str(&data)
+            .map_err(|e| format!("Failed to parse config: {}", e))
+    } else {
+        Ok(ShaderConfig::default())
+    }
+}
+
+#[tauri::command]
+fn save_shader_config(config: ShaderConfig) -> Result<(), String> {
+    let config_path = get_config_path();
+    let data = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    fs::write(&config_path, data)
+        .map_err(|e| format!("Failed to write config: {}", e))?;
+    write_log("INFO", &format!("Saved shader config to {:?}", config_path));
+    Ok(())
+}
+
 #[tauri::command]
 fn get_shader_pipelines(keeper_paths: Vec<String>) -> Result<Vec<String>, String> {
     write_log(
@@ -707,6 +743,8 @@ pub fn run() {
             select_keeper_file,
             log_event,
             get_shader_pipelines,
+            load_shader_config,
+            save_shader_config,
             save_text_file,
             load_text_file,
             export_textures_tga,
