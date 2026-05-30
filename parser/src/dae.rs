@@ -458,6 +458,50 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
 
     if let Some(matrix_node) = node.children().find(|n| n.has_tag_name("matrix")) {
         transform = parse_matrix(matrix_node);
+    } else {
+        // DAE uses <translate> + <rotate> elements instead of <matrix>.
+        // Build transform by composing them in order.
+        for child in node.children() {
+            if child.has_tag_name("translate") {
+                if let Some(text) = child.text() {
+                    let t: Vec<f32> = text.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                    if t.len() >= 3 {
+                        transform.m[3][0] = t[0];
+                        transform.m[3][1] = t[1];
+                        transform.m[3][2] = t[2];
+                    }
+                }
+            } else if child.has_tag_name("rotate") {
+                if let Some(text) = child.text() {
+                    let r: Vec<f32> = text.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                    if r.len() >= 4 {
+                        let (ax, ay, az, angle) = (r[0], r[1], r[2], r[3]);
+                        let rad = angle * std::f32::consts::PI / 180.0;
+                        let (s, c) = (rad.sin(), rad.cos());
+                        let t = 1.0 - c;
+                        let len = (ax * ax + ay * ay + az * az).sqrt();
+                        let (ax, ay, az) = if len > 0.0 { (ax / len, ay / len, az / len) } else { (0.0, 0.0, 0.0) };
+                        let rot = Matrix4 { m: [
+                            [t*ax*ax + c,     t*ax*ay - s*az, t*ax*az + s*ay, 0.0],
+                            [t*ax*ay + s*az,  t*ay*ay + c,    t*ay*az - s*ax, 0.0],
+                            [t*ax*az - s*ay,  t*ay*az + s*ax, t*az*az + c,    0.0],
+                            [0.0,             0.0,             0.0,            1.0],
+                        ]};
+                        // Multiply: transform = rot * transform (rotate around origin)
+                        let mut result = Matrix4 { m: [[0.0; 4]; 4] };
+                        for r in 0..4 {
+                            for c in 0..4 {
+                                result.m[r][c] = rot.m[r][0] * transform.m[0][c]
+                                    + rot.m[r][1] * transform.m[1][c]
+                                    + rot.m[r][2] * transform.m[2][c]
+                                    + rot.m[r][3] * transform.m[3][c];
+                            }
+                        }
+                        transform = result;
+                    }
+                }
+            }
+        }
     }
 
     let p_name = parent_name.map(|s| s.to_string());
