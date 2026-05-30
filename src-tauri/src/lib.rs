@@ -435,26 +435,25 @@ fn get_shader_pipelines(keeper_paths: Vec<String>) -> Result<Vec<String>, String
     let mut pipelines: Vec<String> = Vec::new();
 
     for path_str in &keeper_paths {
-        let keeper_file = std::path::Path::new(path_str);
-        if let Some(uncompressed_root) = keeper_file.parent() {
-            let shaders_dir = uncompressed_root.join("shaders").join("gl_prog");
-            if shaders_dir.is_dir() {
-                if let Ok(entries) = fs::read_dir(&shaders_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_file()
-                            && path.extension().and_then(|s| s.to_str()) == Some("prog")
-                        {
-                            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                                if !pipelines.contains(&stem.to_string()) {
-                                    pipelines.push(stem.to_string());
-                                }
-                                // If it starts with "sob_", also add the stripped version (e.g. "sob_ship" -> "ship")
-                                if let Some(stripped) = stem.strip_prefix("sob_") {
-                                    let simplified = stripped.to_string();
-                                    if !pipelines.contains(&simplified) {
-                                        pipelines.push(simplified);
-                                    }
+        let keeper_dir = std::path::Path::new(path_str);
+        let shaders_dir = keeper_dir.join("shaders").join("gl_prog");
+        write_log("INFO", &format!("Looking for shaders in: {:?}", shaders_dir));
+        if shaders_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(&shaders_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file()
+                        && path.extension().and_then(|s| s.to_str()) == Some("prog")
+                    {
+                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            if !pipelines.contains(&stem.to_string()) {
+                                pipelines.push(stem.to_string());
+                            }
+                            // If it starts with "sob_", also add the stripped version (e.g. "sob_ship" -> "ship")
+                            if let Some(stripped) = stem.strip_prefix("sob_") {
+                                let simplified = stripped.to_string();
+                                if !pipelines.contains(&simplified) {
+                                    pipelines.push(simplified);
                                 }
                             }
                         }
