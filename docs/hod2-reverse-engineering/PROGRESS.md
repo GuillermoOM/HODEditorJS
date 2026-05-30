@@ -198,10 +198,10 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 **Reason:** Large models and bulk texture exports can cause the UI thread to hang momentarily. Users need visual feedback that the application is busy processing their request rather than frozen.
 **Impact:** Provides a much smoother UX. The application now displays a blur overlay with a spinner and a descriptive status message (e.g., "Exporting Materials...") during these operations.
 
-### 2026-05-30: UV Mapping Viewport Rendering Fix
-**Decision:** Changed `tex.flipY = false` in `src/components/Viewport.tsx` for all textures mapped to `HODModel` materials.
-**Reason:** DAEnerys exports meshes and UVs formatted for Homeworld Remastered's native engine, which uses a DirectX-style top-down texture coordinate system where V=0 is the top edge. Three.js / WebGL defaults to a bottom-up coordinate system (`flipY = true`) where V=0 is the bottom edge. This mismatch caused textures on native DAEs and HODs to appear vertically flipped/shifted in the editor's viewport while compiling completely correctly for the game.
-**Impact:** Textures applied to meshes in the 3D viewport now perfectly match their in-game appearance.
+### 2026-05-30: UV Mapping Viewport Rendering Fix (Revisited)
+**Decision:** Reverted `tex.flipY = false` back to `tex.flipY = true` in `src/components/Viewport.tsx`. Removed an inconsistent `image::imageops::flip_vertical` call from the `import_tga_textures` command in `src-tauri/src/lib.rs`.
+**Reason:** The previous viewport `flipY` fix caused native HOD textures to break while fixing DAE textures. Upon deeper investigation, the root cause was inconsistent texture importing pipelines in Rust. HOD textures loaded from `keeper.txt` were passed to the frontend unchanged, while manually imported TGA textures for DAEs were explicitly flipped vertically in Rust. This caused an irreconcilable difference in the UI. By removing the rogue flip in the manual TGA import pipeline, all textures are now standardized and perfectly compatible with Three.js's default `flipY = true`.
+**Impact:** Textures applied to meshes in the 3D viewport now perfectly match their in-game appearance across both DAE and HOD models without breaking one or the other.
 
 ### 2026-05-30: DAE Mesh Parent & Animation Parsing Fixes
 **Decision:** Updated `parser/src/dae.rs` to: (1) Ignore `ROOT_LOD[x]` dummy nodes when assigning `mesh.parent_name` to preserve legitimate joint associations established by `LOD[0]`. (2) Implemented `parse_animations` to extract `<library_animations>` channels, align `<sampler>` timestamps, compute continuous values via linear interpolation, and mathematically convert DAE's native Euler degrees into properly structured `HODKeyframe` Quaternions for serialization. (3) Added `ANIM[` prefix to the scene node ignore list.

@@ -615,7 +615,6 @@ fn import_tga_textures() -> Result<Vec<HODTexture>, String> {
                     "DXT1"
                 };
 
-                let img = image::imageops::flip_vertical(&img);
                 let mut png_bytes: Vec<u8> = Vec::new();
                 let mut cursor = std::io::Cursor::new(&mut png_bytes);
                 img.write_to(&mut cursor, image::ImageFormat::Png)

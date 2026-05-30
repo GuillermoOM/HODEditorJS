@@ -1284,7 +1284,7 @@ export const Viewport: React.FC<ViewportProps> = ({
             const tex = new THREE.Texture(img);
             tex.wrapS = THREE.RepeatWrapping;
             tex.wrapT = THREE.RepeatWrapping;
-            tex.flipY = false; // HWRM uses DirectX-style top-down UVs (V=0 is top)
+            tex.flipY = true;
             tex.colorSpace = THREE.SRGBColorSpace;
             tex.anisotropy = rendererRef.current?.capabilities.getMaxAnisotropy() ?? 1;
             tex.generateMipmaps = false;
