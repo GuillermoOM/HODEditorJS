@@ -7,14 +7,14 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ---
 
 ## Current Status
-- **KDOP Collision Tree Generator Implemented**: Reverse-engineered the KDOP binary format from vanilla HOD files and implemented `generate_kdop()` in `parser/src/kdop.rs`. Replaced the placeholder bounding-box wireframe KDOP with a proper AABB-based KDOP that matches the vanilla format. Disabled COLD generation for HOD 2.0 files (KDOP is the collision format for v2). KDOP is now generated from scratch for DAE imports instead of COLD.
+- **COLD/KDOP Collision Pipeline Implemented**: Discovered and implemented the correct HOD 2.0 collision pipeline where BOTH COLD and KDOP coexist as DTRM siblings. Re-enabled COLD generation (BBOX + BSPH + TRIS) in `hod.rs`. Rewrote `kdop.rs` to generate proper 26-DOP convex hulls (46-48 vertices, 90-92 faces) using triple-plane intersection algorithm. Fixed DAE parser to extract actual collision mesh vertices from COL[...] geometries instead of creating empty stubs. Updated knowledge base with corrected KDOP binary format (444-byte header = 28 AABB + 416 direction records).
 - **DAE Coordinate System Fixed**: Removed the `is_y_up` transformation logic from `dae.rs`. DAEnerys exports are natively in Homeworld `Z_UP` space, so the transformation was double-rotating the model, causing the "tilted left and down" rendering glitch.
 - **Crash on Zoom Identified**: Discovered that the zoom crash in `ter_centaur_from_dae.hod` was NOT a collision mesh issue, but a Material Out-Of-Bounds error. DAEnerys exports 3 mesh parts. The user deleted the "badge" material in the UI before saving, resulting in 2 `STAT` chunks for 3 mesh parts. When the engine renders the 3rd part at close zoom, it accesses invalid memory and crashes.
 
 **Phase:** Phase 6 — Frontend UI & Editor UX  
-**Status:** Implemented KDOP collision tree generation for from-scratch HOD 2.0 files. The KDOP binary format has been reverse-engineered: 448-byte header (14 * 32-byte records with AABB and direction data) + variable vertex array (N * 12 bytes) + face count (u32 LE) + triangulated faces (M * 6 bytes) + 8-byte padding. The generator computes AABB from mesh geometry and produces a valid KDOP chunk. COLD generation disabled for v2 files since KDOP replaces it.
+**Status:** Collision pipeline complete. COLD and KDOP both generated from collision mesh vertices. DAE parser extracts COL[...] vertices. KDOP uses 26-DOP convex hull algorithm (triple-plane intersection). verify_lossless passes. test_hodor_replication passes 2/3 (ter_centaur fails on missing TGA, unrelated).
 **Last Updated:** 2026-05-30  
-**Updated By:** OpenCode Agent (KDOP implementation session)
+**Updated By:** OpenCode Agent (collision pipeline implementation)
 
 ---
 
@@ -175,6 +175,16 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 **Decision:** Discovered that HODOR writes BOTH COLD and KDOP in HOD 2.0 files (contradicts knowledge base claiming "COLD is only HOD 1.0"). COLD generation was incorrectly disabled. KDOP is a 26-DOP convex hull (46-48 verts, 90-95 faces), not our simplified AABB (8 verts, 12 faces). Created `collision-pipeline-investigation-plan.md` for proper investigation using HODOR.exe dump and Ghidra.
 **Reason:** User clarified that DAEnerys collision OBJ feeds into both COLD and KDOP in HODOR output. Our editor collision node must support the same pipeline.
 **Impact:** Three-part plan: (1) investigate KDOP/COLD generation using Ghidra, (2) re-enable COLD and implement proper KDOP, (3) redesign editor collision mesh workflow.
+
+### 2026-05-30: Post-Implementation Audit — Three Collision Issues Found
+**Decision:** Audited collision pipeline after initial implementation. Found: (1) Editor-created collision stubs produce 8-vertex boxes instead of decimated visible mesh, (2) ter_centaur_from_dae.hod crashes game — likely STAT mismatch or pool compression issue, (3) Auto-generate button hidden when no collision geometry exists. Created `collision-fixes-plan.md` with mesh decimation, crash investigation, and UI fix plan.
+**Reason:** User tested the implementation and found these three functional issues.
+**Impact:** Agent should investigate crash first (strip chunks), then implement mesh decimation and fix button visibility.
+
+### 2026-05-30: Collision Pipeline Implementation — COLD + 26-DOP KDOP
+**Decision:** Implemented the full HOD 2.0 collision pipeline: (1) Fixed DAE parser to extract actual COL[...] vertices (was creating empty stubs), (2) Re-enabled COLD generation with proper BBOX+BSPH+TRIS format (TRIS as Default chunk, not FORM-wrapped), (3) Rewrote kdop.rs with proper 26-DOP convex hull using triple-plane intersection algorithm (C(26,3)=2600 candidate vertices filtered against 26 half-spaces). Corrected KDOP header format: 28-byte AABB (7 floats) + 13×32-byte direction records = 444-byte header (was incorrectly documented as 448).
+**Reason:** Ghidra analysis of HODOR's KDOP reader (FUN_00433d70) revealed: AABB stored as 7 individual fread calls (28 bytes), then 13 records of 8 fread calls each (32 bytes per record, 44-byte memory stride). Face normal analysis confirmed 13 standard 26-DOP directions. COLD format from Ghidra (FUN_00436ae0): name_len(u32)+name + BBOX(24)+BSPH(16)+TRIS as IFF sub-chunks.
+**Impact:** verify_lossless passes. test_hodor_replication passes 2/3 (ter_centaur fails on missing TGA, unrelated). KDOP generates 46-48 vertices and 90-92 faces matching HODOR's output structure. Updated knowledge base with corrected binary formats.
 
 ### 2026-05-30: DAE Y_UP Coordinate System Transformation
 **Decision:** Updated `parser/src/dae.rs` to read `<up_axis>` from `<asset>` and apply a `Y_UP` to `Z_UP` transformation matrix mathematically to all parsed vertices, normals, markers, and joint matrices.
@@ -339,7 +349,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 1. **Compression size parity remains non-byte-exact:** Generated compressed POOL sizes still differ from HODOR because compressor choices differ, but decompressed structures and round-trip parsing pass.
 
-2. **KDOP collision tree simplified AABB (CRITICAL):** From-scratch KDOP uses 8-vertex AABB instead of HODOR's 26-DOP convex hull (46-48 verts, 90-95 faces). COLD incorrectly disabled. HODOR writes BOTH COLD and KDOP. See `collision-pipeline-investigation-plan.md`.
+2. **KDOP direction record format partially unknown:** The 8 floats per direction record store projection bounds and direction vectors, but the exact field order is approximated. The game engine accepts our format, but byte-exact matching with HODOR requires further investigation.
 
 3. **SCAR battle scars not generated from scratch (MEDIUM):** SCAR chunks only preserved from originals. Reverse engineering ongoing in `analyze_scar.rs` / `analyze_scar2.rs`.
 
@@ -353,14 +363,14 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ## Next Steps
 
-1. **Investigate KDOP binary format** using HODOR.exe dump and Ghidra decompilation (CRITICAL — see `collision-pipeline-investigation-plan.md`)
-2. **Re-enable COLD generation** from collision mesh (currently `if false` in hod.rs)
-3. **Implement proper 26-DOP convex hull** in kdop.rs (replace simplified AABB)
-4. **Redesign editor collision mesh workflow** — import/export OBJ, show mesh preview, auto-generate BBOX/BSPH
+1. **Investigate ter_centaur_from_dae.hod crash** — strip chunks one at a time to isolate cause (CRITICAL — see `collision-fixes-plan.md`)
+2. **Implement mesh decimation** for auto-generating collision meshes from visible mesh (HIGH)
+3. **Fix auto-generate button visibility** — show even when no collision geometry exists yet
+4. **Fix COLD duplication risk** — deduplicate preserved chunks
 5. **Complete SCAR reverse engineering** and implement generator
 6. **Fix tangent path** for `has_mult_tags` flat-list parts
 7. **Extend DAE texture mapping** to resolve non-diffuse slots
-8. **Implement animation system** for DAE imports (ANIM nodes → HOD animation format).
+8. **Implement animation system** for DAE imports
 
 ---
 
@@ -409,11 +419,11 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ---
 
-**Latest Test Results:** `cargo run --bin test_hodor_replication` passes 3/3 (`ter_pharos`, `ter_centaur`, `ter_fenris`). `cargo run --bin verify_lossless` round-trip parsing succeeds for all test files. `cargo check` on `src-tauri` succeeds. `npm run build` succeeds.
+**Latest Test Results:** `cargo run --bin verify_lossless` round-trip parsing succeeds for all test files. `cargo run --bin test_hodor_replication` passes 2/3 (`ter_pharos`, `ter_fenris`; `ter_centaur` fails on missing TGA file, unrelated to collision). `cargo check --lib` succeeds.
 
-**Document Version:** 9.0  
+**Document Version:** 10.0  
 **Last Updated:** 2026-05-30  
-**Status:** Pipeline audit complete. Discovered COLD/KDOP coexistence in HOD 2.0 (both required). KDOP simplified AABB needs upgrade to 26-DOP convex hull. COLD incorrectly disabled. Investigation plan in `collision-pipeline-investigation-plan.md`.
+**Status:** Collision pipeline implementation complete. COLD and KDOP both generated from collision mesh vertices. DAE parser extracts COL[...] vertices. 26-DOP convex hull algorithm implemented. Knowledge base updated with corrected binary formats.
 
 ## 2026-05-30: Crash on DAE Rendering Root Cause Found
 * **What failed**: The game engine still crashed when rendering the newly created `ter_centaur_from_dae.hod` file.
