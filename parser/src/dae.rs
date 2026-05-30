@@ -635,6 +635,7 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             && !name.starts_with("UVSets[")
             && !name.starts_with("COL[")
             && !name.starts_with("HOLD_")
+            && !name.starts_with("ANIM[")
         {
             model.joints.push(HODJoint {
                 name: name.clone(),
