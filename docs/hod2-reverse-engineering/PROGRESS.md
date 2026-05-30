@@ -13,7 +13,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 **Phase:** Phase 6 — Frontend UI & Editor UX  
 **Status:** Fully resolved the DAE to HOD translation issues: (1) Added `Y_UP` to `Z_UP` coordinate system transformation for DAEnerys exports, rotating vertices, normals, markers, and joint matrices mathematically so models are correctly oriented in-game instead of rendering tilted. (2) Fixed a critical engine crash on zoom by restoring `COL[Root]` mesh parsing as a true collision mesh instead of a hardcoded empty `[-10, 10]` BBOX stub, ensuring valid `TRIS`, `BSPH` and `BBOX` chunks are generated.
 **Last Updated:** 2026-05-30  
-**Updated By:** OpenCode Agent
+**Updated By:** OpenCode Agent (audit session)
 
 ---
 
@@ -164,6 +164,11 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ---
 
 ## Decision Log
+
+### 2026-05-30: Pipeline Audit — KDOP/SCAR Gap Analysis
+**Decision:** Full audit of HODEditorJS vs HODOR/DAEnerys pipeline differences. Identified 3 critical/high gaps: (1) KDOP collision trees not generated from scratch — from-scratch DAE imports get COLD instead, (2) SCAR battle scars not generated, (3) DAE texture mapping only resolves diffuse. Created implementation plan in `kdop-scar-pipeline-gap-plan.md`. Collision mesh DAE discard is by design (editor creates new collision mesh nodes).
+**Reason:** Needed to understand what's missing before attempting in-game compatibility for from-scratch DAE imports.
+**Impact:** KDOP reverse engineering is now the critical path blocker. SCAR and texture mapping are secondary.
 
 ### 2026-05-30: DAE Y_UP Coordinate System Transformation
 **Decision:** Updated `parser/src/dae.rs` to read `<up_axis>` from `<asset>` and apply a `Y_UP` to `Z_UP` transformation matrix mathematically to all parsed vertices, normals, markers, and joint matrices.
@@ -328,14 +333,27 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 1. **Compression size parity remains non-byte-exact:** Generated compressed POOL sizes still differ from HODOR because compressor choices differ, but decompressed structures and round-trip parsing pass.
 
-2. **Animations not processed from DAE:** ANIM[...] nodes in DAE are not parsed. The HOD format uses a different animation system than DAEnerys. Animation tab is currently empty for DAE imports.
+2. **KDOP collision trees not generated from scratch (CRITICAL):** From-scratch DAE imports generate COLD (HOD 1.0 format) instead of KDOP. KDOP is only preserved from original files. The game engine expects KDOP for HOD 2.0 collision. See `kdop-scar-pipeline-gap-plan.md`.
+
+3. **SCAR battle scars not generated from scratch (MEDIUM):** SCAR chunks only preserved from originals. Reverse engineering ongoing in `analyze_scar.rs` / `analyze_scar2.rs`.
+
+4. **DAE texture mapping only resolves diffuse (HIGH):** Non-diffuse slots require DAEnerys naming convention. See `kdop-scar-pipeline-gap-plan.md`.
+
+5. **Tangent path for tagged meshes (MEDIUM):** `has_mult_tags` flat-list parts use `compute_tangent_space` on deduped vertices instead of HODOR-style pre-dedup accumulation.
+
+6. **Animations not processed from DAE:** ANIM[...] nodes in DAE are not parsed. The HOD format uses a different animation system than DAEnerys. Animation tab is currently empty for DAE imports.
 
 ---
 
 ## Next Steps
 
-1. **Implement animation system** for DAE imports (ANIM nodes → HOD animation format).
-2. **Reduce noisy parser diagnostics** in normal test output.
+1. **Reverse-engineer KDOP binary format** from vanilla HOD files (CRITICAL — see `kdop-scar-pipeline-gap-plan.md`)
+2. **Implement KDOP generator** and integrate into `generate_v2_from_model`
+3. **Complete SCAR reverse engineering** and implement generator
+4. **Fix tangent path** for `has_mult_tags` flat-list parts
+5. **Extend DAE texture mapping** to resolve non-diffuse slots
+6. **Implement animation system** for DAE imports (ANIM nodes → HOD animation format).
+7. **Reduce noisy parser diagnostics** in normal test output.
 
 ---
 
@@ -386,6 +404,12 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 **Latest Test Results:** `cargo run --bin test_hodor_replication` passes 3/3 (`ter_pharos`, `ter_centaur`, `ter_fenris`). `cargo run --bin verify_lossless` round-trip parsing succeeds for all test files. `cargo check` on `src-tauri` succeeds. `npm run build` succeeds.
 
-**Document Version:** 8.0  
+**Document Version:** 9.0  
 **Last Updated:** 2026-05-30  
-**Status:** DAE import pipeline fully functional. Mesh LOD grouping, joint positions, engine burns, mesh parenting, shader config, and animation dock visibility all fixed. UV shifting and animation system remain.
+**Status:** Pipeline audit complete. Identified KDOP/SCAR generation gaps as critical blockers for from-scratch DAE imports. Plan documented in `kdop-scar-pipeline-gap-plan.md`.
+
+## 2026-05-30: Crash on DAE Rendering Root Cause Found
+* **What failed**: The game engine still crashed when rendering the newly created `ter_centaur_from_dae.hod` file.
+* **Root Cause**: The DAE parser (`dae.rs`) injected a default material named `nameplate.bmp` for any unassigned geometry (the badge mesh) and gave it the shader name `"default"`. Homeworld Remastered does not have a `"default"` shader pipeline, so it panicked and crashed when attempting to load the `STAT` chunk for the unassigned mesh. Additionally, if the user changed the shader to `badge` but provided no textures, the game would crash on missing required textures for that shader.
+* **What was fixed**: Changed `dae.rs` to assign the `"matte"` shader instead of `"default"` as a fallback for unassigned materials, preventing the game from crashing on an invalid shader pipeline name.
+* **Next Steps**: The user needs to manually adjust the shader for the badge geometry in the editor to either `"badge"` (with a transparent texture assigned) or delete it entirely, ensuring the game receives valid inputs for all meshes.
