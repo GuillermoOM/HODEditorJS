@@ -577,21 +577,50 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             scale: None,
         });
     } else if is_burn {
+        // Parse Flame children to extract burn vertices
+        let mut burn_vertices = Vec::new();
+        for child in node.children().filter(|n| n.has_tag_name("node")) {
+            let child_name = child.attribute("name").unwrap_or("");
+            if child_name.starts_with("Flame[") {
+                // Extract position from translate element
+                if let Some(t) = child.children().find(|n| n.has_tag_name("translate")) {
+                    if let Some(text) = t.text() {
+                        let coords: Vec<f32> = text.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                        if coords.len() >= 3 {
+                            burn_vertices.push(Vector3 {
+                                x: coords[0],
+                                y: coords[1],
+                                z: coords[2],
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        let num_divisions = burn_vertices.len().max(2) as i32;
         model.engine_burns.push(HODEngineBurn {
             name: name.clone(),
             parent_name: p_name.clone().unwrap_or_default(),
-            num_divisions: 5,
+            num_divisions,
             num_flames: 1,
-            vertices: Vec::new(),
+            vertices: burn_vertices,
         });
     } else {
         // Generic node — add as joint so the hierarchy tree can display it.
         // Filtered prefixes: Flame[], Class[], ROOT_, UVSets[], COL[], HOLD_
-        // MULT[...] nodes are skipped — they're mesh containers, not joints.
-        // Meshes are attached to their parent joint via parent_name from
-        // the geometry parser.
-        if !name.starts_with("MULT[")
-            && !name.starts_with("Flame[") 
+        // MULT[...] nodes: update mesh parent_name from scene graph, don't add as joint.
+        if name.starts_with("MULT[") {
+            // MULT[radar]_LOD[0] → mesh name "radar"
+            if let Some(end) = name.find("]") {
+                let mesh_name = name[5..end].to_string();
+                // Update all meshes with this name to use the scene graph parent
+                for mesh in &mut model.meshes {
+                    if mesh.name == mesh_name {
+                        mesh.parent_name = p_name.clone().unwrap_or_else(|| "Root".to_string());
+                    }
+                }
+            }
+        } else if !name.starts_with("Flame[") 
             && !name.starts_with("Class[")
             && !name.starts_with("ROOT_")
             && !name.starts_with("UVSets[")
