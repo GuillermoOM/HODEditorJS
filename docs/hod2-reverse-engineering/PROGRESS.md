@@ -430,3 +430,12 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 * **Root Cause**: The DAE parser (`dae.rs`) injected a default material named `nameplate.bmp` for any unassigned geometry (the badge mesh) and gave it the shader name `"default"`. Homeworld Remastered does not have a `"default"` shader pipeline, so it panicked and crashed when attempting to load the `STAT` chunk for the unassigned mesh. Additionally, if the user changed the shader to `badge` but provided no textures, the game would crash on missing required textures for that shader.
 * **What was fixed**: Changed `dae.rs` to assign the `"matte"` shader instead of `"default"` as a fallback for unassigned materials, preventing the game from crashing on an invalid shader pipeline name.
 * **Next Steps**: The user needs to manually adjust the shader for the badge geometry in the editor to either `"badge"` (with a transparent texture assigned) or delete it entirely, ensuring the game receives valid inputs for all meshes.
+
+## 2026-05-31: UI Rules Enforcement & Engine Object Import
+* **What was fixed**: Implemented several strict UI Rulings from the source of truth, recovering lost updates from a previous `git reset --hard` mistake.
+  1. The "Root" node is strictly protected from being renamed via the Context Menu.
+  2. Turret assemblies are now correctly auto-detected without needing the explicit `Turret_` prefix if they contain `_Latitude`, `_Pitch`, `_Yaw`, or `_Barrel` subnodes.
+  3. Model Diagnostic requirements for Turret Assemblies were updated to remove the `Heading` joint requirement and accurately enforce `Position`, `Direction`, `Latitude`, `Muzzle`, and `Rest`.
+  4. The Engine Burn count warning threshold was updated to `> 9` limit.
+  5. Fully implemented UI Buttons and React handler functions to allow `.obj` file mesh importing specifically for `engine_glow` and `engine_shape` assemblies.
+* **Next Steps**: Continue enforcing any remaining UI rulings and verify the OBJ meshes for engine glows/shapes behave identically to collision meshes.

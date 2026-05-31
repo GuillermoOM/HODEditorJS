@@ -229,8 +229,18 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   // Weapon Grouping helpers
   const getWeaponGroupInfo = (name: string) => {
     // Check weapon and turret assemblies
-    const weaponMatch = name.match(/^(Weapon_[A-Za-z0-9_]+|Turret_[A-Za-z0-9_]+)_(Position|Direction|Muzzle\d*|Rest|Latitude|Pitch|Yaw|Barrel\d*)$/i);
-    if (weaponMatch) return { baseName: weaponMatch[1], suffix: weaponMatch[2], type: weaponMatch[1].startsWith('Turret') ? 'turret_group' : 'weapon_group' };
+    const weaponMatch = name.match(/^(Weapon_[A-Za-z0-9_]+|Turret_[A-Za-z0-9_]+)_(Position|Direction|Heading|Muzzle\d*|Rest|Latitude|Pitch|Yaw|Barrel\d*)$/i);
+    if (weaponMatch) {
+      const baseName = weaponMatch[1];
+      const isTurretExplicit = baseName.startsWith('Turret');
+      let isTurretDetected = false;
+      if (model && !isTurretExplicit) {
+        // Auto-detect turret if it has Latitude, Pitch, Yaw, or Barrel anywhere in its hierarchy tree
+        const hasTurretParts = model.joints.some(j => j.name.startsWith(baseName + "_") && (j.name.includes("_Latitude") || j.name.includes("_Pitch") || j.name.includes("_Yaw") || j.name.includes("_Barrel")));
+        if (hasTurretParts) isTurretDetected = true;
+      }
+      return { baseName, suffix: weaponMatch[2], type: (isTurretExplicit || isTurretDetected) ? 'turret_group' : 'weapon_group' };
+    }
     
     // Check point groups (Capture, Repair, Salvage, Hardpoint)
     const pointMatch = name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+|Hardpoint[A-Za-z0-9_]*)_(Heading|Left|Up|Position|Direction|Rest)$/i);
@@ -872,6 +882,10 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
 
   const handleRenameNode = (oldName: string, type: string) => {
     if (!model) return;
+    if (oldName === "Root") {
+      alert("The Root node cannot be renamed.");
+      return;
+    }
     
     let cleanOldName = oldName;
     let prefix = "";
@@ -1383,7 +1397,8 @@ const handleDeleteNode = (name: string, type: string) => {
         label: "Turret group",
         required: [
           { key: "Position", suffix: "_Position" },
-          { key: "Heading", suffix: "_Heading" },
+          { key: "Direction", suffix: "_Direction" },
+          { key: "Latitude", suffix: "_Latitude" },
           { key: "Muzzle", suffix: "_Muzzle", allowPrefix: true },
           { key: "Rest", suffix: "_Rest" },
         ],
@@ -1459,10 +1474,10 @@ const handleDeleteNode = (name: string, type: string) => {
       }
     });
 
-    if (model.engine_burns && model.engine_burns.length >= 9) {
+    if (model.engine_burns && model.engine_burns.length > 9) {
       warnings.push({
         type: "warning",
-        message: `Engine burn limit reached (${model.engine_burns.length}/9). Adding more may cause instability.`
+        message: `Engine burn limit exceeded. Having more than 9 may cause instability.`
       });
     }
 

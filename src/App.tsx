@@ -13,7 +13,7 @@ function App() {
   const [filePath, setFilePath] = useState("");
   const [selectedNode, setSelectedNode] = useState<{ type: string; name: string } | null>(null);
   const [transformMode, setTransformMode] = useState<"translate" | "rotate" | "scale">("translate");
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
