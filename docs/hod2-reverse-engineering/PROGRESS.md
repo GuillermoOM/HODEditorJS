@@ -7,14 +7,14 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ---
 
 ## Current Status
-- **COLD/KDOP Collision Pipeline Implemented**: Discovered and implemented the correct HOD 2.0 collision pipeline where BOTH COLD and KDOP coexist as DTRM siblings. Re-enabled COLD generation (BBOX + BSPH + TRIS) in `hod.rs`. Rewrote `kdop.rs` to generate proper 26-DOP convex hulls (46-48 vertices, 90-92 faces) using triple-plane intersection algorithm. Fixed DAE parser to extract actual collision mesh vertices from COL[...] geometries instead of creating empty stubs. Updated knowledge base with corrected KDOP binary format (444-byte header = 28 AABB + 416 direction records).
-- **DAE Coordinate System Fixed**: Removed the `is_y_up` transformation logic from `dae.rs`. DAEnerys exports are natively in Homeworld `Z_UP` space, so the transformation was double-rotating the model, causing the "tilted left and down" rendering glitch.
-- **Crash on Zoom Identified**: Discovered that the zoom crash in `ter_centaur_from_dae.hod` was NOT a collision mesh issue, but a Material Out-Of-Bounds error. DAEnerys exports 3 mesh parts. The user deleted the "badge" material in the UI before saving, resulting in 2 `STAT` chunks for 3 mesh parts. When the engine renders the 3rd part at close zoom, it accesses invalid memory and crashes.
+- **EngineNozzle, EngineGlow, and Subnode UI Refactoring**: Implemented specific UI rulings from the documentation. `EngineNozzle` nodes are now auto-numbered and restrict manual renaming. Decoupled subnodes (burns, glows, shapes) so they can be individually added/removed from the nozzle's inspector pane.
+- **EngineGlow LOD Inspector**: Added a dedicated `GlowLODInspector` component to manage multiple LODs for `EngineGlow` nodes, allowing users to import/export `.obj` files specifically for an EngineGlow's currently selected LOD, similar to standard mesh LODs.
+- **Assembly Node Restrictions Enforcement**: Implemented logic to prevent duplication of assembly names and correct naming conventions for Turret versus Weapon assemblies. Blocked context menus on assembly subnodes, strictly funneling users to manipulate assemblies through their root joint representation.
 
 **Phase:** Phase 6 — Frontend UI & Editor UX  
-**Status:** Collision pipeline complete. COLD and KDOP both generated from collision mesh vertices. DAE parser extracts COL[...] vertices. KDOP uses 26-DOP convex hull algorithm (triple-plane intersection). verify_lossless passes. test_hodor_replication passes 2/3 (ter_centaur fails on missing TGA, unrelated).
-**Last Updated:** 2026-05-30  
-**Updated By:** OpenCode Agent (collision pipeline implementation)
+**Status:** Implementing UI/UX rules from UI Source of Truth. Engine nozzle rules, LOD inspectors, and assembly rules successfully applied.
+**Last Updated:** 2026-05-31  
+**Updated By:** OpenCode Agent (UI implementation)
 
 ---
 

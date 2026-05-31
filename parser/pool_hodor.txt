@@ -1,0 +1,4 @@
+POOL type: 3518
+Tex pool: comp=3187976, decomp=8388576
+Mesh pool: comp=594170, decomp=1453184
+Face pool: comp=98209, decomp=118488

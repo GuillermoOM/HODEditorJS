@@ -280,8 +280,30 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   };
 
   const handleAddNode = () => {
-    if (!model || !newNodeName.trim()) return;
-    const name = newNodeName.trim();
+    if (!model) return;
+    let autoName = newNodeName.trim();
+    const isAutoNumbered = ["engine_nozzle", "repair_point_template", "capture_point_template", "salvage_point_template"].includes(addNodeType);
+    
+    if (isAutoNumbered) {
+        let maxNum = -1;
+        let prefix = "";
+        if (addNodeType === "engine_nozzle") prefix = "EngineNozzle";
+        else if (addNodeType === "repair_point_template") prefix = "RepairPoint";
+        else if (addNodeType === "capture_point_template") prefix = "CapturePoint";
+        else if (addNodeType === "salvage_point_template") prefix = "SalvagePoint";
+
+        model.joints.forEach(j => {
+            const match = j.name.match(new RegExp(`^${prefix}(\\d+)$`, "i"));
+            if (match) {
+                maxNum = Math.max(maxNum, parseInt(match[1]));
+            }
+        });
+        autoName = `${prefix}${maxNum + 1}`;
+    } else if (!autoName) {
+        return; // Empty name not allowed for non-auto nodes
+    }
+
+    const name = autoName;
     const parent = newNodeParent === "Root" ? "Root" : newNodeParent;
 
     
@@ -298,8 +320,14 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       return false;
     };
 
-    if (checkDuplicate(name)) {
-      window.alert(`A node with the name "${name}" already exists! Please choose a unique name.`);
+    let finalNodeName = name;
+    if (addNodeType === "weapon_template") finalNodeName = name.startsWith("Weapon_") || name.startsWith("weapon_") ? name : `Weapon_${name}`;
+    else if (addNodeType === "turret_template") finalNodeName = name.startsWith("Weapon_") || name.startsWith("Turret_") ? name : `Weapon_${name}_Turret`;
+    else if (addNodeType === "repair_point_template" || addNodeType === "capture_point_template" || addNodeType === "salvage_point_template") finalNodeName = name; // already computed autoName
+    else if (addNodeType === "engine_nozzle") finalNodeName = name;
+
+    if (checkDuplicate(finalNodeName)) {
+      window.alert(`A node with the name "${finalNodeName}" already exists! Please choose a unique name.`);
       return;
     }
     
@@ -468,7 +496,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       updatedModel.joints = [...model.joints, ...templateJoints];
       invoke("log_event", { level: "INFO", message: `Baked and added new Weapon template family for base name: ${base}` }).catch(console.error);
     } else if (addNodeType === "turret_template") {
-      const base = name.startsWith("Weapon_") || name.startsWith("weapon_") ? name : `Weapon_${name}`;
+      const base = finalNodeName;
       const posName = `${base}_Position`;
       const latName = `${base}_Latitude`;
       const dirName = `${base}_Direction`;
@@ -553,11 +581,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       updatedModel.joints = [...model.joints, ...templateJoints];
       invoke("log_event", { level: "INFO", message: `Baked and added new Turret template family for base name: ${base}` }).catch(console.error);
     } else if (addNodeType === "engine_nozzle") {
-      if (model.engine_burns.length >= 9) {
-        alert("Maximum limit of 9 engine burns reached.");
-        return;
-      }
-      const baseJointName = name.toLowerCase().includes("nozzle") ? name : `Nozzle_${name}`;
+      const baseJointName = finalNodeName;
       const newJoint = {
         name: baseJointName,
         parent_name: parent === "(None)" ? undefined : parent,
@@ -570,24 +594,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
           ]
         }
       };
-
-      const burnName = `burn_${name}`;
-      const newBurn = {
-        name: burnName,
-        parent_name: baseJointName,
-        num_divisions: 16,
-        num_flames: 4,
-        vertices: [
-          { x: 0, y: 0, z: 0 },
-          { x: 0, y: 0, z: -1.0 },
-          { x: 0, y: 0, z: -2.0 },
-          { x: 0, y: 0, z: -3.0 },
-        ]
-      };
-
+      // Don't auto-add engine_burn here, let the user add it via the inspector
       updatedModel.joints = [...model.joints, newJoint];
-      updatedModel.engine_burns = [...model.engine_burns, newBurn];
-      invoke("log_event", { level: "INFO", message: `Added new Engine Nozzle joint ${baseJointName} and fire plume ${burnName} parented under ${parent}` }).catch(console.error);
+      invoke("log_event", { level: "INFO", message: `Added new Engine Nozzle joint ${baseJointName} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "mesh") {
       const newMesh = {
         name,
@@ -598,7 +607,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       updatedModel.meshes = [...model.meshes, newMesh];
       invoke("log_event", { level: "INFO", message: `Added new empty HODMesh: ${name} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "repair_point_template") {
-      const base = name.startsWith("RepairPoint") ? name : `RepairPoint${name}`;
+      const base = finalNodeName;
       const headingName = `${base}_Heading`;
       const leftName = `${base}_Left`;
       const upName = `${base}_Up`;
@@ -656,7 +665,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       updatedModel.joints = [...model.joints, ...templateJoints];
       invoke("log_event", { level: "INFO", message: `Added new repair point template: ${base} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "capture_point_template") {
-      const base = name.startsWith("CapturePoint") ? name : `CapturePoint${name}`;
+      const base = finalNodeName;
       const headingName = `${base}_Heading`;
       const leftName = `${base}_Left`;
       const upName = `${base}_Up`;
@@ -760,7 +769,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       updatedModel.joints = [...model.joints, ...templateJoints];
       invoke("log_event", { level: "INFO", message: `Added new hardpoint template: ${base} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "salvage_point_template") {
-      const base = name.startsWith("SalvagePoint") ? name : `SalvagePoint${name}`;
+      const base = finalNodeName;
       const headingName = `${base}_Heading`;
       const leftName = `${base}_Left`;
       const upName = `${base}_Up`;
@@ -883,10 +892,14 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   const handleRenameNode = (oldName: string, type: string) => {
     if (!model) return;
     if (oldName === "Root") {
-      alert("The Root node cannot be renamed.");
+      alert("The 'Root' node cannot be renamed as it is required by the engine.");
       return;
     }
-    
+    if (oldName.toLowerCase().startsWith("enginenozzle") || oldName.toLowerCase().startsWith("repairpoint") || oldName.toLowerCase().startsWith("capturepoint") || oldName.toLowerCase().startsWith("salvagepoint")) {
+      alert("Auto-generated point and nozzle nodes cannot be manually renamed.");
+      return;
+    }
+
     let cleanOldName = oldName;
     let prefix = "";
     let suffix = "";
@@ -1565,12 +1578,15 @@ const handleDeleteNode = (name: string, type: string) => {
 
     if (searchTerm && !matchesSearchRecursive(jointName)) return null;
 
+    const isEngineNozzle = jointName.toLowerCase().startsWith("enginenozzle") || engineBurns.length > 0 || engineGlows.length > 0 || engineShapes.length > 0;
+    const nodeType = isEngineNozzle ? "engine_nozzle" : "joint";
+
     return (
       <div key={jointName} style={{ marginLeft: depth > 0 ? "12px" : "0px" }}>
         <div
           className={`list-item ${isSelected ? "active" : ""}`}
-          onClick={() => setSelectedNode({ type: "joint", name: jointName })}
-          onContextMenu={(e) => handleContextMenu(e, jointName, "joint")}
+          onClick={() => setSelectedNode({ type: nodeType, name: jointName })}
+          onContextMenu={(e) => handleContextMenu(e, jointName, nodeType)}
           draggable={jointName !== "Root" && !(getWeaponGroupInfo(jointName) && jointName !== getWeaponGroupInfo(jointName)?.baseName) ? "true" : "false"}
           onDragStart={(e) => {
             if (jointName === "Root") {
@@ -3080,22 +3096,29 @@ const handleDeleteNode = (name: string, type: string) => {
               </div>
 
               {/* Node Name */}
-              <div>
-                <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "6px" }}>
-                  {addNodeType === "weapon_template" || addNodeType === "turret_template" ? "Base Weapon Name" : "Node Name"}
-                </label>
-                <input
-                  placeholder={addNodeType === "weapon_template" || addNodeType === "turret_template" ? "e.g. Laser_Turret" : "e.g. MyNewNode"}
-                  value={newNodeName}
-                  onChange={(e) => setNewNodeName(e.target.value)}
-                  style={{ height: "36px", fontSize: "13px" }}
-                />
-                {(addNodeType === "weapon_template" || addNodeType === "turret_template") && (
-                  <div style={{ fontSize: "10px", color: "var(--accent-cyan)", marginTop: "4px" }}>
-                    ℹ️ This will auto-generate the complete compliant {addNodeType === "turret_template" ? "6-joint Turret" : "4-joint Weapon"} family!
-                  </div>
-                )}
-              </div>
+              {!["engine_nozzle", "repair_point_template", "capture_point_template", "salvage_point_template"].includes(addNodeType) && (
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "6px" }}>
+                    {addNodeType === "weapon_template" || addNodeType === "turret_template" ? "Base Weapon Name" : "Node Name"}
+                  </label>
+                  <input
+                    placeholder={addNodeType === "weapon_template" || addNodeType === "turret_template" ? "e.g. Laser_Turret" : "e.g. MyNewNode"}
+                    value={newNodeName}
+                    onChange={(e) => setNewNodeName(e.target.value)}
+                    style={{ height: "36px", fontSize: "13px" }}
+                  />
+                  {(addNodeType === "weapon_template" || addNodeType === "turret_template") && (
+                    <div style={{ fontSize: "10px", color: "var(--accent-cyan)", marginTop: "4px" }}>
+                      ℹ️ This will auto-generate the complete compliant {addNodeType === "turret_template" ? "6-joint Turret" : "4-joint Weapon"} family!
+                    </div>
+                  )}
+                </div>
+              )}
+              {["engine_nozzle", "repair_point_template", "capture_point_template", "salvage_point_template"].includes(addNodeType) && (
+                <div style={{ fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic", marginBottom: "8px" }}>
+                  Name will be auto-generated sequentially (e.g. {addNodeType === "engine_nozzle" ? "EngineNozzle0" : "Point0"}).
+                </div>
+              )}
 
               {/* Node Parent */}
               <div>
