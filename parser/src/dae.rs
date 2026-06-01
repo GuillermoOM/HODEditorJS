@@ -509,6 +509,18 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
 
     let p_name = parent_name.map(|s| s.to_string());
 
+    // If this is a top-level node (p_name is None), discard the transform.
+    // Blender's Collada exporter adds an X-rotation matrix to convert Z_UP to Y_UP.
+    // Homeworld modders model in Y_UP natively, so this matrix incorrectly rotates the ship.
+    if p_name.is_none() {
+        transform = Matrix4 { m: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]};
+    }
+
     if is_joint {
         model.joints.push(HODJoint {
             name: name.clone(),

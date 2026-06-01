@@ -70,6 +70,7 @@ const NumericInput: React.FC<NumericInputProps> = ({
       if (onWheel) {
         // Prevent browser's native default scroll which would scroll the parent container
         e.preventDefault();
+        e.stopPropagation();
         isWheelingRef.current = true;
         onWheel(e as unknown as React.WheelEvent<HTMLInputElement>);
       }

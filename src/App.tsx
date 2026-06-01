@@ -818,20 +818,22 @@ function App() {
     setStatusMsg("Saving HOD...");
     setErrorMsg(null);
 
-    try {
-      // Phase 4: Trigger native Rust HOD v2 compression and writer
-      await invoke("save_hod", { filePath, model });
-      setIsDirty(false);
-      invoke("log_event", { level: "INFO", message: `Successfully compiled and saved HOD 2.0 to path: ${filePath}` }).catch(console.error);
-      setStatusMsg("HOD 2.0 file compiled successfully");
-    } catch (e: any) {
-      const err = `Frontend failed to save HOD 2.0 to path ${filePath}: ${e.toString()}`;
-      invoke("log_event", { level: "ERROR", message: err }).catch(console.error);
-      setErrorMsg(e.toString());
-      setStatusMsg("Failed to save HOD 2.0");
-    } finally {
-      setIsLoading(false);
-    }
+    setTimeout(async () => {
+      try {
+        // Phase 4: Trigger native Rust HOD v2 compression and writer
+        await invoke("save_hod", { filePath, model });
+        setIsDirty(false);
+        invoke("log_event", { level: "INFO", message: `Successfully compiled and saved HOD 2.0 to path: ${filePath}` }).catch(console.error);
+        setStatusMsg("HOD 2.0 file compiled successfully");
+      } catch (e: any) {
+        const err = `Frontend failed to save HOD 2.0 to path ${filePath}: ${e.toString()}`;
+        invoke("log_event", { level: "ERROR", message: err }).catch(console.error);
+        setErrorMsg(e.toString());
+        setStatusMsg("Failed to save HOD 2.0");
+      } finally {
+        setIsLoading(false);
+      }
+    }, 50);
   };
 
   const handleSaveHODAs = async () => {
@@ -849,21 +851,28 @@ function App() {
       setStatusMsg("Saving HOD As...");
       setErrorMsg(null);
 
-      await invoke("save_hod_as", { sourcePath: filePath || "", targetPath: selectedPath, model });
-      
-      setFilePath(selectedPath);
-      setIsDirty(false);
-      invoke("log_event", { level: "INFO", message: `Successfully compiled HOD 2.0 as a new file at: ${selectedPath}` }).catch(console.error);
-      setStatusMsg("HOD 2.0 file compiled successfully");
-      alert(`HOD 2.0 file compiled successfully to new path:\n${selectedPath}\n\nMeshes are natively uncompressed, and textures are compressed (if TGA/PNG mapping existed).`);
+      setTimeout(async () => {
+        try {
+          await invoke("save_hod_as", { sourcePath: filePath || "", targetPath: selectedPath, model });
+          
+          setFilePath(selectedPath);
+          setIsDirty(false);
+          invoke("log_event", { level: "INFO", message: `Successfully compiled HOD 2.0 as a new file at: ${selectedPath}` }).catch(console.error);
+          setStatusMsg("HOD 2.0 file compiled successfully");
+          alert(`HOD 2.0 file compiled successfully to new path:\n${selectedPath}\n\nMeshes are natively uncompressed, and textures are compressed (if TGA/PNG mapping existed).`);
+        } catch (e: any) {
+          const err = `Frontend failed to Compile/Save HOD 2.0 As: ${e.toString()}`;
+          invoke("log_event", { level: "ERROR", message: err }).catch(console.error);
+          setStatusMsg("Failed to save HOD 2.0");
+          setErrorMsg(err);
+          alert(`Save As failed: ${e.toString()}`);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 50);
     } catch (e: any) {
-      const err = `Frontend failed to Compile/Save HOD 2.0 As: ${e.toString()}`;
-      invoke("log_event", { level: "ERROR", message: err }).catch(console.error);
-      setStatusMsg("Failed to save HOD 2.0");
-      setErrorMsg(err);
-      alert(`Save As failed: ${e.toString()}`);
-    } finally {
       setIsLoading(false);
+      console.error(e);
     }
   };
 

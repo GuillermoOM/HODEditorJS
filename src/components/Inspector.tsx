@@ -144,6 +144,7 @@ const NumericInput: React.FC<NumericInputProps> = ({
       if (onWheel) {
         // Prevent browser's native default scroll which would scroll the parent container
         e.preventDefault();
+        e.stopPropagation();
         isWheelingRef.current = true;
         // Construct a synthetic-like event since onWheel expects React.WheelEvent
         // We can cast it or just pass it since React.WheelEvent is very similar for our use cases
@@ -2520,28 +2521,38 @@ export const Inspector: React.FC<InspectorProps> = ({
           setIsLoading?.(true);
           setStatusMsg?.("Importing TGA textures...");
           
-          const importedTexs = await invoke<any[] | null>("import_tga_textures");
-          if (!importedTexs || importedTexs.length === 0) return;
+          setTimeout(async () => {
+            try {
+              const importedTexs = await invoke<any[] | null>("import_tga_textures");
+              if (!importedTexs || importedTexs.length === 0) {
+                setIsLoading?.(false);
+                return;
+              }
 
-          let updatedTextures = [...(model.textures || [])];
-          for (const importedTex of importedTexs) {
-            const existsIdx = updatedTextures.findIndex(t => t.name.toLowerCase() === importedTex.name.toLowerCase());
-            if (existsIdx !== -1) {
-              updatedTextures[existsIdx] = importedTex;
-            } else {
-              updatedTextures.push(importedTex);
+              let updatedTextures = [...(model.textures || [])];
+              for (const importedTex of importedTexs) {
+                const existsIdx = updatedTextures.findIndex(t => t.name.toLowerCase() === importedTex.name.toLowerCase());
+                if (existsIdx !== -1) {
+                  updatedTextures[existsIdx] = importedTex;
+                } else {
+                  updatedTextures.push(importedTex);
+                }
+              }
+
+              onModelChange?.({ ...model, textures: updatedTextures });
+              
+              const names = importedTexs.map(t => t.name).join(", ");
+              invoke("log_event", { level: "INFO", message: `Imported and bound TGA textures: ${names}` }).catch(console.error);
+              alert(`Successfully imported TGA textures "${names}"!\n\nThey are now available in the texture slots dropdown list below.`);
+            } catch (e: any) {
+              console.error(e);
+              alert(`Failed to import TGA texture: ${e.toString()}`);
+            } finally {
+              setIsLoading?.(false);
             }
-          }
-
-          onModelChange?.({ ...model, textures: updatedTextures });
-          
-          const names = importedTexs.map(t => t.name).join(", ");
-          invoke("log_event", { level: "INFO", message: `Imported and bound TGA textures: ${names}` }).catch(console.error);
-          alert(`Successfully imported TGA textures "${names}"!\n\nThey are now available in the texture slots dropdown list below.`);
+          }, 50);
         } catch (e: any) {
           console.error(e);
-          alert(`Failed to import TGA texture: ${e.toString()}`);
-        } finally {
           setIsLoading?.(false);
         }
       };

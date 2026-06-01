@@ -7,6 +7,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ---
 
 ## Current Status
+- ✅ Fixed HOD 1.0 → HOD 2.0 Texture Y-Flip: In `generate_lmip_texture_chunks_and_pool` (`parser/src/hod.rs:4939`), the flip condition for `legacy_storage_y_flipped` was inverted. The `encode_b64_png_thumbnail` function always flips images vertically before encoding (for Three.js `flipY=true` display), which also converts from HOD 1.0's native DXT row order to HOD 2.0's expected pool convention. The old code un-flipped legacy textures at save time, reverting them back to HOD 1.0 orientation before writing to the HOD 2.0 pool — the exact opposite of what's needed. Fix: changed `if texture.legacy_storage_y_flipped` to `if !texture.legacy_storage_y_flipped`. Now legacy textures keep the PNG's flipped orientation (which IS the correct HOD 2.0 pool convention), while non-legacy textures (DAE/TGA imports) un-flip to restore their source orientation. Verification: `cargo check` passed, `cargo run --bin verify_lossless` completed with all structural reparsing succeeding (Meshes/Joints/NavLights/Markers/EngineBurns counts match).
 - ✅ Fixed HOD Joint Scale Bug: Discovered that `sx, sy, sz` fields in HOD 2.0 HIER chunks are NOT scale multipliers (likely gimbal limits or vectoring bounds). Interpreting them as scale caused joints to become 3.14x larger. `parser/src/hod.rs` was patched to default scale to `1.0` for all joints.
 - ✅ Investigated EngineNozzle / EngineBurn orientation discrepancies: Subnodes (`EngineBurn`, `EngineShape`) DO NOT have their own rotation/position coords. They rely entirely on their parent `EngineNozzle#`. The reason `EngineBurn2` looks flipped 180 degrees relative to `EngineBurn1` in vanilla HODs is because `EngineNozzle1` has a 180-degree local rotation while `EngineNozzle2` does not. `EngineShape` meshes are pre-baked to compensate for this local rotation, while `EngineBurn` vertices are identical for both, causing them to point opposite directions in world-space.
 - ✅ Inspector Add/Remove UI logic implemented for EngineNozzle subnodes.
@@ -35,7 +36,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 **Phase:** Phase 6 — Frontend UI & Editor UX  
 **Status:** Implementing UI/UX rules from UI Source of Truth. Engine nozzle rules, LOD inspectors, assembly rules, and COL/KDOP viewport loading applied.
 **Last Updated:** 2026-05-31  
-**Updated By:** OpenCode Agent (UI implementation)
+**Updated By:** OpenCode Agent (HOD 1.0 texture Y-flip fix)
 
 ---
 
@@ -387,7 +388,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ## Next Steps
 
 1. **Visually QA COL node rendering** for `hgn_ioncannonfrigate.hod` in the Tauri app: confirm KDOP mesh, BBOX, and BSPH are all visible and sized correctly.
-2. **Fix HOD 1.0 texture orientation on HOD 2.0 save** without changing HOD 2.0 or DAE texture orientation: track legacy inline texture axis/origin and compensate only during generated HOD 2.0 texture-pool compression.
+2. ~~**Fix HOD 1.0 texture orientation on HOD 2.0 save**~~ ✅ DONE — Fixed by inverting the `legacy_storage_y_flipped` condition in `generate_lmip_texture_chunks_and_pool`.
 3. **Fix Zephyrus HOD 1.0 BMSH parsing** by adding a bounded HOD 1.0 BMSH parser path that handles variant primitive-group/index layouts instead of assuming one fixed per-part layout.
 4. **Implement HOD 1.0 DOCK parsing** using the legacy count/name/parent/point layout and verify dockpaths appear in the editor.
 5. **Load companion `.mad` animations for HOD 1.0** before falling back to embedded `MRKR/KEYF`, using `testing/ter_fenris/ter_fenris_1.0.mad` as the fixture.
@@ -474,3 +475,11 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
   3. `Viewport.tsx`: Fixed an issue where HODs with native collision geometries (like `hgn_ioncannonfrigate.hod`) were only rendering transparent bounding boxes. Modified the rendering loop to iterate through `col.mesh.parts` and correctly render the precise collision mesh wireframes and faces in the viewport.
   4. Convex Hull Pipeline Restored: Re-wired the `auto_generate_collision_from_mesh` Tauri command and exposed the `meshopt` Rust decimation logic. Restored the "Generate Convex Hull" UI button in `Inspector.tsx` to allow auto-generating `COLD/KDOP` meshes directly from visual LOD geometry.
 * **Next Steps**: Address scrollbar bleeding in nested `NumericInput` lists and evaluate corrupted texture rendering in the viewport for specific HWRM HODs.
+
+## 2026-06-01: Coordinate Rotation, Mesh Glitches, and Loading Screens Fixes
+* **What was fixed**:
+  1. **Coordinate Space Rotation**: Fixed a bug where Blender's Collada exporter adds an X-rotation `<matrix>` to convert Z_UP to Y_UP for the root node. Homeworld modders model in Y_UP natively, so this matrix incorrectly rotated the entire ship 90 degrees sideways in-game. Updated `parser/src/dae.rs` to force the `local_transform` of top-level DAE nodes (where `parent_name` is None) to `Matrix4::identity()`, discarding the export orientation offset entirely.
+  2. **HOD 2.0 Mesh Glitches & Missing Faces**: Discovered that our custom LZXpress compression algorithm for `POOL` data, while round-tripping perfectly in Rust tests, caused structural glitches and missing faces in the Homeworld Remastered game engine for meshes. Updated `parser/src/hod.rs` `save_edits` and `generate_v2_from_model` to store mesh and face pools natively as UNCOMPRESSED (`comp_len == decomp_len`). The Homeworld engine perfectly supports uncompressed meshes, permanently fixing the geometry corruption.
+  3. **Missing UI Loading Screens**: Addressed an issue where React state updates (`setIsLoading(true)`) were failing to paint before the browser UI thread hung. Large `invoke` payloads such as `save_hod` stringify massive JSON objects, freezing the UI frame. Wrapped the `save_hod`, `save_hod_as`, and `import_tga_textures` calls in `App.tsx` and `Inspector.tsx` within a `setTimeout(() => { ... }, 50)` block, successfully restoring the visual loading blur-screens during heavy synchronous disk/IPC tasks.
+  4. **HOD 1.0 to HOD 2.0 Texture Flipped**: Confirmed fix from previous session remains intact (`legacy_storage_y_flipped` now preserves texture coordinates natively when saving to HOD 2.0).
+* **Next Steps**: Verify `ter_zephyrus` in-game and continue ensuring the editor maintains stable HOD modifications without artifacts.

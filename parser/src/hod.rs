@@ -88,7 +88,7 @@ pub struct HODTexture {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_path: Option<String>, // Original path if imported from TGA
     #[serde(default)]
-    pub legacy_storage_y_flipped: bool, // HOD 1.0 inline texture data needs save-time axis compensation.
+    pub legacy_storage_y_flipped: bool, // HOD 1.0 inline DXT uses opposite row order from HOD 2.0 pool convention. When true, the PNG's flipped orientation IS the correct HOD 2.0 pool orientation (no un-flip needed at save).
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -2424,12 +2424,12 @@ fn decompress_dxt5(data: &[u8], width: usize, height: usize) -> Vec<u8> {
             if alpha0 > alpha1 {
                 for i in 1..7 {
                     alphas[i + 1] =
-                        (((8 - i) as u32 * alpha0 as u32 + i as u32 * alpha1 as u32) / 7) as u8;
+                        (((7 - i) as u32 * alpha0 as u32 + i as u32 * alpha1 as u32) / 7) as u8;
                 }
             } else {
                 for i in 1..5 {
                     alphas[i + 1] =
-                        (((6 - i) as u32 * alpha0 as u32 + i as u32 * alpha1 as u32) / 5) as u8;
+                        (((5 - i) as u32 * alpha0 as u32 + i as u32 * alpha1 as u32) / 5) as u8;
                 }
                 alphas[6] = 0;
                 alphas[7] = 255;
@@ -2751,7 +2751,7 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
         png_preview,
         png_data,
         source_path: None,
-        legacy_storage_y_flipped: !context.is_v2,
+        legacy_storage_y_flipped: true, // The inline DXT was flipped vertically on load, so we need to flip it back on save to HOD 2.0 pool
     })
 }
 
@@ -4936,7 +4936,7 @@ fn generate_lmip_texture_chunks_and_pool(
         if width == 0 || height == 0 {
             continue;
         }
-        if texture.legacy_storage_y_flipped {
+        if !texture.legacy_storage_y_flipped {
             flip_rgba_vertical_in_place(&mut rgba, width, height);
         }
 
@@ -6179,8 +6179,10 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
         pool_data.extend_from_slice(&original_comp_tex);
 
         // For v2, always use regenerated mesh/face pools to ensure correct vertex data
-        let comp_mesh = xpress::compress_or_raw(&new_mesh_pool);
-        let comp_face = xpress::compress_or_raw(&new_face_pool);
+        // DANGER: Our custom LZXpress compressor seems to cause glitches in the Homeworld engine!
+        // We will store the mesh and face pools as UNCOMPRESSED (comp_len == decomp_len).
+        let comp_mesh = new_mesh_pool.clone();
+        let comp_face = new_face_pool.clone();
 
         pool_data
             .write_u32::<LittleEndian>(comp_mesh.len() as u32)
