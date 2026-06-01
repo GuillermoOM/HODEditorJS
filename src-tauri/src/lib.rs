@@ -694,6 +694,28 @@ fn convert_weapon_to_turret(
     Ok(model)
 }
 
+#[tauri::command]
+fn auto_generate_collision_from_mesh(mut model: HODModel, collision_mesh_name: String, source_mesh_name: String) -> Result<HODModel, String> {
+    write_log("INFO", &format!("Auto-generating collision mesh '{}' from visible mesh '{}'...", collision_mesh_name, source_mesh_name));
+    
+    // Attempt to generate the mesh using convex hull
+    let new_col_mesh = hwr_hod_parser::collision::generate_collision_from_visible_mesh(&model.meshes, Some(&source_mesh_name))
+        .ok_or_else(|| "Failed to generate collision mesh: no valid vertices found in source mesh".to_string())?;
+
+    // Update the model with the newly generated mesh parts
+    if let Some(col) = model.collision_meshes.iter_mut().find(|c| c.name == collision_mesh_name) {
+        col.mesh.parts = new_col_mesh.mesh.parts;
+    } else {
+        return Err(format!("Collision mesh '{}' not found in model", collision_mesh_name));
+    }
+    
+    // Auto-calculate bounds based on the new mesh
+    hwr_hod_parser::hod::generate_collision_mesh(&mut model);
+    
+    write_log("INFO", "Collision mesh generation successful.");
+    Ok(model)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -751,7 +773,8 @@ pub fn run() {
             save_hod_as,
             import_dae_file,
             select_dae_file,
-            convert_weapon_to_turret
+            convert_weapon_to_turret,
+            auto_generate_collision_from_mesh
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

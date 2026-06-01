@@ -7,9 +7,19 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ---
 
 ## Current Status
-- **EngineNozzle, EngineGlow, and Subnode UI Refactoring**: Implemented specific UI rulings from the documentation. `EngineNozzle` nodes are now auto-numbered and restrict manual renaming. Decoupled subnodes (burns, glows, shapes) so they can be individually added/removed from the nozzle's inspector pane.
-- **EngineGlow LOD Inspector**: Added a dedicated `GlowLODInspector` component to manage multiple LODs for `EngineGlow` nodes, allowing users to import/export `.obj` files specifically for an EngineGlow's currently selected LOD, similar to standard mesh LODs.
-- **Assembly Node Restrictions Enforcement**: Implemented logic to prevent duplication of assembly names and correct naming conventions for Turret versus Weapon assemblies. Blocked context menus on assembly subnodes, strictly funneling users to manipulate assemblies through their root joint representation.
+- ✅ Fixed HOD Joint Scale Bug: Discovered that `sx, sy, sz` fields in HOD 2.0 HIER chunks are NOT scale multipliers (likely gimbal limits or vectoring bounds). Interpreting them as scale caused joints to become 3.14x larger. `parser/src/hod.rs` was patched to default scale to `1.0` for all joints.
+- ✅ Investigated EngineNozzle / EngineBurn orientation discrepancies: Subnodes (`EngineBurn`, `EngineShape`) DO NOT have their own rotation/position coords. They rely entirely on their parent `EngineNozzle#`. The reason `EngineBurn2` looks flipped 180 degrees relative to `EngineBurn1` in vanilla HODs is because `EngineNozzle1` has a 180-degree local rotation while `EngineNozzle2` does not. `EngineShape` meshes are pre-baked to compensate for this local rotation, while `EngineBurn` vertices are identical for both, causing them to point opposite directions in world-space.
+- ✅ Inspector Add/Remove UI logic implemented for EngineNozzle subnodes.
+- ✅ GlowLODInspector added to support multi-LOD OBJ import/export for EngineGlows.
+- ✅ Restored/Enforced strict hierarchical renaming rules preventing users from renaming/deleting subnodes (e.g., `Weapon_Position`, `EngineBurn1`) directly.
+- ✅ Fixed Corrupted Textures in Viewport: Resolved a desync issue when reading texture pools in HOD 2.0. The parser was previously only accounting for the byte size of the top-level mipmap, leaving the reading cursor misaligned and corrupting subsequent textures.
+- ✅ Fixed Number Field Scrolling Issue: Upgraded the `NumericInput` component to attach a non-passive `wheel` event listener. This correctly calls `e.preventDefault()` to stop the parent container from scrolling while still allowing the wheel to increment/decrement the numeric value.
+- ✅ Grouped EngineGlow LODs in Hierarchy Tree: Adjusted `HierarchyTree.tsx` to visually group multiple LOD instances of `EngineGlow` into a single node with an LOD count, bringing its behavior inline with standard mesh nodes. Also updated the `GlowLODInspector` and tree toggle logic to match `_LOD#` suffixes parsed from real HODs.
+- ✅ Added LOD Addition/Deletion to GlowLODInspector: Transferred LOD management logic (Add LOD, Delete LOD, Move Up/Down) from `MeshLODInspector` directly into the `GlowLODInspector` for a unified UI experience.
+- ✅ Restored Collision Mesh OBJ Import/Export: Re-introduced the "Import OBJ" and "Export OBJ" functionality to the Collision Mesh inspector, ensuring users can replace physical collision hulls with custom low-poly models, rather than relying exclusively on auto-calculating bounds.
+
+## Current Issues
+- `EngineBurn` trails might render flipped in our WebGL preview because the WebGL renderer correctly applies the nozzle's 180-degree rotation to the trail vertices, matching the HOD data. We need to verify if the vanilla game engine dynamic thrust vectoring ignores the nozzle's base rotation for `EngineBurn` effects.
 
 **Phase:** Phase 6 — Frontend UI & Editor UX  
 **Status:** Implementing UI/UX rules from UI Source of Truth. Engine nozzle rules, LOD inspectors, and assembly rules successfully applied.
@@ -439,3 +449,11 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
   4. The Engine Burn count warning threshold was updated to `> 9` limit.
   5. Fully implemented UI Buttons and React handler functions to allow `.obj` file mesh importing specifically for `engine_glow` and `engine_shape` assemblies.
 * **Next Steps**: Continue enforcing any remaining UI rulings and verify the OBJ meshes for engine glows/shapes behave identically to collision meshes.
+
+## 2026-05-31: Collision Mesh Rendering and LOD Grouping Fixes
+* **What was fixed**: 
+  1. `HierarchyTree.tsx`: Fixed a bug where `EngineGlow` nodes were splitting in the hierarchy if they had explicit `_lod_X` or `_LODX` suffixes. Upgraded the regex logic in the `groupedGlows` mapping to correctly collapse all LODs of a given glow into a single inspector node.
+  2. `Inspector.tsx`: Restored the "+ Add Collision Mesh" button directly to the `joint` inspector (under the Engine Subnodes). Users can now natively initialize collision hulls on joints before importing OBJ files.
+  3. `Viewport.tsx`: Fixed an issue where HODs with native collision geometries (like `hgn_ioncannonfrigate.hod`) were only rendering transparent bounding boxes. Modified the rendering loop to iterate through `col.mesh.parts` and correctly render the precise collision mesh wireframes and faces in the viewport.
+  4. Convex Hull Pipeline Restored: Re-wired the `auto_generate_collision_from_mesh` Tauri command and exposed the `meshopt` Rust decimation logic. Restored the "Generate Convex Hull" UI button in `Inspector.tsx` to allow auto-generating `COLD/KDOP` meshes directly from visual LOD geometry.
+* **Next Steps**: Address scrollbar bleeding in nested `NumericInput` lists and evaluate corrupted texture rendering in the viewport for specific HWRM HODs.

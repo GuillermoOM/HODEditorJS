@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
-import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff } from "lucide-react";
+import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box } from "lucide-react";
 
 interface InspectorProps {
   model: HODModel | null;
@@ -127,6 +127,7 @@ const NumericInput: React.FC<NumericInputProps> = ({
   const [localValue, setLocalValue] = useState(value.toString());
   const isFocusedRef = useRef(false);
   const isWheelingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isFocusedRef.current || isWheelingRef.current) {
@@ -134,6 +135,27 @@ const NumericInput: React.FC<NumericInputProps> = ({
       isWheelingRef.current = false;
     }
   }, [value]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    
+    const handleNativeWheel = (e: WheelEvent) => {
+      if (onWheel) {
+        // Prevent browser's native default scroll which would scroll the parent container
+        e.preventDefault();
+        isWheelingRef.current = true;
+        // Construct a synthetic-like event since onWheel expects React.WheelEvent
+        // We can cast it or just pass it since React.WheelEvent is very similar for our use cases
+        onWheel(e as unknown as React.WheelEvent<HTMLInputElement>);
+      }
+    };
+    
+    el.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, [onWheel]);
 
   const handleBlur = () => {
     isFocusedRef.current = false;
@@ -147,15 +169,9 @@ const NumericInput: React.FC<NumericInputProps> = ({
     }
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
-    if (onWheel) {
-      isWheelingRef.current = true;
-      onWheel(e);
-    }
-  };
-
   return (
     <input
+      ref={inputRef}
       type="number"
       step={step}
       min={min}
@@ -165,7 +181,6 @@ const NumericInput: React.FC<NumericInputProps> = ({
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       onChange={(e) => setLocalValue(e.target.value)}
-      onWheel={handleWheel}
       style={style}
     />
   );
@@ -209,7 +224,10 @@ interface GlowLODInspectorProps {
 
 const GlowLODInspector: React.FC<GlowLODInspectorProps> = ({ model, baseName, onModelChange, setIsLoading, setStatusMsg }) => {
   const [selectedLodIdx, setSelectedLodIdx] = useState(0);
-  const glowLods = (model.engine_glows || []).filter(g => g.name === baseName).sort((a, b) => a.lod - b.lod);
+  const glowLods = (model.engine_glows || []).filter(g => {
+    const gBase = g.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+    return gBase === baseName;
+  }).sort((a, b) => a.lod - b.lod);
   const selectedLodGlow = glowLods[selectedLodIdx] || glowLods[0];
 
   const handleImportEngineGlowOBJ = async () => {
@@ -315,6 +333,33 @@ const GlowLODInspector: React.FC<GlowLODInspectorProps> = ({ model, baseName, on
     }
   };
 
+  const handleAddLod = () => {
+    const maxLod = Math.max(...glowLods.map(m => m.lod), -1);
+    const newGlowName = `${baseName}_LOD${maxLod + 1}`;
+    onModelChange?.({ ...model, engine_glows: [...model.engine_glows, { name: newGlowName, parent_name: glowLods[0]?.parent_name || "Root", lod: maxLod + 1, mesh: { name: newGlowName, parent_name: glowLods[0]?.parent_name || "Root", lod: maxLod + 1, parts: [{ material_index: 0, vertex_mask: 0x600B, vertices: [], indices: [] }] } }] });
+    setSelectedLodIdx(glowLods.length);
+  };
+
+  const handleDeleteLod = (idx: number) => {
+    if (glowLods.length <= 1) return;
+    const target = glowLods[idx];
+    onModelChange?.({ ...model, engine_glows: model.engine_glows.filter(m => !(m.name === target.name && m.lod === target.lod)) });
+    setSelectedLodIdx(Math.max(0, idx - 1));
+  };
+
+  const handleMoveLod = (fromIdx: number, direction: -1 | 1) => {
+    const toIdx = fromIdx + direction;
+    if (toIdx < 0 || toIdx >= glowLods.length) return;
+    const fromGlow = glowLods[fromIdx];
+    const toGlow = glowLods[toIdx];
+    onModelChange?.({ ...model, engine_glows: model.engine_glows.map(m => {
+      if (m.name === fromGlow.name && m.lod === fromGlow.lod) return { ...m, lod: toGlow.lod, name: `${baseName}_LOD${toGlow.lod}` };
+      if (m.name === toGlow.name && m.lod === toGlow.lod) return { ...m, lod: fromGlow.lod, name: `${baseName}_LOD${fromGlow.lod}` };
+      return m;
+    }) });
+    setSelectedLodIdx(toIdx);
+  };
+
   if (!selectedLodGlow) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Glow not found</div>;
   const totalVerts = selectedLodGlow.mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
   const totalTris = selectedLodGlow.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3;
@@ -339,31 +384,32 @@ const GlowLODInspector: React.FC<GlowLODInspectorProps> = ({ model, baseName, on
       </div>
 
       <div>
-        <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>LOD Levels</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-          {glowLods.map((m, idx) => (
-            <button
-              key={m.lod}
-              onClick={() => setSelectedLodIdx(idx)}
-              style={{
-                background: selectedLodIdx === idx ? "var(--accent-cyan)" : "var(--bg-lighter)",
-                color: selectedLodIdx === idx ? "#000" : "var(--text-primary)",
-                border: "1px solid",
-                borderColor: selectedLodIdx === idx ? "var(--accent-cyan)" : "var(--border-color)",
-                padding: "4px 10px",
-                borderRadius: "4px",
-                fontSize: "11px",
-                cursor: "pointer"
-              }}
-            >
-              LOD {m.lod}
-            </button>
-          ))}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+          <label style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>LOD Variants</label>
+          <button onClick={handleAddLod} style={{ height: "24px", fontSize: "11px", padding: "0 8px", display: "flex", alignItems: "center", gap: "4px" }}><Plus size={12} /> Add LOD</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", background: "rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px" }}>
+          {glowLods.map((lm, idx) => {
+            const isSelected = selectedLodIdx === idx;
+            return (
+              <div key={`${lm.name}_${lm.lod}`} onClick={() => setSelectedLodIdx(idx)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: "3px", cursor: "pointer", background: isSelected ? "rgba(22, 160, 255, 0.15)" : "transparent", border: isSelected ? "1px solid rgba(22, 160, 255, 0.3)" : "1px solid transparent" }}>
+                <span style={{ fontSize: "12px", color: isSelected ? "var(--accent-cyan)" : "var(--text-primary)" }}>
+                  LOD {lm.lod} <span style={{ color: "var(--text-muted)", fontSize: "10px" }}>({lm.mesh.parts.reduce((s, p) => s + p.vertices.length, 0)} verts)</span>
+                </span>
+                <div style={{ display: "flex", gap: "2px", alignItems: "center" }}>
+                  <button onClick={(e) => { e.stopPropagation(); handleMoveLod(idx, -1); }} disabled={idx === 0} style={{ padding: "2px 4px", fontSize: "10px" }}>▲</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleMoveLod(idx, 1); }} disabled={idx === glowLods.length - 1} style={{ padding: "2px 4px", fontSize: "10px" }}>▼</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDeleteLod(idx); }} disabled={glowLods.length <= 1} style={{ padding: "2px 4px", fontSize: "10px", color: "#f44" }}>✕</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       <div>
-        <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>Mesh Statistics</div>
+        <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>Mesh Statistics (LOD {selectedLodGlow.lod})</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "12px" }}>
           <div>
             <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
@@ -714,6 +760,34 @@ export const Inspector: React.FC<InspectorProps> = ({
     });
     if (onModelChange) {
       onModelChange({ ...model, collision_meshes: updatedCols });
+    }
+  };
+
+  const handleGenerateCollisionFromMesh = async () => {
+    if (!model || !selectedNode || selectedNode.type !== "collision" || !sourceMeshName) return;
+    
+    // sourceMeshName is in the format "meshName_lod_0"
+    const parts = sourceMeshName.split("_lod_");
+    const mName = parts[0];
+
+    try {
+      const updatedModel = await invoke<any>("auto_generate_collision_from_mesh", {
+        model,
+        collisionMeshName: selectedNode.name,
+        sourceMeshName: mName
+      });
+      
+      onModelChange?.(updatedModel);
+      
+      await invoke("log_event", {
+        level: "INFO",
+        message: `Successfully generated convex hull collision mesh for ${selectedNode.name} from visual mesh ${mName}`
+      });
+      
+      alert(`Collision convex hull mesh successfully generated for "${selectedNode.name}"!`);
+    } catch (e: any) {
+      console.error(e);
+      alert(`Failed to generate collision mesh: ${e}`);
     }
   };
 
@@ -1171,6 +1245,7 @@ export const Inspector: React.FC<InspectorProps> = ({
       const hasBurn = model.engine_burns?.some(b => b.parent_name === joint.name);
       const hasGlow = model.engine_glows?.some(g => g.parent_name === joint.name);
       const hasShape = model.engine_shapes?.some(s => s.parent_name === joint.name);
+      const hasCollision = model.collision_meshes?.some(c => c.name === joint.name);
 
       const handleAddSubnode = (type: string) => {
         if (type === "burn") {
@@ -1182,6 +1257,9 @@ export const Inspector: React.FC<InspectorProps> = ({
         } else if (type === "shape") {
           const newShape = { name: `shape_${joint.name}`, parent_name: joint.name, mesh: { name: `shape_${joint.name}`, parent_name: joint.name, lod: 0, parts: [] } };
           onModelChange?.({ ...model, engine_shapes: [...(model.engine_shapes || []), newShape] });
+        } else if (type === "collision") {
+          const newCol = { name: joint.name, min_extents: {x:0,y:0,z:0}, max_extents: {x:0,y:0,z:0}, center: {x:0,y:0,z:0}, radius: 0, mesh: { name: joint.name, parent_name: joint.name, lod: 0, parts: [] } };
+          onModelChange?.({ ...model, collision_meshes: [...(model.collision_meshes || []), newCol] });
         }
       };
       const handleRemoveSubnode = (type: string) => {
@@ -1191,6 +1269,8 @@ export const Inspector: React.FC<InspectorProps> = ({
           onModelChange?.({ ...model, engine_glows: (model.engine_glows || []).filter(g => g.parent_name !== joint.name) });
         } else if (type === "shape") {
           onModelChange?.({ ...model, engine_shapes: (model.engine_shapes || []).filter(s => s.parent_name !== joint.name) });
+        } else if (type === "collision") {
+          onModelChange?.({ ...model, collision_meshes: (model.collision_meshes || []).filter(c => c.name !== joint.name) });
         }
       };
 
@@ -1245,6 +1325,15 @@ export const Inspector: React.FC<InspectorProps> = ({
               </div>
             </div>
           )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "4px", border: "1px solid var(--border-color)" }}>
+            <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "4px" }}>Collision Hull</div>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {!hasCollision ? 
+                <button onClick={() => handleAddSubnode("collision")} style={{ fontSize: "11px", padding: "4px 8px" }}>+ Add Collision Mesh</button> :
+                <button onClick={() => handleRemoveSubnode("collision")} style={{ fontSize: "11px", padding: "4px 8px", background: "rgba(255, 50, 50, 0.2)", borderColor: "rgba(255, 50, 50, 0.5)" }}>- Remove Collision</button>}
+            </div>
+          </div>
           <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
 
           <div>
@@ -1692,6 +1781,80 @@ export const Inspector: React.FC<InspectorProps> = ({
       const col = model.collision_meshes.find(c => c.name === selectedNode.name);
       if (!col) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Collision Mesh not found</div>;
 
+      const handleImportCollisionOBJ = async () => {
+        try {
+          const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
+          if (!fileContent) return;
+          setIsLoading?.(true); setStatusMsg?.("Importing Collision OBJ...");
+          setTimeout(async () => {
+            try {
+              const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
+              const objGroup = new OBJLoader().parse(fileContent);
+              const newParts: any[] = [];
+              let totalVerts = 0;
+              objGroup.traverse((child: any) => {
+                if (child.isMesh) {
+                  const geo = (child as THREE.Mesh).geometry;
+                  if (geo?.attributes.position) {
+                    const posAttr = geo.attributes.position;
+                    const vertices: any[] = []; const indices: number[] = [];
+                    for (let i = 0; i < posAttr.count; i++) {
+                      vertices.push({
+                        position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+                        normal: { x: 0, y: 1, z: 0 }, tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 },
+                        uv: { u: 0, v: 0 }, color: 0xFFFFFFFF, skinning_data: null,
+                      });
+                    }
+                    if (geo.index) {
+                      const idxArr = geo.index.array;
+                      for (let i = 0; i < idxArr.length; i++) indices.push(idxArr[i]);
+                    } else {
+                      for (let i = 0; i < posAttr.count; i++) indices.push(i);
+                    }
+                    newParts.push({ material_index: 0, vertex_mask: 0x01, vertices, indices });
+                    totalVerts += vertices.length;
+                  }
+                }
+              });
+              if (newParts.length === 0) { alert("No geometry found in the OBJ file."); setIsLoading?.(false); return; }
+              const updatedCols = model.collision_meshes.map(c => c.name === col.name ? { ...c, mesh: { ...c.mesh, parts: newParts } } : c);
+              onModelChange?.({ ...model, collision_meshes: updatedCols });
+              setIsLoading?.(false); alert(`Collision mesh imported! Parts: ${newParts.length}`);
+            } catch (e: any) { console.error(e); setIsLoading?.(false); alert(`Import failed: ${e.toString()}`); }
+          }, 100);
+        } catch (e: any) { console.error(e); alert(`Import dialog failed: ${e.toString()}`); }
+      };
+
+      const handleExportCollisionOBJ = async () => {
+        try {
+          setIsLoading?.(true);
+          setStatusMsg?.("Exporting Collision OBJ...");
+          const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
+          const exporter = new OBJExporter();
+          const group = new THREE.Group();
+          group.name = col.name;
+          col.mesh.parts.forEach((part: any, pIdx: number) => {
+            const geometry = new THREE.BufferGeometry();
+            const vertices: number[] = [];
+            part.vertices.forEach((v: any) => vertices.push(v.position.x, v.position.y, v.position.z));
+            geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+            if (part.indices && part.indices.length > 0) {
+              geometry.setIndex(part.indices);
+            }
+            const meshObj = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+            meshObj.name = `${col.name}_part_${pIdx}`;
+            group.add(meshObj);
+          });
+          const objResult = exporter.parse(group);
+          await invoke<string | null>("save_text_file", { defaultName: `${col.name}_collision.obj`, filters: ["obj"], contents: objResult });
+          setIsLoading?.(false);
+        } catch (e: any) {
+          console.error(e);
+          setIsLoading?.(false);
+          alert(`Failed to export OBJ: ${e.toString()}`);
+        }
+      };
+
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div>
@@ -1776,6 +1939,25 @@ export const Inspector: React.FC<InspectorProps> = ({
           </div>
 
           <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
+          
+          <div>
+            <div style={{ fontSize: "11px", fontWeight: "500", textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "8px" }}>
+              Collision Hull Mesh
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={handleImportCollisionOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
+                <Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ
+              </button>
+              <button onClick={handleExportCollisionOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
+                <Upload size={14} style={{ color: "var(--accent-blue)" }} /> Export OBJ
+              </button>
+            </div>
+            <div style={{ marginTop: "8px", fontSize: "11px", color: "var(--text-muted)" }}>
+              Hull Parts: {col.mesh.parts.length} | Triangles: {col.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3}
+            </div>
+          </div>
+
+          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
 
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "12px" }}>
@@ -1802,23 +1984,46 @@ export const Inspector: React.FC<InspectorProps> = ({
                     })}
                   </select>
                 </div>
-                <button
-                  onClick={handleAutoCalculateCollision}
-                  disabled={!sourceMeshName}
-                  style={{
-                    height: "32px",
-                    fontSize: "12px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "6px",
-                    opacity: sourceMeshName ? 1 : 0.5,
-                    cursor: sourceMeshName ? "pointer" : "not-allowed"
-                  }}
-                >
-                  <RefreshCw size={14} style={{ color: "var(--accent-cyan)" }} />
-                  <span>Calculate from Selected Mesh</span>
-                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={handleGenerateCollisionFromMesh}
+                    disabled={!sourceMeshName}
+                    style={{
+                      height: "32px",
+                      fontSize: "12px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      flex: 1,
+                      background: "var(--accent-danger)",
+                      color: "#fff",
+                      opacity: sourceMeshName ? 1 : 0.5,
+                      cursor: sourceMeshName ? "pointer" : "not-allowed"
+                    }}
+                  >
+                    <Box size={14} />
+                    <span>Generate Convex Hull</span>
+                  </button>
+                  <button
+                    onClick={handleAutoCalculateCollision}
+                    disabled={!sourceMeshName}
+                    style={{
+                      height: "32px",
+                      fontSize: "12px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      flex: 1,
+                      opacity: sourceMeshName ? 1 : 0.5,
+                      cursor: sourceMeshName ? "pointer" : "not-allowed"
+                    }}
+                  >
+                    <RefreshCw size={14} style={{ color: "var(--accent-cyan)" }} />
+                    <span>Calculate Box Bounds</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>

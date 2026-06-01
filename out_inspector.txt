@@ -1,0 +1,1210 @@
+commit 51e325f881fc35b9860b1434a16fefbe9cd926fc
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Sun May 31 15:39:47 2026 -0700
+
+    feat: Add EngineNozzle refactor and GlowLODInspector
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 67031d8..02d3650 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -198,6 +198,196 @@ interface MeshLODInspectorProps {
+   setStatusMsg?: React.Dispatch<React.SetStateAction<string>>;
+ }
+ 
++
++interface GlowLODInspectorProps {
++  model: HODModel;
++  baseName: string;
++  onModelChange?: (updatedModel: HODModel) => void;
++  setIsLoading?: React.Dispatch<React.SetStateAction<boolean>>;
++  setStatusMsg?: React.Dispatch<React.SetStateAction<string>>;
++}
++
++const GlowLODInspector: React.FC<GlowLODInspectorProps> = ({ model, baseName, onModelChange, setIsLoading, setStatusMsg }) => {
++  const [selectedLodIdx, setSelectedLodIdx] = useState(0);
++  const glowLods = (model.engine_glows || []).filter(g => g.name === baseName).sort((a, b) => a.lod - b.lod);
++  const selectedLodGlow = glowLods[selectedLodIdx] || glowLods[0];
++
++  const handleImportEngineGlowOBJ = async () => {
++    if (!selectedLodGlow) return;
++    try {
++      const selectedPath = await invoke<string | null>("open_file_dialog", {
++        title: "Select OBJ File for Engine Glow",
++        filters: ["obj"]
++      });
++      if (!selectedPath) return;
++
++      setIsLoading?.(true);
++      setStatusMsg?.("Parsing Engine Glow OBJ...");
++      const fileContents = await invoke<string>("read_text_file", { path: selectedPath });
++
++      const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
++      const loader = new OBJLoader();
++      const objGroup = loader.parse(fileContents);
++
++      const newParts: any[] = [];
++      let totalTris = 0;
++      let totalVerts = 0;
++
++      objGroup.traverse((child) => {
++        if ((child as THREE.Mesh).isMesh) {
++          const mesh = child as THREE.Mesh;
++          const geom = mesh.geometry;
++          if (!geom.attributes.position) return;
++
++          const positions = geom.attributes.position.array;
++          const normals = geom.attributes.normal?.array;
++          const uvs = geom.attributes.uv?.array;
++
++          const indices = geom.index ? Array.from(geom.index.array) : Array.from({ length: positions.length / 3 }, (_, i) => i);
++
++          const vertices = [];
++          for (let i = 0; i < positions.length; i += 3) {
++            vertices.push({
++              position: { x: positions[i], y: positions[i + 1], z: positions[i + 2] },
++              normal: normals ? { x: normals[i], y: normals[i + 1], z: normals[i + 2] } : { x: 0, y: 1, z: 0 },
++              uv: uvs ? { u: uvs[(i / 3) * 2], v: 1 - uvs[(i / 3) * 2 + 1] } : { u: 0, v: 0 }
++            });
++          }
++
++          totalTris += indices.length / 3;
++          totalVerts += vertices.length;
++
++          newParts.push({ material_index: 0, vertices, indices });
++        }
++      });
++
++      if (newParts.length === 0) {
++        alert("No valid mesh found in OBJ.");
++        setIsLoading?.(false);
++        return;
++      }
++
++      const updatedGlows = model.engine_glows.map(g => {
++        if (g.name === selectedLodGlow.name && g.lod === selectedLodGlow.lod) {
++          return { ...g, mesh: { ...g.mesh, parts: newParts } };
++        }
++        return g;
++      });
++
++      onModelChange?.({ ...model, engine_glows: updatedGlows });
++      setIsLoading?.(false);
++      invoke("log_event", { level: "INFO", message: `Imported OBJ into Engine Glow: ${selectedLodGlow.name} (LOD ${selectedLodGlow.lod})` }).catch(console.error);
++    } catch (e) {
++      console.error(e);
++      setIsLoading?.(false);
++      alert("Failed to import Engine Glow OBJ.");
++    }
++  };
++
++  const handleExportEngineGlowOBJ = async () => {
++    if (!selectedLodGlow) return;
++    try {
++      setIsLoading?.(true);
++      setStatusMsg?.("Exporting Glow OBJ...");
++      const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
++      const exporter = new OBJExporter();
++      const group = new THREE.Group();
++      group.name = selectedLodGlow.name;
++      selectedLodGlow.mesh.parts.forEach((part: any, pIdx: number) => {
++        const geometry = new THREE.BufferGeometry();
++        const vertices: number[] = [];
++        part.vertices.forEach((v: any) => vertices.push(v.position.x, v.position.y, v.position.z));
++        geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
++        geometry.setIndex(part.indices);
++        const meshObj = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
++        meshObj.name = `${selectedLodGlow.name}_part_${pIdx}`;
++        group.add(meshObj);
++      });
++      const objResult = exporter.parse(group);
++      const objFilename = `${selectedLodGlow.name}_lod${selectedLodGlow.lod}`;
++      await invoke<string | null>("save_text_file", { defaultName: `${objFilename}.obj`, filters: ["obj"], contents: objResult });
++      setIsLoading?.(false);
++      invoke("log_event", { level: "INFO", message: `Exported Engine Glow OBJ: ${objFilename}` }).catch(console.error);
++    } catch (e) {
++      console.error(e);
++      setIsLoading?.(false);
++      alert("Failed to export Glow OBJ.");
++    }
++  };
++
++  if (!selectedLodGlow) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Glow not found</div>;
++  const totalVerts = selectedLodGlow.mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
++  const totalTris = selectedLodGlow.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3;
++
++  return (
++    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++      <div>
++        <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++          <span style={{ fontSize: "12px" }}>🔥</span>
++          <span>Selected Engine Glow</span>
++        </div>
++        <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++          {baseName}
++        </div>
++      </div>
++      <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++      <div>
++        <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Parent Joint</div>
++        <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
++          {selectedLodGlow.parent_name}
++        </div>
++      </div>
++
++      <div>
++        <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>LOD Levels</div>
++        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
++          {glowLods.map((m, idx) => (
++            <button
++              key={m.lod}
++              onClick={() => setSelectedLodIdx(idx)}
++              style={{
++                background: selectedLodIdx === idx ? "var(--accent-cyan)" : "var(--bg-lighter)",
++                color: selectedLodIdx === idx ? "#000" : "var(--text-primary)",
++                border: "1px solid",
++                borderColor: selectedLodIdx === idx ? "var(--accent-cyan)" : "var(--border-color)",
++                padding: "4px 10px",
++                borderRadius: "4px",
++                fontSize: "11px",
++                cursor: "pointer"
++              }}
++            >
++              LOD {m.lod}
++            </button>
++          ))}
++        </div>
++      </div>
++
++      <div>
++        <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>Mesh Statistics</div>
++        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "12px" }}>
++          <div>
++            <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
++            <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalTris}</div>
++          </div>
++          <div>
++            <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>VERTICES</div>
++            <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalVerts}</div>
++          </div>
++        </div>
++      </div>
++
++      <div style={{ display: "flex", gap: "8px" }}>
++        <button onClick={handleImportEngineGlowOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
++          <Download size={14} /> Import OBJ
++        </button>
++        <button onClick={handleExportEngineGlowOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
++          <Upload size={14} /> Export OBJ
++        </button>
++      </div>
++    </div>
++  );
++};
++
+ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, onModelChange, visibleMeshes, onToggleVisibility, setIsLoading, setStatusMsg }) => {
+   const [selectedLodIdx, setSelectedLodIdx] = useState(0);
+   const lodMeshes = model.meshes.filter(m => {
+@@ -459,95 +649,6 @@ export const Inspector: React.FC<InspectorProps> = ({
+ 
+ 
+   // Generic handlers
+-  const handleImportEngineGlowOBJ = async () => {
+-    if (!model || !selectedNode || selectedNode.type !== "engine_glow") return;
+-    try {
+-      const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
+-      if (!fileContent) return;
+-      setIsLoading?.(true); setStatusMsg?.("Importing Engine Glow OBJ...");
+-      setTimeout(async () => {
+-        try {
+-          const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
+-          const objGroup = new OBJLoader().parse(fileContent);
+-          const newParts: any[] = [];
+-          objGroup.traverse((child: any) => {
+-            if (child.isMesh) {
+-              const geo = (child as THREE.Mesh).geometry;
+-              if (geo?.attributes.position) {
+-                const posAttr = geo.attributes.position;
+-                const vertices: any[] = []; const indices: number[] = [];
+-                for (let i = 0; i < posAttr.count; i++) {
+-                  vertices.push({
+-                    position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+-                    normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
+-                    tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 },
+-                    uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
+-                    color: 0xFFFFFFFF, skinning_data: null,
+-                  });
+-                }
+-                if (geo.index) {
+-                  const idxArr = geo.index.array;
+-                  for (let i = 0; i < idxArr.length; i++) indices.push(idxArr[i]);
+-                } else {
+-                  for (let i = 0; i < posAttr.count; i++) indices.push(i);
+-                }
+-                newParts.push({ material_index: 0, vertex_mask: 0x01, vertices, indices });
+-              }
+-            }
+-          });
+-          if (newParts.length === 0) { alert("No geometry found in the OBJ file."); setIsLoading?.(false); return; }
+-          const updatedGlows = model.engine_glows.map(g => g.name === selectedNode.name ? { ...g, mesh: { ...g.mesh, parts: newParts } } : g);
+-          onModelChange?.({ ...model, engine_glows: updatedGlows });
+-          setIsLoading?.(false); alert(`Engine Glow mesh imported! Parts: ${newParts.length}`);
+-        } catch (e: any) { console.error(e); setIsLoading?.(false); alert(`Import failed: ${e.toString()}`); }
+-      }, 100);
+-    } catch (e: any) { console.error(e); alert(`Import dialog failed: ${e.toString()}`); }
+-  };
+-
+-  const handleImportEngineShapeOBJ = async () => {
+-    if (!model || !selectedNode || selectedNode.type !== "engine_shape") return;
+-    try {
+-      const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
+-      if (!fileContent) return;
+-      setIsLoading?.(true); setStatusMsg?.("Importing Engine Shape OBJ...");
+-      setTimeout(async () => {
+-        try {
+-          const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
+-          const objGroup = new OBJLoader().parse(fileContent);
+-          const newParts: any[] = [];
+-          objGroup.traverse((child: any) => {
+-            if (child.isMesh) {
+-              const geo = (child as THREE.Mesh).geometry;
+-              if (geo?.attributes.position) {
+-                const posAttr = geo.attributes.position;
+-                const vertices: any[] = []; const indices: number[] = [];
+-                for (let i = 0; i < posAttr.count; i++) {
+-                  vertices.push({
+-                    position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
+-                    normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
+-                    tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 },
+-                    uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
+-                    color: 0xFFFFFFFF, skinning_data: null,
+-                  });
+-                }
+-                if (geo.index) {
+-                  const idxArr = geo.index.array;
+-                  for (let i = 0; i < idxArr.length; i++) indices.push(idxArr[i]);
+-                } else {
+-                  for (let i = 0; i < posAttr.count; i++) indices.push(i);
+-                }
+-                newParts.push({ material_index: 0, vertex_mask: 0x01, vertices, indices });
+-              }
+-            }
+-          });
+-          if (newParts.length === 0) { alert("No geometry found in the OBJ file."); setIsLoading?.(false); return; }
+-          const updatedShapes = model.engine_shapes.map(s => s.name === selectedNode.name ? { ...s, mesh: { ...s.mesh, parts: newParts } } : s);
+-          onModelChange?.({ ...model, engine_shapes: updatedShapes });
+-          setIsLoading?.(false); alert(`Engine Shape mesh imported! Parts: ${newParts.length}`);
+-        } catch (e: any) { console.error(e); setIsLoading?.(false); alert(`Import failed: ${e.toString()}`); }
+-      }, 100);
+-    } catch (e: any) { console.error(e); alert(`Import dialog failed: ${e.toString()}`); }
+-  };
+ 
+   const handleNavLightChange = (fieldName: keyof HODNavLight, value: any) => {
+     if (!model || !selectedNode || selectedNode.type !== "navlight") return;
+@@ -1058,13 +1159,40 @@ export const Inspector: React.FC<InspectorProps> = ({
+       );
+     }
+ 
+-    if (selectedNode.type === "joint") {
++    if (selectedNode.type === "joint" || selectedNode.type === "engine_nozzle") {
++      const isNozzle = selectedNode.type === "engine_nozzle";
+       const joint = model.joints.find(j => j.name === selectedNode.name);
+       if (!joint) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Joint not found</div>;
+       const m = joint.local_transform.m;
+       const pos = { x: m[3][0], y: m[3][1], z: m[3][2] };
+       const rot = getEulerRotation(m);
+       const parentName = joint.parent_name || "(None)";
++      
++      const hasBurn = model.engine_burns?.some(b => b.parent_name === joint.name);
++      const hasGlow = model.engine_glows?.some(g => g.parent_name === joint.name);
++      const hasShape = model.engine_shapes?.some(s => s.parent_name === joint.name);
++
++      const handleAddSubnode = (type: string) => {
++        if (type === "burn") {
++          const newBurn = { name: `burn_${joint.name}`, parent_name: joint.name, num_divisions: 16, num_flames: 4, vertices: [{x:0,y:0,z:0},{x:0,y:0,z:-1},{x:0,y:0,z:-2},{x:0,y:0,z:-3}] };
++          onModelChange?.({ ...model, engine_burns: [...(model.engine_burns || []), newBurn] });
++        } else if (type === "glow") {
++          const newGlow = { name: `glow_${joint.name}`, parent_name: joint.name, lod: 0, mesh: { name: `glow_${joint.name}`, parent_name: joint.name, lod: 0, parts: [] } };
++          onModelChange?.({ ...model, engine_glows: [...(model.engine_glows || []), newGlow] });
++        } else if (type === "shape") {
++          const newShape = { name: `shape_${joint.name}`, parent_name: joint.name, mesh: { name: `shape_${joint.name}`, parent_name: joint.name, lod: 0, parts: [] } };
++          onModelChange?.({ ...model, engine_shapes: [...(model.engine_shapes || []), newShape] });
++        }
++      };
++      const handleRemoveSubnode = (type: string) => {
++        if (type === "burn") {
++          onModelChange?.({ ...model, engine_burns: (model.engine_burns || []).filter(b => b.parent_name !== joint.name) });
++        } else if (type === "glow") {
++          onModelChange?.({ ...model, engine_glows: (model.engine_glows || []).filter(g => g.parent_name !== joint.name) });
++        } else if (type === "shape") {
++          onModelChange?.({ ...model, engine_shapes: (model.engine_shapes || []).filter(s => s.parent_name !== joint.name) });
++        }
++      };
+ 
+       const handleCoordChange = (axis: "x" | "y" | "z", valStr: string) => {
+         const val = parseFloat(valStr);
+@@ -1091,14 +1219,32 @@ export const Inspector: React.FC<InspectorProps> = ({
+       return (
+         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+           <div>
+-            <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
+-              Selected Joint
++            <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px", display: "flex", alignItems: "center", gap: "6px" }}>
++              {isNozzle && <span style={{fontSize: "12px"}}>🚀</span>}
++              <span>{isNozzle ? "Selected Engine Nozzle" : "Selected Joint"}</span>
+             </div>
+             <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
+               {selectedNode.name}
+             </div>
+           </div>
+ 
++          
++          {isNozzle && (
++            <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "4px", border: "1px solid var(--border-color)" }}>
++              <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", marginBottom: "4px" }}>Engine Subnodes</div>
++              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
++                {!hasBurn ? 
++                  <button onClick={() => handleAddSubnode("burn")} style={{ fontSize: "11px", padding: "4px 8px" }}>+ Add Burn Plume</button> :
++                  <button onClick={() => handleRemoveSubnode("burn")} style={{ fontSize: "11px", padding: "4px 8px", background: "rgba(255, 50, 50, 0.2)", borderColor: "rgba(255, 50, 50, 0.5)" }}>- Remove Burn</button>}
++                {!hasGlow ? 
++                  <button onClick={() => handleAddSubnode("glow")} style={{ fontSize: "11px", padding: "4px 8px" }}>+ Add Engine Glow</button> :
++                  <button onClick={() => handleRemoveSubnode("glow")} style={{ fontSize: "11px", padding: "4px 8px", background: "rgba(255, 50, 50, 0.2)", borderColor: "rgba(255, 50, 50, 0.5)" }}>- Remove Glow</button>}
++                {!hasShape ? 
++                  <button onClick={() => handleAddSubnode("shape")} style={{ fontSize: "11px", padding: "4px 8px" }}>+ Add Engine Shape</button> :
++                  <button onClick={() => handleRemoveSubnode("shape")} style={{ fontSize: "11px", padding: "4px 8px", background: "rgba(255, 50, 50, 0.2)", borderColor: "rgba(255, 50, 50, 0.5)" }}>- Remove Shape</button>}
++              </div>
++            </div>
++          )}
+           <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
+ 
+           <div>
+@@ -1860,79 +2006,87 @@ export const Inspector: React.FC<InspectorProps> = ({
+     }
+ 
+     if (selectedNode.type === "engine_glow") {
+-      const glow = model.engine_glows?.find(g => g.name === selectedNode.name);
+-      if (!glow) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Glow not found</div>;
+-      const totalVerts = glow.mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
+-      const totalTris = glow.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3;
+-      return (
+-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+-          <div>
+-            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
+-              <Flame size={12} style={{ color: "var(--accent-cyan)" }} />
+-              <span>Selected Engine Glow</span>
+-            </div>
+-            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
+-              {selectedNode.name}
+-            </div>
+-          </div>
+-          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
+-          <div>
+-            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Parent Joint</div>
+-            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
+-              {glow.parent_name}
+-            </div>
+-          </div>
+-          <div>
+-            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>LOD Level</div>
+-            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
+-              {glow.lod}
+-            </div>
+-          </div>
+-          <div>
+-            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>Mesh Statistics</div>
+-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "12px" }}>
+-              <div>
+-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
+-                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalTris}</div>
+-              </div>
+-              <div>
+-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>VERTICES</div>
+-                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalVerts}</div>
+-              </div>
+-            </div>
+-          </div>
+-          
+-          <button onClick={handleImportEngineGlowOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+-            <Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ
+-          </button>
+-
+-          {model.materials?.length > 0 && glow.mesh?.parts?.length > 0 && (
+-            <div>
+-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>Material Assignment</label>
+-              <div style={{ display: "flex", flexDirection: "column", gap: "6px", background: "rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px" }}>
+-                {glow.mesh.parts.map((part, pIdx) => (
+-                  <div key={pIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+-                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Part {pIdx}</span>
+-                    <select value={part.material_index} onChange={(e) => {
+-                      const newMatIdx = parseInt(e.target.value, 10);
+-                      onModelChange?.({ ...model, engine_glows: model.engine_glows.map(g => g.name === glow.name ? { ...g, mesh: { ...g.mesh, parts: g.mesh.parts.map((p, i) => i === pIdx ? { ...p, material_index: newMatIdx } : p) } } : g) });
+-                    }} style={{ width: "160px", height: "26px", padding: "2px 6px", fontSize: "11px", background: "#050a12", border: "1px solid var(--border-color)", color: "white" }}>
+-                      {model.materials.map((mat, mIdx) => (<option key={mIdx} value={mIdx}>{mat.name}</option>))}
+-                    </select>
+-                  </div>
+-                ))}
+-              </div>
+-            </div>
+-          )}
+-
+-        </div>
+-      );
++      return <GlowLODInspector model={model} baseName={selectedNode.name} onModelChange={onModelChange} setIsLoading={setIsLoading} setStatusMsg={setStatusMsg} />;
+     }
+ 
+     if (selectedNode.type === "engine_shape") {
+       const shape = model.engine_shapes?.find(s => s.name === selectedNode.name);
+       if (!shape) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Shape not found</div>;
+       const totalVerts = shape.mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
++
++      const handleImportEngineShapeOBJ = async () => {
++        try {
++          const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
++          if (!fileContent) return;
++          setIsLoading?.(true); setStatusMsg?.("Importing Engine Shape OBJ...");
++          setTimeout(async () => {
++            try {
++              const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
++              const objGroup = new OBJLoader().parse(fileContent);
++              const newParts: any[] = [];
++              objGroup.traverse((child: any) => {
++                if (child.isMesh) {
++                  const geo = (child as THREE.Mesh).geometry;
++                  if (geo?.attributes.position) {
++                    const posAttr = geo.attributes.position;
++                    const vertices: any[] = []; const indices: number[] = [];
++                    for (let i = 0; i < posAttr.count; i++) {
++                      vertices.push({
++                        position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
++                        normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
++                        tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 },
++                        uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
++                        color: 0xFFFFFFFF, skinning_data: null,
++                      });
++                    }
++                    if (geo.index) {
++                      const idxArr = geo.index.array;
++                      for (let i = 0; i < idxArr.length; i++) indices.push(idxArr[i]);
++                    } else {
++                      for (let i = 0; i < posAttr.count; i++) indices.push(i);
++                    }
++                    newParts.push({ material_index: 0, vertex_mask: 0x01, vertices, indices });
++                  }
++                }
++              });
++              if (newParts.length === 0) { alert("No geometry found in the OBJ file."); setIsLoading?.(false); return; }
++              const updatedShapes = model.engine_shapes.map(s => s.name === shape.name ? { ...s, mesh: { ...s.mesh, parts: newParts } } : s);
++              onModelChange?.({ ...model, engine_shapes: updatedShapes });
++              setIsLoading?.(false); alert(`Engine Shape mesh imported! Parts: ${newParts.length}`);
++            } catch (e: any) { console.error(e); setIsLoading?.(false); alert(`Import failed: ${e.toString()}`); }
++          }, 100);
++        } catch (e: any) { console.error(e); alert(`Import dialog failed: ${e.toString()}`); }
++      };
++
++      const handleExportEngineShapeOBJ = async () => {
++        try {
++          setIsLoading?.(true);
++          setStatusMsg?.("Exporting Shape OBJ...");
++          const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
++          const exporter = new OBJExporter();
++          const group = new THREE.Group();
++          group.name = shape.name;
++          shape.mesh.parts.forEach((part: any, pIdx: number) => {
++            const geometry = new THREE.BufferGeometry();
++            const vertices: number[] = [];
++            part.vertices.forEach((v: any) => vertices.push(v.position.x, v.position.y, v.position.z));
++            geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
++            geometry.setIndex(part.indices);
++            const meshObj = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
++            meshObj.name = `${shape.name}_part_${pIdx}`;
++            group.add(meshObj);
++          });
++          const objResult = exporter.parse(group);
++          await invoke<string | null>("save_text_file", { defaultName: `${shape.name}.obj`, filters: ["obj"], contents: objResult });
++          setIsLoading?.(false);
++          invoke("log_event", { level: "INFO", message: `Exported Engine Shape OBJ: ${shape.name}` }).catch(console.error);
++        } catch (e) {
++          console.error(e);
++          setIsLoading?.(false);
++          alert("Failed to export Shape OBJ.");
++        }
++      };
++
+       const totalTris = shape.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3;
+       return (
+         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+@@ -1966,9 +2120,14 @@ export const Inspector: React.FC<InspectorProps> = ({
+             </div>
+           </div>
+           
+-          <button onClick={handleImportEngineShapeOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
++                  <div style={{ display: "flex", gap: "8px" }}>
++          <button onClick={handleImportEngineShapeOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
+             <Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ
+           </button>
++          <button onClick={handleExportEngineShapeOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
++            <Upload size={14} style={{ color: "var(--accent-cyan)" }} /> Export OBJ
++          </button>
++        </div>
+ 
+           {model.materials?.length > 0 && shape.mesh?.parts?.length > 0 && (
+             <div>
+
+commit 2239ac70c03c6559b8c4fa78a91af831af37a9be
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Sun May 31 15:23:54 2026 -0700
+
+    UI Audit fixes: Turret detection, Engine Burns, Engine Glow/Shape OBJ imports
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 85b174f..67031d8 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -14,6 +14,8 @@ interface InspectorProps {
+   visibleMeshes?: Record<string, boolean>;
+   onToggleVisibility?: (meshKey: string) => void;
+   onConfigureShaders?: () => void;
++  setIsLoading?: React.Dispatch<React.SetStateAction<boolean>>;
++  setStatusMsg?: React.Dispatch<React.SetStateAction<string>>;
+ }
+ 
+ const quatToEulerDegrees = (q: { x: number; y: number; z: number; w: number }) => {
+@@ -192,9 +194,11 @@ interface MeshLODInspectorProps {
+   onModelChange?: (updatedModel: HODModel) => void;
+   visibleMeshes?: Record<string, boolean>;
+   onToggleVisibility?: (meshKey: string) => void;
++  setIsLoading?: React.Dispatch<React.SetStateAction<boolean>>;
++  setStatusMsg?: React.Dispatch<React.SetStateAction<string>>;
+ }
+ 
+-const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, onModelChange, visibleMeshes, onToggleVisibility }) => {
++const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, onModelChange, visibleMeshes, onToggleVisibility, setIsLoading, setStatusMsg }) => {
+   const [selectedLodIdx, setSelectedLodIdx] = useState(0);
+   const lodMeshes = model.meshes.filter(m => {
+     const mBase = m.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+@@ -428,6 +432,8 @@ export const Inspector: React.FC<InspectorProps> = ({
+   visibleMeshes,
+   onToggleVisibility,
+   onConfigureShaders,
++  setIsLoading,
++  setStatusMsg,
+ }) => {
+   const [pipelines, setPipelines] = useState<string[]>([]);
+   const [renameWeaponName, setRenameWeaponName] = useState("");
+@@ -453,6 +459,96 @@ export const Inspector: React.FC<InspectorProps> = ({
+ 
+ 
+   // Generic handlers
++  const handleImportEngineGlowOBJ = async () => {
++    if (!model || !selectedNode || selectedNode.type !== "engine_glow") return;
++    try {
++      const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
++      if (!fileContent) return;
++      setIsLoading?.(true); setStatusMsg?.("Importing Engine Glow OBJ...");
++      setTimeout(async () => {
++        try {
++          const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
++          const objGroup = new OBJLoader().parse(fileContent);
++          const newParts: any[] = [];
++          objGroup.traverse((child: any) => {
++            if (child.isMesh) {
++              const geo = (child as THREE.Mesh).geometry;
++              if (geo?.attributes.position) {
++                const posAttr = geo.attributes.position;
++                const vertices: any[] = []; const indices: number[] = [];
++                for (let i = 0; i < posAttr.count; i++) {
++                  vertices.push({
++                    position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
++                    normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
++                    tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 },
++                    uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
++                    color: 0xFFFFFFFF, skinning_data: null,
++                  });
++                }
++                if (geo.index) {
++                  const idxArr = geo.index.array;
++                  for (let i = 0; i < idxArr.length; i++) indices.push(idxArr[i]);
++                } else {
++                  for (let i = 0; i < posAttr.count; i++) indices.push(i);
++                }
++                newParts.push({ material_index: 0, vertex_mask: 0x01, vertices, indices });
++              }
++            }
++          });
++          if (newParts.length === 0) { alert("No geometry found in the OBJ file."); setIsLoading?.(false); return; }
++          const updatedGlows = model.engine_glows.map(g => g.name === selectedNode.name ? { ...g, mesh: { ...g.mesh, parts: newParts } } : g);
++          onModelChange?.({ ...model, engine_glows: updatedGlows });
++          setIsLoading?.(false); alert(`Engine Glow mesh imported! Parts: ${newParts.length}`);
++        } catch (e: any) { console.error(e); setIsLoading?.(false); alert(`Import failed: ${e.toString()}`); }
++      }, 100);
++    } catch (e: any) { console.error(e); alert(`Import dialog failed: ${e.toString()}`); }
++  };
++
++  const handleImportEngineShapeOBJ = async () => {
++    if (!model || !selectedNode || selectedNode.type !== "engine_shape") return;
++    try {
++      const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
++      if (!fileContent) return;
++      setIsLoading?.(true); setStatusMsg?.("Importing Engine Shape OBJ...");
++      setTimeout(async () => {
++        try {
++          const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
++          const objGroup = new OBJLoader().parse(fileContent);
++          const newParts: any[] = [];
++          objGroup.traverse((child: any) => {
++            if (child.isMesh) {
++              const geo = (child as THREE.Mesh).geometry;
++              if (geo?.attributes.position) {
++                const posAttr = geo.attributes.position;
++                const vertices: any[] = []; const indices: number[] = [];
++                for (let i = 0; i < posAttr.count; i++) {
++                  vertices.push({
++                    position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
++                    normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
++                    tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 },
++                    uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
++                    color: 0xFFFFFFFF, skinning_data: null,
++                  });
++                }
++                if (geo.index) {
++                  const idxArr = geo.index.array;
++                  for (let i = 0; i < idxArr.length; i++) indices.push(idxArr[i]);
++                } else {
++                  for (let i = 0; i < posAttr.count; i++) indices.push(i);
++                }
++                newParts.push({ material_index: 0, vertex_mask: 0x01, vertices, indices });
++              }
++            }
++          });
++          if (newParts.length === 0) { alert("No geometry found in the OBJ file."); setIsLoading?.(false); return; }
++          const updatedShapes = model.engine_shapes.map(s => s.name === selectedNode.name ? { ...s, mesh: { ...s.mesh, parts: newParts } } : s);
++          onModelChange?.({ ...model, engine_shapes: updatedShapes });
++          setIsLoading?.(false); alert(`Engine Shape mesh imported! Parts: ${newParts.length}`);
++        } catch (e: any) { console.error(e); setIsLoading?.(false); alert(`Import failed: ${e.toString()}`); }
++      }, 100);
++    } catch (e: any) { console.error(e); alert(`Import dialog failed: ${e.toString()}`); }
++  };
++
+   const handleNavLightChange = (fieldName: keyof HODNavLight, value: any) => {
+     if (!model || !selectedNode || selectedNode.type !== "navlight") return;
+     const updatedNavs = model.nav_lights.map((nav) => {
+@@ -1805,6 +1901,30 @@ export const Inspector: React.FC<InspectorProps> = ({
+               </div>
+             </div>
+           </div>
++          
++          <button onClick={handleImportEngineGlowOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
++            <Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ
++          </button>
++
++          {model.materials?.length > 0 && glow.mesh?.parts?.length > 0 && (
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>Material Assignment</label>
++              <div style={{ display: "flex", flexDirection: "column", gap: "6px", background: "rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px" }}>
++                {glow.mesh.parts.map((part, pIdx) => (
++                  <div key={pIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
++                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Part {pIdx}</span>
++                    <select value={part.material_index} onChange={(e) => {
++                      const newMatIdx = parseInt(e.target.value, 10);
++                      onModelChange?.({ ...model, engine_glows: model.engine_glows.map(g => g.name === glow.name ? { ...g, mesh: { ...g.mesh, parts: g.mesh.parts.map((p, i) => i === pIdx ? { ...p, material_index: newMatIdx } : p) } } : g) });
++                    }} style={{ width: "160px", height: "26px", padding: "2px 6px", fontSize: "11px", background: "#050a12", border: "1px solid var(--border-color)", color: "white" }}>
++                      {model.materials.map((mat, mIdx) => (<option key={mIdx} value={mIdx}>{mat.name}</option>))}
++                    </select>
++                  </div>
++                ))}
++              </div>
++            </div>
++          )}
++
+         </div>
+       );
+     }
+@@ -1845,6 +1965,30 @@ export const Inspector: React.FC<InspectorProps> = ({
+               </div>
+             </div>
+           </div>
++          
++          <button onClick={handleImportEngineShapeOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
++            <Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ
++          </button>
++
++          {model.materials?.length > 0 && shape.mesh?.parts?.length > 0 && (
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>Material Assignment</label>
++              <div style={{ display: "flex", flexDirection: "column", gap: "6px", background: "rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px" }}>
++                {shape.mesh.parts.map((part, pIdx) => (
++                  <div key={pIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
++                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Part {pIdx}</span>
++                    <select value={part.material_index} onChange={(e) => {
++                      const newMatIdx = parseInt(e.target.value, 10);
++                      onModelChange?.({ ...model, engine_shapes: model.engine_shapes.map(s => s.name === shape.name ? { ...s, mesh: { ...s.mesh, parts: s.mesh.parts.map((p, i) => i === pIdx ? { ...p, material_index: newMatIdx } : p) } } : s) });
++                    }} style={{ width: "160px", height: "26px", padding: "2px 6px", fontSize: "11px", background: "#050a12", border: "1px solid var(--border-color)", color: "white" }}>
++                      {model.materials.map((mat, mIdx) => (<option key={mIdx} value={mIdx}>{mat.name}</option>))}
++                    </select>
++                  </div>
++                ))}
++              </div>
++            </div>
++          )}
++
+         </div>
+       );
+     }
+
+commit 19b9fa9ed06d073ec80d72806a3c58046f8864a7
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 19:18:01 2026 -0700
+
+    Add loading screens for OBJ/TGA/Materials IO operations and HOD saving
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index f1f44ad..85b174f 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -230,6 +230,8 @@ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, on
+   const handleExportOBJ = async () => {
+     if (!selectedLodMesh) return;
+     try {
++      setIsLoading?.(true);
++      setStatusMsg?.("Exporting OBJ and MTL...");
+       const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
+       const exporter = new OBJExporter();
+       const tempGroup = buildThreeMeshFromState(selectedLodMesh);
+@@ -238,6 +240,7 @@ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, on
+       objResult = `mtllib ${objFilename}.mtl\n` + objResult;
+       const savedPath = await invoke<string | null>("save_text_file", { defaultName: `${objFilename}.obj`, filters: ["obj"], contents: objResult });
+       if (savedPath) {
++        setStatusMsg?.("Saving materials...");
+         const mtlLines: string[] = [];
+         selectedLodMesh.parts.forEach((part) => {
+           const hMat = model.materials?.[part.material_index];
+@@ -253,6 +256,7 @@ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, on
+         alert(`Mesh exported to:\n${folderPath}`);
+       }
+     } catch (e: any) { console.error(e); alert(`Export failed: ${e.toString()}`); }
++    finally { setIsLoading?.(false); }
+   };
+ 
+   const handleImportOBJ = async () => {
+@@ -260,6 +264,10 @@ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, on
+     try {
+       const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
+       if (!fileContent) return;
++      
++      setIsLoading?.(true);
++      setStatusMsg?.("Importing OBJ...");
++      
+       const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
+       const objGroup = new OBJLoader().parse(fileContent);
+       const newParts: any[] = [];
+@@ -290,6 +298,7 @@ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, on
+         alert(`Mesh "${selectedLodMesh.name}" LOD ${selectedLodMesh.lod} replaced by imported OBJ.`);
+       } else { alert("No valid geometries found in the OBJ file."); }
+     } catch (e: any) { console.error(e); alert(`Import failed: ${e.toString()}`); }
++    finally { setIsLoading?.(false); }
+   };
+ 
+   const handleAddLod = () => {
+@@ -2003,6 +2012,9 @@ export const Inspector: React.FC<InspectorProps> = ({
+ 
+       const handleImportTGA = async () => {
+         try {
++          setIsLoading?.(true);
++          setStatusMsg?.("Importing TGA textures...");
++          
+           const importedTexs = await invoke<any[] | null>("import_tga_textures");
+           if (!importedTexs || importedTexs.length === 0) return;
+ 
+@@ -2024,6 +2036,8 @@ export const Inspector: React.FC<InspectorProps> = ({
+         } catch (e: any) {
+           console.error(e);
+           alert(`Failed to import TGA texture: ${e.toString()}`);
++        } finally {
++          setIsLoading?.(false);
+         }
+       };
+ 
+
+commit f2aac5d72de46a1001888076c3fe4c8aa318ef80
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:57:03 2026 -0700
+
+    Add Configure button for shader directories in Inspector
+    
+    - Inspector has 'Configure' button next to 'Refresh' in shader section
+    - Button opens keeper.txt file picker to add shader directories
+    - Config saved to hod_editor_config.json next to app binary
+    - Shaders auto-reload after adding new directory
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 16d50a6..f1f44ad 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -13,6 +13,7 @@ interface InspectorProps {
+   selectedAnimIdx?: number;
+   visibleMeshes?: Record<string, boolean>;
+   onToggleVisibility?: (meshKey: string) => void;
++  onConfigureShaders?: () => void;
+ }
+ 
+ const quatToEulerDegrees = (q: { x: number; y: number; z: number; w: number }) => {
+@@ -417,6 +418,7 @@ export const Inspector: React.FC<InspectorProps> = ({
+   selectedAnimIdx,
+   visibleMeshes,
+   onToggleVisibility,
++  onConfigureShaders,
+ }) => {
+   const [pipelines, setPipelines] = useState<string[]>([]);
+   const [renameWeaponName, setRenameWeaponName] = useState("");
+@@ -2101,13 +2103,24 @@ export const Inspector: React.FC<InspectorProps> = ({
+                 <label style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>
+                   Shader / Pipeline Name
+                 </label>
+-                <button
+-                  onClick={loadPipelines}
+-                  style={{ fontSize: "10px", padding: "2px 8px", background: "var(--accent-cyan)", color: "#000", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "600" }}
+-                  title="Reload shaders from configured directories"
+-                >
+-                  Refresh
+-                </button>
++                <div style={{ display: "flex", gap: "4px" }}>
++                  {onConfigureShaders && (
++                    <button
++                      onClick={onConfigureShaders}
++                      style={{ fontSize: "10px", padding: "2px 8px", background: "#ff9800", color: "#000", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "600" }}
++                      title="Configure shader directories"
++                    >
++                      Configure
++                    </button>
++                  )}
++                  <button
++                    onClick={loadPipelines}
++                    style={{ fontSize: "10px", padding: "2px 8px", background: "var(--accent-cyan)", color: "#000", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "600" }}
++                    title="Reload shaders from configured directories"
++                  >
++                    Refresh
++                  </button>
++                </div>
+               </div>
+               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                 <select
+
+commit 188e35496899cd40a94a18e77df9d86e2a037e3c
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:37:20 2026 -0700
+
+    Shader dropdown: remove custom input, add refresh button
+    
+    - Removed custom shader text box and '(Custom shader/pipeline...)' option
+    - Shader dropdown only shows scanned shaders from configured directories
+    - Added 'Refresh' button to reload shaders from config
+    - Shader list auto-loads on app startup from config file
+    - Empty state shows 'No shaders loaded' message with Settings hint
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 57c171c..16d50a6 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -422,18 +422,21 @@ export const Inspector: React.FC<InspectorProps> = ({
+   const [renameWeaponName, setRenameWeaponName] = useState("");
+   const [sourceMeshName, setSourceMeshName] = useState("");
+ 
+-  useEffect(() => {
+-    const loadPipelines = async () => {
+-      try {
+-        const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
+-        if (config.shader_directories.length > 0) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
+-          setPipelines(list);
+-        }
+-      } catch (e) {
+-        console.error("Failed to load shader pipelines:", e);
++  const loadPipelines = async () => {
++    try {
++      const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
++      if (config.shader_directories.length > 0) {
++        const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
++        setPipelines(list);
++      } else {
++        setPipelines([]);
+       }
+-    };
++    } catch (e) {
++      console.error("Failed to load shader pipelines:", e);
++    }
++  };
++
++  useEffect(() => {
+     loadPipelines();
+   }, []);
+ 
+@@ -2094,34 +2097,33 @@ export const Inspector: React.FC<InspectorProps> = ({
+             </div>
+ 
+             <div>
+-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
+-                Shader / Pipeline Name
+-              </label>
++              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
++                <label style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>
++                  Shader / Pipeline Name
++                </label>
++                <button
++                  onClick={loadPipelines}
++                  style={{ fontSize: "10px", padding: "2px 8px", background: "var(--accent-cyan)", color: "#000", border: "none", borderRadius: "3px", cursor: "pointer", fontWeight: "600" }}
++                  title="Reload shaders from configured directories"
++                >
++                  Refresh
++                </button>
++              </div>
+               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                 <select
+-                  value={pipelines.includes(material.shader_name) ? material.shader_name : "custom"}
+-                  onChange={(e) => {
+-                    const val = e.target.value;
+-                    if (val !== "custom") {
+-                      handleShaderChange(val);
+-                    } else {
+-                      handleShaderChange("");
+-                    }
+-                  }}
++                  value={material.shader_name || ""}
++                  onChange={(e) => handleShaderChange(e.target.value)}
+                   style={{ width: "100%" }}
+                 >
++                  <option value="">-- Select Shader --</option>
+                   {pipelines.map((p) => (
+                     <option key={p} value={p}>{p}</option>
+                   ))}
+-                  <option value="custom">(Custom shader/pipeline...)</option>
+                 </select>
+-                {(!pipelines.includes(material.shader_name) || !material.shader_name) && (
+-                  <input
+-                    type="text"
+-                    placeholder="Enter custom shader name..."
+-                    value={material.shader_name}
+-                    onChange={(e) => handleShaderChange(e.target.value)}
+-                  />
++                {pipelines.length === 0 && (
++                  <div style={{ fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic" }}>
++                    No shaders loaded. Configure shader directories in Settings.
++                  </div>
+                 )}
+               </div>
+             </div>
+
+commit 08a404362f7d631acb04979a7b19798425d37ff9
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:29:55 2026 -0700
+
+    Shader config persisted to file next to app binary
+    
+    - Backend: load_shader_config/save_shader_config read/write
+      hod_editor_config.json next to the executable
+    - Frontend: loads shader directories from config on startup
+    - Shader dropdown empty until user configures directories
+    - Removed localStorage dependency for shader paths
+    - Shaders scanned from configured directories with texture mapping
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 71b96a8..57c171c 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -423,44 +423,18 @@ export const Inspector: React.FC<InspectorProps> = ({
+   const [sourceMeshName, setSourceMeshName] = useState("");
+ 
+   useEffect(() => {
+-    if (selectedNode) {
+-      if (
+-        selectedNode.type === "weapon_group" ||
+-        selectedNode.type === "turret_group" ||
+-        selectedNode.type === "hardpoint_group" ||
+-        selectedNode.type === "capture_point_group" ||
+-        selectedNode.type === "repair_point_group" ||
+-        selectedNode.type === "salvage_point_group"
+-      ) {
+-        setRenameWeaponName(selectedNode.name);
+-      } else if (selectedNode.type === "collision" && model && model.meshes) {
+-        const col = model.collision_meshes.find(c => c.name === selectedNode.name);
+-        const parentName = col?.mesh?.parent_name || "";
+-        const matchedMesh = model.meshes.find(m => m.parent_name === parentName || m.name === selectedNode.name || m.name === parentName);
+-        if (matchedMesh) {
+-          setSourceMeshName(`${matchedMesh.name}_lod_${matchedMesh.lod}`);
+-        } else if (model.meshes.length > 0) {
+-          setSourceMeshName(`${model.meshes[0].name}_lod_${model.meshes[0].lod}`);
+-        } else {
+-          setSourceMeshName("");
+-        }
+-      }
+-    }
+-  }, [selectedNode, model]);
+-
+-  useEffect(() => {
+-    const fetchPipelines = async () => {
++    const loadPipelines = async () => {
+       try {
+-        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
+-        if (keeperTxtPaths.length > 0) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
++        const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
++        if (config.shader_directories.length > 0) {
++          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
+           setPipelines(list);
+         }
+       } catch (e) {
+-        console.error("Failed to fetch shader pipelines:", e);
++        console.error("Failed to load shader pipelines:", e);
+       }
+     };
+-    fetchPipelines();
++    loadPipelines();
+   }, []);
+ 
+ 
+
+commit d7a0b80b767cfd4b68d22e7dd59250a411e6ee4f
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:26:37 2026 -0700
+
+    Revert "Shader dropdown: use SHADER_SLOTS directly, no backend scan"
+    
+    This reverts commit e456919fc429190dbde08e07f8d967f937f91a2b.
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 30ea869..71b96a8 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -418,7 +418,7 @@ export const Inspector: React.FC<InspectorProps> = ({
+   visibleMeshes,
+   onToggleVisibility,
+ }) => {
+-  const pipelines = Object.keys(SHADER_SLOTS);
++  const [pipelines, setPipelines] = useState<string[]>([]);
+   const [renameWeaponName, setRenameWeaponName] = useState("");
+   const [sourceMeshName, setSourceMeshName] = useState("");
+ 
+@@ -448,6 +448,22 @@ export const Inspector: React.FC<InspectorProps> = ({
+     }
+   }, [selectedNode, model]);
+ 
++  useEffect(() => {
++    const fetchPipelines = async () => {
++      try {
++        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
++        if (keeperTxtPaths.length > 0) {
++          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
++          setPipelines(list);
++        }
++      } catch (e) {
++        console.error("Failed to fetch shader pipelines:", e);
++      }
++    };
++    fetchPipelines();
++  }, []);
++
++
+   // Generic handlers
+   const handleNavLightChange = (fieldName: keyof HODNavLight, value: any) => {
+     if (!model || !selectedNode || selectedNode.type !== "navlight") return;
+
+commit e456919fc429190dbde08e07f8d967f937f91a2b
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:23:14 2026 -0700
+
+    Shader dropdown: use SHADER_SLOTS directly, no backend scan
+    
+    - Inspector: pipelines derived from Object.keys(SHADER_SLOTS)
+    - HierarchyTree: pipelines hardcoded to match SHADER_SLOTS keys
+    - Removed backend get_shader_pipelines calls and localStorage dependency
+    - Shader list is now session-only and always available
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 71b96a8..30ea869 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -418,7 +418,7 @@ export const Inspector: React.FC<InspectorProps> = ({
+   visibleMeshes,
+   onToggleVisibility,
+ }) => {
+-  const [pipelines, setPipelines] = useState<string[]>([]);
++  const pipelines = Object.keys(SHADER_SLOTS);
+   const [renameWeaponName, setRenameWeaponName] = useState("");
+   const [sourceMeshName, setSourceMeshName] = useState("");
+ 
+@@ -448,22 +448,6 @@ export const Inspector: React.FC<InspectorProps> = ({
+     }
+   }, [selectedNode, model]);
+ 
+-  useEffect(() => {
+-    const fetchPipelines = async () => {
+-      try {
+-        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
+-        if (keeperTxtPaths.length > 0) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
+-          setPipelines(list);
+-        }
+-      } catch (e) {
+-        console.error("Failed to fetch shader pipelines:", e);
+-      }
+-    };
+-    fetchPipelines();
+-  }, []);
+-
+-
+   // Generic handlers
+   const handleNavLightChange = (fieldName: keyof HODNavLight, value: any) => {
+     if (!model || !selectedNode || selectedNode.type !== "navlight") return;
+
+commit e8c8915ff1414d6cf2025d838d33ddfb08a80d00
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:17:07 2026 -0700
+
+    Multiple keeper paths support for shader scanning
+    
+    - Backend get_shader_pipelines accepts Vec<String> of paths, scans all
+    - Frontend stores keeperTxtPaths as JSON array in localStorage
+    - UI shows list of paths with add/remove buttons
+    - Migrates from old single-path 'keeperTxtPath' format automatically
+    - Shader dropdown populates from all configured data directories
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 5bc267f..71b96a8 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -451,9 +451,9 @@ export const Inspector: React.FC<InspectorProps> = ({
+   useEffect(() => {
+     const fetchPipelines = async () => {
+       try {
+-        const keeperTxtPath = localStorage.getItem("keeperTxtPath") || "";
+-        if (keeperTxtPath) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPath: keeperTxtPath });
++        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
++        if (keeperTxtPaths.length > 0) {
++          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
+           setPipelines(list);
+         }
+       } catch (e) {
+
+commit ba3777a1943c2176f65b1db8be07b374aee68cdc
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:06:47 2026 -0700
+
+    Shader dropdown: no defaults, only from directory scan
+    
+    - Backend get_shader_pipelines starts with empty list, populates only
+      from game shaders directory when keeper path is set
+    - Frontend pipelines state initialized empty, populated by backend
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 0f5eaa7..5bc267f 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -418,7 +418,7 @@ export const Inspector: React.FC<InspectorProps> = ({
+   visibleMeshes,
+   onToggleVisibility,
+ }) => {
+-  const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "badgeglow", "bay", "thruster", "innateSS", "matte", "mattealpha", "mattescissor", "matte2s", "mattealpha2s", "mattescissor2s", "shipglow", "shipglow_ns"]);
++  const [pipelines, setPipelines] = useState<string[]>([]);
+   const [renameWeaponName, setRenameWeaponName] = useState("");
+   const [sourceMeshName, setSourceMeshName] = useState("");
+ 

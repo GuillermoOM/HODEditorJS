@@ -27,16 +27,15 @@ fn extract_dock(chunk: &IffChunk) {
             }
             println!("Found DOCK with {} paths", count);
             for i in 0..count {
-                if let Ok(name) = hwr_hod_parser::iff::read_len_string(&mut r) {
-                    if let Ok(parent) = hwr_hod_parser::iff::read_len_string(&mut r) {
-                        println!("  Path {}: {} (Parent: {})", i, name, parent);
+                if let Ok(name) = hwr_hod_parser::hod::read_len_string(&mut r) {
+                    if let Ok(parent) = hwr_hod_parser::hod::read_len_string(&mut r) {
+                        println!("  Dockpath name: {}", name);
+                        println!("  Dockpath parent: {}", parent);
                     }
-                    r.set_position(r.position() + 20); // skip vals
-                    if let Ok(_comp) = hwr_hod_parser::iff::read_len_string(&mut r) {
-                        r.set_position(r.position() + 8); // padding
-                        if let Ok(pts) = r.read_i32::<LittleEndian>() {
-                            r.set_position(r.position() + pts as u64 * 50);
-                        }
+                } else if let Ok(name2) = hwr_hod_parser::hod::read_len_string(&mut r) {
+                    r.set_position(r.position() + 8); // padding
+                    if let Ok(pts) = r.read_i32::<LittleEndian>() {
+                        r.set_position(r.position() + pts as u64 * 50);
                     }
                 }
             }

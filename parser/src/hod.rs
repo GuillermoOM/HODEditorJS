@@ -2665,13 +2665,21 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
 
     let mut raw_pixels = Vec::new();
     if context.is_v2 {
-        let expected_size = if format == "DXT1" {
-            std::cmp::max(8, (width as usize * height as usize) / 2)
-        } else if format == "DXT5" {
-            std::cmp::max(16, width as usize * height as usize)
-        } else {
-            width as usize * height as usize * 4
-        };
+        let mut expected_size = 0;
+        let mut cur_w = width as usize;
+        let mut cur_h = height as usize;
+        for _ in 0..mip_count {
+            if format == "DXT1" {
+                expected_size += std::cmp::max(8, (cur_w * cur_h) / 2);
+            } else if format == "DXT5" {
+                expected_size += std::cmp::max(16, cur_w * cur_h);
+            } else {
+                expected_size += cur_w * cur_h * 4;
+            }
+            if cur_w == 1 && cur_h == 1 { break; }
+            cur_w = std::cmp::max(1, cur_w / 2);
+            cur_h = std::cmp::max(1, cur_h / 2);
+        }
         let mut buf = vec![0u8; expected_size.min(1024 * 1024 * 8)]; // clamp to safe limits
         if let Ok(_) = context.texture_pool.read_exact(&mut buf) {
             raw_pixels = buf;
@@ -3216,7 +3224,7 @@ fn parse_basic_mesh(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HO
     })
 }
 
-fn read_len_string<R: Read>(reader: &mut R) -> Result<String, String> {
+pub fn read_len_string<R: Read>(reader: &mut R) -> Result<String, String> {
     let len = reader
         .read_u32::<LittleEndian>()
         .map_err(|e| e.to_string())? as usize;
@@ -3669,9 +3677,9 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
                     z: rz,
                 },
                 Vector3 {
-                    x: sx,
-                    y: sy,
-                    z: sz,
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
                 },
             );
 
@@ -3690,9 +3698,9 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
                     z: rz,
                 }),
                 scale: Some(Vector3 {
-                    x: sx,
-                    y: sy,
-                    z: sz,
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
                 }),
             });
         }

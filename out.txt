@@ -1,0 +1,2522 @@
+commit 1b1505f21af3715689082d3fc5a87d5a0e6277b3
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Mon May 25 16:50:18 2026 -0700
+
+    initial commit!
+
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+new file mode 100644
+index 0000000..729ebe4
+--- /dev/null
++++ b/src/components/Inspector.tsx
+@@ -0,0 +1,2510 @@
++import React, { useState, useEffect, useRef } from "react";
++import * as THREE from "three";
++import { invoke } from "@tauri-apps/api/core";
++import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
++import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench } from "lucide-react";
++
++interface InspectorProps {
++  model: HODModel | null;
++  selectedNode: { type: string; name: string } | null;
++  onPositionChange: (name: string, type: string, pos: Vector3D) => void;
++  onModelChange?: (updatedModel: HODModel) => void;
++  onSelectedNodeChange?: (node: { type: string; name: string } | null) => void;
++  filePath: string;
++  selectedAnimIdx?: number;
++}
++
++const quatToEulerDegrees = (q: { x: number; y: number; z: number; w: number }) => {
++  const tq = new THREE.Quaternion(q.x, q.y, q.z, q.w);
++  const te = new THREE.Euler().setFromQuaternion(tq, "YXZ");
++  return {
++    x: (te.x * 180) / Math.PI,
++    y: (te.y * 180) / Math.PI,
++    z: (te.z * 180) / Math.PI,
++  };
++};
++
++const eulerDegreesToQuat = (x: number, y: number, z: number) => {
++  const te = new THREE.Euler(
++    (x * Math.PI) / 180,
++    (y * Math.PI) / 180,
++    (z * Math.PI) / 180,
++    "YXZ"
++  );
++  const tq = new THREE.Quaternion().setFromEuler(te);
++  return { x: tq.x, y: tq.y, z: tq.z, w: tq.w };
++};
++
++// Helpers for color conversions
++const hexToRgb = (hex: string): Vector3D => {
++  const r = parseInt(hex.substring(1, 3), 16) / 255;
++  const g = parseInt(hex.substring(3, 5), 16) / 255;
++  const b = parseInt(hex.substring(5, 7), 16) / 255;
++  return { x: r, y: g, z: b };
++};
++
++const rgbToHex = (color: Vector3D): string => {
++  const r = Math.round(Math.max(0, Math.min(1, color.x)) * 255).toString(16).padStart(2, "0");
++  const g = Math.round(Math.max(0, Math.min(1, color.y)) * 255).toString(16).padStart(2, "0");
++  const b = Math.round(Math.max(0, Math.min(1, color.z)) * 255).toString(16).padStart(2, "0");
++  return `#${r}${g}${b}`;
++};
++
++const handleNumericWheel = (e: React.WheelEvent<HTMLInputElement>, onChange: (val: string) => void, step = 1) => {
++  e.preventDefault();
++  const direction = e.deltaY < 0 ? 1 : -1;
++  const currentVal = parseFloat(e.currentTarget.value) || 0;
++  const stepStr = step.toString();
++  const decimals = stepStr.includes(".") ? stepStr.split(".")[1].length : 0;
++  const newVal = parseFloat((currentVal + direction * step).toFixed(Math.max(decimals, 3)));
++  onChange(newVal.toString());
++};
++
++
++
++// Converts 4x4 matrix representation to Euler rotation in degrees (XYZ order)
++const getEulerRotation = (m: number[][]): { x: number; y: number; z: number } => {
++  if (!m || m.length < 4 || m.some(row => !row || row.length < 4)) {
++    return { x: 0, y: 0, z: 0 };
++  }
++  const matrix = new THREE.Matrix4().set(
++    m[0][0], m[1][0], m[2][0], m[3][0],
++    m[0][1], m[1][1], m[2][1], m[3][1],
++    m[0][2], m[1][2], m[2][2], m[3][2],
++    m[0][3], m[1][3], m[2][3], m[3][3]
++  );
++  const euler = new THREE.Euler().setFromRotationMatrix(matrix, "XYZ");
++  return {
++    x: Math.round(THREE.MathUtils.radToDeg(euler.x) * 100) / 100,
++    y: Math.round(THREE.MathUtils.radToDeg(euler.y) * 100) / 100,
++    z: Math.round(THREE.MathUtils.radToDeg(euler.z) * 100) / 100,
++  };
++};
++
++// Builds a new 4x4 rotation matrix using new Euler angles in degrees and merges it with position
++const updateMatrixRotation = (m: number[][], rot: { x: number; y: number; z: number }): number[][] => {
++  const radX = THREE.MathUtils.degToRad(rot.x);
++  const radY = THREE.MathUtils.degToRad(rot.y);
++  const radZ = THREE.MathUtils.degToRad(rot.z);
++  const euler = new THREE.Euler(radX, radY, radZ, "XYZ");
++  const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(euler);
++  const elements = rotationMatrix.elements;
++
++  // Copy elements (m is column-major in HOD matrix rows)
++  const next = m.map(row => [...row]);
++  
++  // Update basis vectors
++  next[0][0] = elements[0];  next[0][1] = elements[1];  next[0][2] = elements[2];
++  next[1][0] = elements[4];  next[1][1] = elements[5];  next[1][2] = elements[6];
++  next[2][0] = elements[8];  next[2][1] = elements[9];  next[2][2] = elements[10];
++
++  return next;
++};
++
++interface NumericInputProps {
++  value: number;
++  onChange: (val: string) => void;
++  onWheel?: (e: React.WheelEvent<HTMLInputElement>) => void;
++  step?: string;
++  min?: string;
++  max?: string;
++  style?: React.CSSProperties;
++}
++
++const NumericInput: React.FC<NumericInputProps> = ({
++  value,
++  onChange,
++  onWheel,
++  step = "1",
++  min,
++  max,
++  style,
++}) => {
++  const [localValue, setLocalValue] = useState(value.toString());
++  const isFocusedRef = useRef(false);
++  const isWheelingRef = useRef(false);
++
++  useEffect(() => {
++    if (!isFocusedRef.current || isWheelingRef.current) {
++      setLocalValue(value.toString());
++      isWheelingRef.current = false;
++    }
++  }, [value]);
++
++  const handleBlur = () => {
++    isFocusedRef.current = false;
++    onChange(localValue);
++    setLocalValue(value.toString());
++  };
++
++  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
++    if (e.key === "Enter") {
++      e.currentTarget.blur();
++    }
++  };
++
++  const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
++    if (onWheel) {
++      isWheelingRef.current = true;
++      onWheel(e);
++    }
++  };
++
++  return (
++    <input
++      type="number"
++      step={step}
++      min={min}
++      max={max}
++      value={localValue}
++      onFocus={() => { isFocusedRef.current = true; }}
++      onBlur={handleBlur}
++      onKeyDown={handleKeyDown}
++      onChange={(e) => setLocalValue(e.target.value)}
++      onWheel={handleWheel}
++      style={style}
++    />
++  );
++};
++
++const SHADER_SLOTS: Record<string, string[]> = {
++  ship: ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Specular Map (SPEC)"],
++  badge: ["Badge Diffuse Map (DIFF)"],
++  badgeglow: ["Badge Diffuse Map (DIFF)", "Glow Map (GLOW)"],
++  thruster: ["Diffuse On (DIFF)", "Glow On (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Diffuse Off (DIFF_OFF)", "Glow Off (GLOW_OFF)"],
++  bay: ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"],
++  innatess: ["Diffuse Map (DIFF)"],
++  matte: ["Diffuse Map (DIFF)"],
++  mattealpha: ["Diffuse Map (DIFF)"],
++  mattescissor: ["Diffuse Map (DIFF)"],
++  matte2s: ["Diffuse Map (DIFF)"],
++  mattealpha2s: ["Diffuse Map (DIFF)"],
++  mattescissor2s: ["Diffuse Map (DIFF)"],
++  shipglow: ["Diffuse Map (DIFF)", "Glow Map (GLOW)"],
++  shipglow_ns: ["Diffuse Map (DIFF)", "Glow Map (GLOW)"],
++};
++
++export const Inspector: React.FC<InspectorProps> = ({
++  model,
++  selectedNode,
++  onPositionChange,
++  onModelChange,
++  onSelectedNodeChange,
++  filePath,
++  selectedAnimIdx,
++}) => {
++  const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "bay", "thruster"]);
++  const [renameWeaponName, setRenameWeaponName] = useState("");
++  const [sourceMeshName, setSourceMeshName] = useState("");
++
++  useEffect(() => {
++    if (selectedNode) {
++      if (
++        selectedNode.type === "weapon_group" ||
++        selectedNode.type === "hardpoint_group" ||
++        selectedNode.type === "capture_point_group" ||
++        selectedNode.type === "repair_point_group" ||
++        selectedNode.type === "salvage_point_group"
++      ) {
++        setRenameWeaponName(selectedNode.name);
++      } else if (selectedNode.type === "collision" && model && model.meshes) {
++        const col = model.collision_meshes.find(c => c.name === selectedNode.name);
++        const parentName = col?.mesh?.parent_name || "";
++        const matchedMesh = model.meshes.find(m => m.parent_name === parentName || m.name === selectedNode.name || m.name === parentName);
++        if (matchedMesh) {
++          setSourceMeshName(`${matchedMesh.name}_lod_${matchedMesh.lod}`);
++        } else if (model.meshes.length > 0) {
++          setSourceMeshName(`${model.meshes[0].name}_lod_${model.meshes[0].lod}`);
++        } else {
++          setSourceMeshName("");
++        }
++      }
++    }
++  }, [selectedNode, model]);
++
++  useEffect(() => {
++    const fetchPipelines = async () => {
++      try {
++        const keeperTxtPath = localStorage.getItem("keeperTxtPath") || "";
++        if (keeperTxtPath) {
++          const list = await invoke<string[]>("get_shader_pipelines", { keeperPath: keeperTxtPath });
++          setPipelines(list);
++        }
++      } catch (e) {
++        console.error("Failed to fetch shader pipelines:", e);
++      }
++    };
++    fetchPipelines();
++  }, []);
++
++
++  // Generic handlers
++  const handleNavLightChange = (fieldName: keyof HODNavLight, value: any) => {
++    if (!model || !selectedNode || selectedNode.type !== "navlight") return;
++    const updatedNavs = model.nav_lights.map((nav) => {
++      if (nav.name === selectedNode.name) {
++        return { ...nav, [fieldName]: value };
++      }
++      return nav;
++    });
++    if (onModelChange) {
++      onModelChange({ ...model, nav_lights: updatedNavs });
++    }
++  };
++
++  const handleDockpointChange = (pathName: string, ptIndex: number, fieldName: keyof HODDockpoint | "x" | "y" | "z", value: any) => {
++    if (!model) return;
++    const updatedPaths = model.dockpaths.map((dp) => {
++      if (dp.name === pathName) {
++        const updatedPoints = dp.points.map((pt, idx) => {
++          if (idx === ptIndex) {
++            if (fieldName === "x" || fieldName === "y" || fieldName === "z") {
++              const newPos = { ...pt.position, [fieldName]: value };
++              // Report coordinates to position change to update gizmos too if needed
++              onPositionChange(`${pathName}:${ptIndex}`, "dockpoint", newPos);
++              return { ...pt, position: newPos };
++            } else {
++              return { ...pt, [fieldName]: value };
++            }
++          }
++          return pt;
++        });
++        return { ...dp, points: updatedPoints };
++      }
++      return dp;
++    });
++    if (onModelChange) {
++      onModelChange({ ...model, dockpaths: updatedPaths });
++    }
++  };
++
++  const handleCollisionChange = (fieldName: "min_extents" | "max_extents" | "center" | "radius" | "x" | "y" | "z", axis?: "x" | "y" | "z", value?: any) => {
++    if (!model || !selectedNode || selectedNode.type !== "collision") return;
++    const updatedCols = model.collision_meshes.map((col) => {
++      if (col.name === selectedNode.name) {
++        if (fieldName === "radius") {
++          return { ...col, radius: value };
++        } else if (axis) {
++          const vectorKey = fieldName as "min_extents" | "max_extents" | "center";
++          const newVec = {
++            ...col[vectorKey],
++            [axis]: value,
++          };
++          if (vectorKey === "center") {
++            onPositionChange(col.name, "collision", newVec);
++          }
++          return {
++            ...col,
++            [vectorKey]: newVec,
++          };
++        }
++      }
++      return col;
++    });
++    if (onModelChange) {
++      onModelChange({ ...model, collision_meshes: updatedCols });
++    }
++  };
++
++  const handleAutoCalculateCollision = () => {
++    if (!model || !selectedNode || selectedNode.type !== "collision" || !sourceMeshName) return;
++    const parts = sourceMeshName.split("_lod_");
++    const mName = parts[0];
++    const mLod = parseInt(parts[1], 10);
++    const targetMesh = model.meshes.find(m => m.name === mName && m.lod === mLod);
++    if (!targetMesh) {
++      alert("Selected mesh not found in model!");
++      return;
++    }
++
++    let minX = Infinity;
++    let minY = Infinity;
++    let minZ = Infinity;
++    let maxX = -Infinity;
++    let maxY = -Infinity;
++    let maxZ = -Infinity;
++    let hasVertices = false;
++
++    targetMesh.parts.forEach((part) => {
++      part.vertices.forEach((v) => {
++        const x = v.position.x;
++        const y = v.position.y;
++        const z = v.position.z;
++        if (x < minX) minX = x;
++        if (x > maxX) maxX = x;
++        if (y < minY) minY = y;
++        if (y > maxY) maxY = y;
++        if (z < minZ) minZ = z;
++        if (z > maxZ) maxZ = z;
++        hasVertices = true;
++      });
++    });
++
++    if (!hasVertices) {
++      alert("The selected mesh has no vertices to calculate collision bounds from.");
++      return;
++    }
++
++    const center = {
++      x: (minX + maxX) / 2,
++      y: (minY + maxY) / 2,
++      z: (minZ + maxZ) / 2
++    };
++
++    const min_extents = { x: minX, y: minY, z: minZ };
++    const max_extents = { x: maxX, y: maxY, z: maxZ };
++
++    let maxDistSq = 0;
++    targetMesh.parts.forEach((part) => {
++      part.vertices.forEach((v) => {
++        const dx = v.position.x - center.x;
++        const dy = v.position.y - center.y;
++        const dz = v.position.z - center.z;
++        const distSq = dx * dx + dy * dy + dz * dz;
++        if (distSq > maxDistSq) {
++          maxDistSq = distSq;
++        }
++      });
++    });
++    const radius = Math.sqrt(maxDistSq);
++
++    const updatedCols = model.collision_meshes.map((col) => {
++      if (col.name === selectedNode.name) {
++        return {
++          ...col,
++          min_extents,
++          max_extents,
++          center,
++          radius
++        };
++      }
++      return col;
++    });
++
++    onModelChange?.({ ...model, collision_meshes: updatedCols });
++    invoke("log_event", {
++      level: "INFO",
++      message: `Auto-calculated collision bounds for ${selectedNode.name} from visual mesh ${mName}_lod_${mLod}`
++    }).catch(console.error);
++
++    alert(`Collision bounds for "${selectedNode.name}" successfully calculated!\n\nCenter: [${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)}]\nRadius: ${radius.toFixed(3)}\nMin Extents: [${min_extents.x.toFixed(3)}, ${min_extents.y.toFixed(3)}, ${min_extents.z.toFixed(3)}]\nMax Extents: [${max_extents.x.toFixed(3)}, ${max_extents.y.toFixed(3)}, ${max_extents.z.toFixed(3)}]`);
++  };
++
++  const renderSelectedContent = () => {
++    if (!model) {
++      return (
++        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100px", color: "var(--text-muted)" }}>
++          No model loaded
++        </div>
++      );
++    }
++
++    if (!selectedNode) {
++      return (
++        <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", color: "var(--text-muted)", gap: "12px", textAlign: "center", padding: "10px 0" }}>
++          <Info size={24} style={{ color: "var(--border-color)" }} />
++          <span style={{ fontSize: "12px" }}>Select an element from the hierarchy tree to inspect and edit its properties.</span>
++        </div>
++      );
++    }
++
++    if (
++      selectedNode.type === "weapon_group" ||
++      selectedNode.type === "hardpoint_group" ||
++      selectedNode.type === "capture_point_group" ||
++      selectedNode.type === "repair_point_group" ||
++      selectedNode.type === "salvage_point_group"
++    ) {
++      const baseName = selectedNode.name;
++      const groupType = selectedNode.type;
++
++      let groupLabel = "Unified Weapon Assembly";
++      if (groupType === "hardpoint_group") groupLabel = "Hardpoint Assembly";
++      else if (groupType === "capture_point_group") groupLabel = "Capture Point Assembly";
++      else if (groupType === "repair_point_group") groupLabel = "Repair Point Assembly";
++      else if (groupType === "salvage_point_group") groupLabel = "Salvage Point Assembly";
++
++      let jointSpecs: {
++        key: string;
++        label: string;
++        suffix: string;
++        parentSuffix: string | null;
++        defaultOffset: { x: number; y: number; z: number };
++      }[] = [];
++
++      if (groupType === "weapon_group") {
++        jointSpecs = [
++          { key: "Position", label: "1. Position (Pivot / Yaw)", suffix: "_Position", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
++          { key: "Direction", label: "2. Direction (Elevation / Pitch)", suffix: "_Direction", parentSuffix: "_Position", defaultOffset: { x: 0, y: 1.0, z: 0 } },
++          { key: "Muzzle", label: "3. Muzzle (Projectile spawn)", suffix: "_Muzzle", parentSuffix: "_Direction", defaultOffset: { x: 0, y: 1.0, z: 0 } },
++          { key: "Rest", label: "4. Rest (Idle standard)", suffix: "_Rest", parentSuffix: "_Position", defaultOffset: { x: 1.0, y: 0, z: 0 } },
++        ];
++      } else if (groupType === "hardpoint_group") {
++        jointSpecs = [
++          { key: "Position", label: "1. Position (Pivot)", suffix: "_Position", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
++          { key: "Direction", label: "2. Direction (Forward)", suffix: "_Direction", parentSuffix: "_Position", defaultOffset: { x: 0, y: 5.0, z: 0 } },
++          { key: "Rest", label: "3. Rest (Idle)", suffix: "_Rest", parentSuffix: "_Position", defaultOffset: { x: 0, y: 0, z: 5.0 } },
++        ];
++      } else if (groupType === "capture_point_group") {
++        jointSpecs = [
++          { key: "Base", label: "1. Base Joint", suffix: "", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
++          { key: "Heading", label: "2. Heading", suffix: "_Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
++          { key: "Left", label: "3. Left", suffix: "_Left", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
++          { key: "Up", label: "4. Up", suffix: "_Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
++        ];
++      } else if (groupType === "repair_point_group") {
++        jointSpecs = [
++          { key: "Base", label: "1. Base Joint", suffix: "", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
++          { key: "Heading", label: "2. Heading", suffix: "_Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
++          { key: "Left", label: "3. Left", suffix: "_Left", parentSuffix: "", defaultOffset: { x: 5.0, y: 0, z: 0 } },
++          { key: "Up", label: "4. Up", suffix: "_Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
++        ];
++      } else if (groupType === "salvage_point_group") {
++        jointSpecs = [
++          { key: "Base", label: "1. Base Joint", suffix: "", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
++          { key: "Heading", label: "2. Heading", suffix: "_Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
++          { key: "Left", label: "3. Left", suffix: "_Left", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
++          { key: "Up", label: "4. Up", suffix: "_Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
++        ];
++      }
++
++      const foundJoints = jointSpecs.map(spec => {
++        const jointName = spec.suffix ? `${baseName}${spec.suffix}` : baseName;
++        let jointObj = model.joints.find(j => j.name.toLowerCase() === jointName.toLowerCase());
++        if (!jointObj && spec.key === "Muzzle") {
++          jointObj = model.joints.find(j => j.name.toLowerCase().startsWith(`${baseName}_Muzzle`.toLowerCase()));
++        }
++        return { spec, jointObj };
++      });
++
++      const missingJoints = foundJoints.filter(fj => !fj.jointObj).map(fj => fj.spec.key);
++      const latJoint = groupType === "weapon_group" ? model.joints.find(j => j.name.toLowerCase() === `${baseName}_Latitude`.toLowerCase()) : null;
++
++      const handleWeaponJointCoordChange = (jointName: string, axis: "x" | "y" | "z", valStr: string) => {
++        const val = parseFloat(valStr);
++        if (isNaN(val)) return;
++
++        if (!model) return;
++        const jointObj = model.joints.find(j => j.name === jointName);
++        if (!jointObj) return;
++
++        const m = jointObj.local_transform.m;
++        const pos = {
++          x: (axis === "x") ? val : m[3][0],
++          y: (axis === "y") ? val : m[3][1],
++          z: (axis === "z") ? val : m[3][2],
++        };
++
++        onPositionChange(jointName, "joint", pos);
++      };
++
++      const handleWeaponJointRotationChange = (jointName: string, m: number[][], rot: { x: number; y: number; z: number }, axis: "x" | "y" | "z", valStr: string) => {
++        const val = parseFloat(valStr);
++        if (isNaN(val)) return;
++        const newRot = { ...rot, [axis]: val };
++        const nextMatrix = updateMatrixRotation(m, newRot);
++        
++        const updatedJoints = model.joints.map((j) => {
++          if (j.name === jointName) {
++            return { ...j, local_transform: { m: nextMatrix } };
++          }
++          return j;
++        });
++        onModelChange?.({ ...model, joints: updatedJoints });
++      };
++
++      const handleRepairStructure = () => {
++        let jointsToSave = [...model.joints];
++        const base = baseName;
++
++        jointSpecs.forEach(spec => {
++          const jointName = spec.suffix ? `${base}${spec.suffix}` : base;
++          let jointObj = jointsToSave.find(j => j.name.toLowerCase() === jointName.toLowerCase());
++          if (!jointObj && spec.key === "Muzzle") {
++            jointObj = jointsToSave.find(j => j.name.toLowerCase().startsWith(`${base}_Muzzle`.toLowerCase()));
++          }
++
++          if (!jointObj) {
++            let parentName = "Root";
++            if (spec.parentSuffix !== null) {
++              parentName = spec.parentSuffix === "" ? base : `${base}${spec.parentSuffix}`;
++            }
++
++            jointsToSave.push({
++              name: jointName,
++              parent_name: parentName,
++              local_transform: {
++                m: [
++                  [1, 0, 0, 0],
++                  [0, 1, 0, 0],
++                  [0, 0, 1, 0],
++                  [spec.defaultOffset.x, spec.defaultOffset.y, spec.defaultOffset.z, 1]
++                ]
++              }
++            });
++          }
++        });
++
++        onModelChange?.({ ...model, joints: jointsToSave });
++        invoke("log_event", { level: "INFO", message: `${groupLabel} ${base} structure auto-repaired successfully.` }).catch(console.error);
++        alert(`${groupLabel} structure for "${base}" successfully repaired! All core joints generated.`);
++      };
++
++      const handleRenameWeaponGroup = () => {
++        const nextName = renameWeaponName.trim();
++        if (!nextName || nextName === baseName) return;
++
++        const updatedJoints = model.joints.map((joint) => {
++          let updatedName = joint.name;
++          let updatedParent = joint.parent_name;
++          
++          if (joint.name.toLowerCase() === baseName.toLowerCase()) {
++            updatedName = nextName;
++          } else if (joint.name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
++            const suffix = joint.name.substring(baseName.length + 1);
++            updatedName = `${nextName}_${suffix}`;
++          }
++          if (joint.parent_name && joint.parent_name.toLowerCase() === baseName.toLowerCase()) {
++            updatedParent = nextName;
++          } else if (joint.parent_name && joint.parent_name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
++            const suffix = joint.parent_name.substring(baseName.length + 1);
++            updatedParent = `${nextName}_${suffix}`;
++          }
++
++          return { ...joint, name: updatedName, parent_name: updatedParent };
++        });
++
++        const updatedMarkers = model.markers.map((marker) => {
++          let updatedParent = marker.parent_joint;
++          if (marker.parent_joint.toLowerCase() === baseName.toLowerCase()) {
++            updatedParent = nextName;
++          } else if (marker.parent_joint.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
++            const suffix = marker.parent_joint.substring(baseName.length + 1);
++            updatedParent = `${nextName}_${suffix}`;
++          }
++          return { ...marker, parent_joint: updatedParent };
++        });
++
++        const updatedMeshes = model.meshes.map((mesh) => {
++          let updatedParent = mesh.parent_name;
++          if (mesh.parent_name.toLowerCase() === baseName.toLowerCase()) {
++            updatedParent = nextName;
++          } else if (mesh.parent_name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
++            const suffix = mesh.parent_name.substring(baseName.length + 1);
++            updatedParent = `${nextName}_${suffix}`;
++          }
++          return { ...mesh, parent_name: updatedParent };
++        });
++
++        onModelChange?.({
++          ...model,
++          joints: updatedJoints,
++          markers: updatedMarkers,
++          meshes: updatedMeshes
++        });
++
++        invoke("log_event", { level: "INFO", message: `Renamed group from ${baseName} to ${nextName}` }).catch(console.error);
++        selectedNode.name = nextName;
++        alert(`Successfully renamed group to "${nextName}"!`);
++      };
++
++      const renderJointCard = (label: string, _suffix: string, jointObj: any) => {
++        if (!jointObj) {
++          return (
++            <div style={{ background: "rgba(255, 23, 68, 0.05)", border: "1px dashed rgba(255, 23, 68, 0.25)", padding: "12px", borderRadius: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
++              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
++                <span style={{ fontSize: "12px", fontWeight: "600", color: "#ffcdd2" }}>{label} (Missing)</span>
++                <span style={{ fontSize: "9px", padding: "1px 4px", background: "rgba(255,23,68,0.2)", borderRadius: "3px", color: "var(--accent-danger)" }}>Required</span>
++              </div>
++              <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>This joint is missing in the HOD structure. Click 'Repair' to restore.</div>
++            </div>
++          );
++        }
++
++        const m = jointObj.local_transform.m;
++        const pos = { x: m[3][0], y: m[3][1], z: m[3][2] };
++        const rot = getEulerRotation(m);
++
++        return (
++          <div style={{ background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", padding: "12px", borderRadius: "8px", display: "flex", flexDirection: "column", gap: "10px" }}>
++            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
++              <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--accent-cyan)" }}>{label}</span>
++              <span style={{ fontSize: "10px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{jointObj.name}</span>
++            </div>
++
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>{axis} Pos</label>
++                  <NumericInput
++                    step="1"
++                    value={pos[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleWeaponJointCoordChange(jointObj.name, axis as "x" | "y" | "z", val)}
++                    onWheel={(e) => handleNumericWheel(e, (val) => handleWeaponJointCoordChange(jointObj.name, axis as "x" | "y" | "z", val), 1.0)}
++                    style={{ height: "26px", fontSize: "11px", fontFamily: "var(--font-mono)", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", padding: "0 6px", width: "100%" }}
++                  />
++                </div>
++              ))}
++            </div>
++
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase" }}>{axis} Rot</label>
++                  <NumericInput
++                    step="1"
++                    value={rot[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleWeaponJointRotationChange(jointObj.name, m, rot, axis as "x" | "y" | "z", val)}
++                    onWheel={(e) => handleNumericWheel(e, (val) => handleWeaponJointRotationChange(jointObj.name, m, rot, axis as "x" | "y" | "z", val), 1.0)}
++                    style={{ height: "26px", fontSize: "11px", fontFamily: "var(--font-mono)", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", padding: "0 6px", width: "100%" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++        );
++      };
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              {groupLabel}
++            </div>
++            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
++              <input
++                value={renameWeaponName}
++                onChange={(e) => setRenameWeaponName(e.target.value)}
++                style={{ fontSize: "14px", fontWeight: "600", color: "var(--accent-cyan)", background: "rgba(22, 160, 255, 0.05)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "4px 8px", height: "30px", flex: 1 }}
++              />
++              <button
++                onClick={handleRenameWeaponGroup}
++                className="secondary"
++                style={{ fontSize: "11px", height: "30px", padding: "0 10px" }}
++              >
++                Rename
++              </button>
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          {missingJoints.length > 0 ? (
++            <div style={{ background: "rgba(255, 152, 0, 0.12)", border: "1px solid #ff9800", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
++              <div style={{ fontSize: "12px", color: "#ffe0b2", fontWeight: "600" }}>
++                ⚠️ Structure Incomplete: Missing {missingJoints.join(", ")} Joints!
++              </div>
++              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.8)" }}>
++                HWRM 2.0 requires a standard skeleton structure for each assembly. Skipping this can crash the engine.
++              </div>
++              <button
++                onClick={handleRepairStructure}
++                style={{ background: "#ff9800", border: "none", padding: "6px 12px", color: "#000", fontSize: "11px", fontWeight: "700", borderRadius: "4px", cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", width: "fit-content" }}
++              >
++                <Wrench size={12} />
++                Repair {groupLabel} Structure
++              </button>
++            </div>
++          ) : (
++            <div style={{ background: "rgba(0, 230, 118, 0.1)", border: "1px solid #00e676", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#b9f6ca", display: "flex", alignItems: "center", gap: "8px" }}>
++              <span>✓ {groupLabel} Structure Complete & Engine-Ready!</span>
++            </div>
++          )}
++
++          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
++            {foundJoints.map(fj => renderJointCard(fj.spec.label, fj.spec.key, fj.jointObj))}
++            {latJoint && renderJointCard("5. Latitude (Axis modifier)", "Latitude", latJoint)}
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "joint") {
++      const joint = model.joints.find(j => j.name === selectedNode.name);
++      if (!joint) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Joint not found</div>;
++      const m = joint.local_transform.m;
++      const pos = { x: m[3][0], y: m[3][1], z: m[3][2] };
++      const rot = getEulerRotation(m);
++      const parentName = joint.parent_name || "(None)";
++
++      const handleCoordChange = (axis: "x" | "y" | "z", valStr: string) => {
++        const val = parseFloat(valStr);
++        if (isNaN(val)) return;
++        onPositionChange(selectedNode.name, selectedNode.type, { ...pos, [axis]: val });
++      };
++
++      const handleRotationChange = (axis: "x" | "y" | "z", valStr: string) => {
++        const val = parseFloat(valStr);
++        if (isNaN(val)) return;
++        const newRot = { ...rot, [axis]: val };
++        const nextMatrix = updateMatrixRotation(m, newRot);
++        
++        // Update model state
++        const updatedJoints = model.joints.map((j) => {
++          if (j.name === joint.name) {
++            return { ...j, local_transform: { m: nextMatrix } };
++          }
++          return j;
++        });
++        onModelChange?.({ ...model, joints: updatedJoints });
++      };
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              Selected Joint
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "12px" }}>
++              <Move size={14} style={{ color: "var(--accent-blue)" }} />
++              <span>Position Coordinates</span>
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px", fontWeight: "500" }}>{axis.toUpperCase()} Position</label>
++                  <NumericInput
++                    step="1"
++                    value={pos[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleCoordChange(axis as "x" | "y" | "z", val)}
++                    onWheel={(e) => handleNumericWheel(e, (val) => handleCoordChange(axis as "x" | "y" | "z", val), 1.0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "12px" }}>
++              <RefreshCw size={14} style={{ color: "var(--accent-blue)" }} />
++              <span>Rotation Coordinates (Degrees)</span>
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px", fontWeight: "500" }}>{axis.toUpperCase()} Rotation</label>
++                  <NumericInput
++                    step="1"
++                    value={rot[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleRotationChange(axis as "x" | "y" | "z", val)}
++                    onWheel={(e) => handleNumericWheel(e, (val) => handleRotationChange(axis as "x" | "y" | "z", val), 1.0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "10px" }}>
++              <Navigation size={14} style={{ color: "var(--accent-blue)" }} />
++              <span>Parent attachment</span>
++            </div>
++            <div style={{ background: "rgba(22, 160, 255, 0.05)", border: "1px solid var(--border-color)", padding: "10px", borderRadius: "4px", fontSize: "13px" }}>
++              <span style={{ color: "var(--text-muted)", marginRight: "8px" }}>Attached to:</span>
++              <span style={{ fontWeight: "500", color: "var(--text-primary)" }}>{parentName}</span>
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "marker") {
++      const marker = model.markers.find(m => m.name === selectedNode.name);
++      if (!marker) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Marker not found</div>;
++      const pos = marker.position;
++      const m = marker.rotation.m;
++      const rot = getEulerRotation(m);
++
++      const handleCoordChange = (axis: "x" | "y" | "z", valStr: string) => {
++        const val = parseFloat(valStr);
++        if (isNaN(val)) return;
++        onPositionChange(selectedNode.name, selectedNode.type, { ...pos, [axis]: val });
++      };
++
++      const handleRotationChange = (axis: "x" | "y" | "z", valStr: string) => {
++        const val = parseFloat(valStr);
++        if (isNaN(val)) return;
++        const newRot = { ...rot, [axis]: val };
++        const nextMatrix = updateMatrixRotation(m, newRot);
++        
++        // Update model state
++        const updatedMarkers = model.markers.map((mrk) => {
++          if (mrk.name === marker.name) {
++            return { ...mrk, rotation: { m: nextMatrix } };
++          }
++          return mrk;
++        });
++        onModelChange?.({ ...model, markers: updatedMarkers });
++      };
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              Selected Marker
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "12px" }}>
++              <Move size={14} style={{ color: "var(--accent-blue)" }} />
++              <span>Position Coordinates</span>
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px", fontWeight: "500" }}>{axis.toUpperCase()} Position</label>
++                  <NumericInput
++                    step="1"
++                    value={pos[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleCoordChange(axis as "x" | "y" | "z", val)}
++                    onWheel={(e) => handleNumericWheel(e, (val) => handleCoordChange(axis as "x" | "y" | "z", val), 1.0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "12px" }}>
++              <RefreshCw size={14} style={{ color: "var(--accent-blue)" }} />
++              <span>Rotation Coordinates (Degrees)</span>
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px", fontWeight: "500" }}>{axis.toUpperCase()} Rotation</label>
++                  <NumericInput
++                    step="1"
++                    value={rot[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleRotationChange(axis as "x" | "y" | "z", val)}
++                    onWheel={(e) => handleNumericWheel(e, (val) => handleRotationChange(axis as "x" | "y" | "z", val), 1.0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "12px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "10px" }}>
++              <Layers size={14} style={{ color: "var(--accent-blue)" }} />
++              <span>Modding Guidelines</span>
++            </div>
++            <div style={{ fontSize: "12px", color: "var(--text-muted)", lineHeight: "1.5" }}>
++              Markers act as hardpoints for weapon mounts, engine burns, subsystem docking, or UI linkages.
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "navlight") {
++      const nav = model.nav_lights.find(n => n.name === selectedNode.name);
++      if (!nav) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>NavLight not found</div>;
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              <Radio size={12} style={{ color: "var(--accent-cyan)" }} />
++              <span>Selected NavLight</span>
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Section ID</label>
++            <NumericInput
++              value={nav.section}
++              onChange={(val) => handleNavLightChange("section", parseInt(val, 10) || 0)}
++              style={{ fontSize: "12px" }}
++            />
++          </div>
++
++          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Size</label>
++              <NumericInput
++                step="0.1"
++                value={nav.size}
++                onChange={(val) => handleNavLightChange("size", parseFloat(val) || 0)}
++                style={{ fontSize: "12px" }}
++              />
++            </div>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Phase</label>
++              <NumericInput
++                step="0.1"
++                value={nav.phase}
++                onChange={(val) => handleNavLightChange("phase", parseFloat(val) || 0)}
++                style={{ fontSize: "12px" }}
++              />
++            </div>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Frequency</label>
++              <NumericInput
++                step="0.1"
++                value={nav.frequency}
++                onChange={(val) => handleNavLightChange("frequency", parseFloat(val) || 0)}
++                style={{ fontSize: "12px" }}
++              />
++            </div>
++          </div>
++
++          <div>
++            <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Style</label>
++            <input
++              type="text"
++              value={nav.style}
++              onChange={(e) => handleNavLightChange("style", e.target.value)}
++              style={{ fontSize: "12px" }}
++            />
++          </div>
++
++          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Distance</label>
++              <NumericInput
++                value={nav.distance}
++                onChange={(val) => handleNavLightChange("distance", parseFloat(val) || 0)}
++                style={{ fontSize: "12px" }}
++              />
++            </div>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Color Picker</label>
++              <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
++                <input
++                  type="color"
++                  value={rgbToHex(nav.color)}
++                  onChange={(e) => handleNavLightChange("color", hexToRgb(e.target.value))}
++                  style={{ width: "36px", height: "24px", padding: 0, border: "none", cursor: "pointer", background: "none" }}
++                />
++                <span style={{ fontSize: "10px", fontFamily: "var(--font-mono)" }}>
++                  {rgbToHex(nav.color).toUpperCase()}
++                </span>
++              </div>
++            </div>
++          </div>
++
++          <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
++            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
++              <input
++                type="checkbox"
++                checked={nav.sprite_visible}
++                onChange={(e) => handleNavLightChange("sprite_visible", e.target.checked)}
++                style={{ width: "auto", height: "auto", margin: 0, cursor: "pointer" }}
++              />
++              <span>Sprite Visible</span>
++            </label>
++            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
++              <input
++                type="checkbox"
++                checked={nav.high_end_only}
++                onChange={(e) => handleNavLightChange("high_end_only", e.target.checked)}
++                style={{ width: "auto", height: "auto", margin: 0, cursor: "pointer" }}
++              />
++              <span>High End Only</span>
++            </label>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "dockpoint") {
++      const parts = selectedNode.name.split(":");
++      const pathName = parts[0];
++      const ptIndex = parseInt(parts[1], 10);
++      const path = model.dockpaths.find(p => p.name === pathName);
++      if (!path) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Dockpath not found</div>;
++      const pt = path.points[ptIndex];
++      if (!pt) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Dockpoint not found</div>;
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              <Activity size={12} style={{ color: "var(--accent-cyan)" }} />
++              <span>Selected Dockpoint</span>
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {pathName} [Pt {ptIndex}]
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "12px" }}>
++              <Move size={14} style={{ color: "var(--accent-blue)" }} />
++              <span>Position Coordinates</span>
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>{axis.toUpperCase()}</label>
++                  <NumericInput
++                    step="1"
++                    value={pt.position[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleDockpointChange(pathName, ptIndex, axis as "x" | "y" | "z", parseFloat(val) || 0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Tolerance</label>
++              <NumericInput
++                step="0.1"
++                value={pt.tolerance}
++                onChange={(val) => handleDockpointChange(pathName, ptIndex, "tolerance", parseFloat(val) || 0)}
++                style={{ fontSize: "12px" }}
++              />
++            </div>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Max Speed</label>
++              <NumericInput
++                step="0.5"
++                value={pt.max_speed}
++                onChange={(val) => handleDockpointChange(pathName, ptIndex, "max_speed", parseFloat(val) || 0)}
++                style={{ fontSize: "12px" }}
++              />
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "8px" }}>
++              Points in path ({path.points.length})
++            </div>
++            <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "150px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "4px" }}>
++              {path.points.map((p, idx) => (
++                <div
++                  key={idx}
++                  style={{
++                    display: "flex",
++                    justifyContent: "space-between",
++                    fontSize: "11px",
++                    padding: "4px 6px",
++                    borderRadius: "2px",
++                    background: idx === ptIndex ? "rgba(22, 160, 255, 0.15)" : "none",
++                    borderLeft: idx === ptIndex ? "2px solid var(--accent-cyan)" : "none",
++                  }}
++                >
++                  <span style={{ color: idx === ptIndex ? "var(--accent-cyan)" : "var(--text-primary)" }}>Point {idx}</span>
++                  <span style={{ color: "var(--text-muted)" }}>
++                    [{p.position.x.toFixed(1)}, {p.position.y.toFixed(1)}, {p.position.z.toFixed(1)}]
++                  </span>
++                </div>
++              ))}
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "collision") {
++      const col = model.collision_meshes.find(c => c.name === selectedNode.name);
++      if (!col) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Collision Mesh not found</div>;
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              <Shield size={12} style={{ color: "var(--accent-danger)" }} />
++              <span>Collision Mesh</span>
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-danger)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", fontWeight: "500", textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "8px" }}>
++              <span>Center</span>
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>{axis.toUpperCase()}</label>
++                  <NumericInput
++                    step="0.1"
++                    value={col.center[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleCollisionChange("center", axis as "x" | "y" | "z", parseFloat(val) || 0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <div>
++            <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Radius</label>
++            <NumericInput
++              step="0.1"
++              value={col.radius}
++              onChange={(val) => handleCollisionChange("radius", undefined, parseFloat(val) || 0)}
++              style={{ fontSize: "12px" }}
++            />
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ fontSize: "11px", fontWeight: "500", textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "8px" }}>
++              Min Extents
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "10px", color: "var(--text-muted)", marginBottom: "4px" }}>Min {axis.toUpperCase()}</label>
++                  <NumericInput
++                    step="0.1"
++                    value={col.min_extents[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleCollisionChange("min_extents", axis as "x" | "y" | "z", parseFloat(val) || 0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <div>
++            <div style={{ fontSize: "11px", fontWeight: "500", textTransform: "uppercase", color: "var(--text-secondary)", marginBottom: "8px" }}>
++              Max Extents
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              {["x", "y", "z"].map((axis) => (
++                <div key={axis}>
++                  <label style={{ display: "block", fontSize: "10px", color: "var(--text-muted)", marginBottom: "4px" }}>Max {axis.toUpperCase()}</label>
++                  <NumericInput
++                    step="0.1"
++                    value={col.max_extents[axis as "x" | "y" | "z"]}
++                    onChange={(val) => handleCollisionChange("max_extents", axis as "x" | "y" | "z", parseFloat(val) || 0)}
++                    style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
++                  />
++                </div>
++              ))}
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "12px" }}>
++              <Wrench size={14} style={{ color: "var(--accent-cyan)" }} />
++              <span>Auto-Calculate Bounds</span>
++            </div>
++            {model.meshes && model.meshes.length > 0 ? (
++              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
++                <div>
++                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Source Visual Mesh</label>
++                  <select
++                    value={sourceMeshName}
++                    onChange={(e) => setSourceMeshName(e.target.value)}
++                    style={{ width: "100%", height: "32px", fontSize: "12px", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", borderRadius: "4px", padding: "0 8px" }}
++                  >
++                    <option value="">-- Choose a Mesh --</option>
++                    {model.meshes.map((m) => {
++                      const optVal = `${m.name}_lod_${m.lod}`;
++                      return (
++                        <option key={optVal} value={optVal}>
++                          {m.name} (LOD {m.lod})
++                        </option>
++                      );
++                    })}
++                  </select>
++                </div>
++                <button
++                  onClick={handleAutoCalculateCollision}
++                  disabled={!sourceMeshName}
++                  style={{
++                    height: "32px",
++                    fontSize: "12px",
++                    display: "flex",
++                    alignItems: "center",
++                    justifyContent: "center",
++                    gap: "6px",
++                    opacity: sourceMeshName ? 1 : 0.5,
++                    cursor: sourceMeshName ? "pointer" : "not-allowed"
++                  }}
++                >
++                  <RefreshCw size={14} style={{ color: "var(--accent-cyan)" }} />
++                  <span>Calculate from Selected Mesh</span>
++                </button>
++              </div>
++            ) : (
++              <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>
++                No visual meshes available in this model to calculate from.
++              </div>
++            )}
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "mesh") {
++      const [meshName, lodStr] = selectedNode.name.split("_lod_");
++      const lod = parseInt(lodStr, 10);
++      const mesh = model.meshes.find(m => m.name === meshName && m.lod === lod);
++      if (!mesh) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Mesh not found</div>;
++
++      const buildThreeMeshFromState = (m: any) => {
++        const group = new THREE.Group();
++        group.name = m.name;
++        
++        m.parts.forEach((part: any, pIdx: number) => {
++          const geometry = new THREE.BufferGeometry();
++          const vertices: number[] = [];
++          const normals: number[] = [];
++          const uvs: number[] = [];
++          
++          part.vertices.forEach((v: any) => {
++            vertices.push(v.position.x, v.position.y, v.position.z);
++            if (v.normal) {
++              normals.push(v.normal.x, v.normal.y, v.normal.z);
++            } else {
++              normals.push(0, 1, 0);
++            }
++            if (v.uv) {
++              uvs.push(v.uv.u, 1 - v.uv.v); // Flip Y UV for OBJ
++            } else {
++              uvs.push(0, 0);
++            }
++          });
++          
++          geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
++          if (normals.length > 0) {
++            geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
++          }
++          if (uvs.length > 0) {
++            geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
++          }
++          
++          geometry.setIndex(part.indices);
++          
++          const matName = model.materials?.[part.material_index]?.name || `material_${part.material_index}`;
++          const material = new THREE.MeshStandardMaterial({ name: matName });
++          
++          const meshObj = new THREE.Mesh(geometry, material);
++          meshObj.name = `${m.name}_part_${pIdx}`;
++          group.add(meshObj);
++        });
++        
++        return group;
++      };
++
++      const handleExportOBJ = async () => {
++        try {
++          const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
++          const exporter = new OBJExporter();
++          
++          const tempGroup = buildThreeMeshFromState(mesh);
++          let objResult = exporter.parse(tempGroup);
++          
++          const objFilename = `${mesh.name}_lod${mesh.lod}`;
++          objResult = `mtllib ${objFilename}.mtl\n` + objResult;
++          
++          const defaultName = `${objFilename}.obj`;
++          const savedPath = await invoke<string | null>("save_text_file", {
++            defaultName,
++            filters: ["obj"],
++            contents: objResult
++          });
++          
++          if (savedPath) {
++            invoke("log_event", { level: "INFO", message: `Mesh exported successfully to OBJ: ${savedPath}` }).catch(console.error);
++            
++            // Generate MTL content
++            const mtlLines: string[] = [];
++            mesh.parts.forEach((part) => {
++              const hMat = model.materials?.[part.material_index];
++              const matName = hMat?.name || `material_${part.material_index}`;
++              mtlLines.push(`newmtl ${matName}`);
++              mtlLines.push(`Kd 1.0 1.0 1.0`);
++              mtlLines.push(`Ka 1.0 1.0 1.0`);
++              mtlLines.push(`Ks 0.1 0.1 0.1`);
++              mtlLines.push(`Ns 32`);
++              if (hMat && hMat.texture_maps && hMat.texture_maps.length > 0) {
++                const diffMap = hMat.texture_maps[0];
++                if (diffMap) {
++                  mtlLines.push(`map_Kd ${diffMap}.tga`);
++                }
++              }
++              mtlLines.push("");
++            });
++            
++            const lastSlash = Math.max(savedPath.lastIndexOf("/"), savedPath.lastIndexOf("\\"));
++            const folderPath = lastSlash !== -1 ? savedPath.substring(0, lastSlash) : ".";
++            
++            await invoke("save_text_file", {
++              defaultName: `${objFilename}.mtl`,
++              filters: ["mtl"],
++              contents: mtlLines.join("\n")
++            });
++            
++            if (model.textures && model.textures.length > 0) {
++              await invoke("export_textures_tga", {
++                folderPath,
++                textures: model.textures
++              });
++            }
++            
++            alert(`Mesh geometry, MTL library, and TGA textures successfully exported to:\n${folderPath}`);
++          }
++        } catch (e: any) {
++          console.error(e);
++          alert(`Export failed: ${e.toString()}`);
++        }
++      };
++
++      const handleImportOBJ = async () => {
++        try {
++          const fileContent = await invoke<string | null>("load_text_file", {
++            filters: ["obj"]
++          });
++          if (!fileContent) return;
++          
++          invoke("log_event", { level: "INFO", message: "Parsing imported OBJ mesh..." }).catch(console.error);
++          
++          const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
++          const loader = new OBJLoader();
++          
++          const objGroup = loader.parse(fileContent);
++          const newParts: any[] = [];
++          
++          objGroup.traverse((child: any) => {
++            if (child.isMesh) {
++              const childMesh = child as THREE.Mesh;
++              const geo = childMesh.geometry;
++              
++              if (geo) {
++                const posAttr = geo.attributes.position;
++                if (posAttr) {
++                  const vertices: any[] = [];
++                  const indices: number[] = [];
++                  
++                  for (let i = 0; i < posAttr.count; i++) {
++                    vertices.push({
++                      position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
++                      normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
++                      uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 }
++                    });
++                  }
++                  
++                  const indexAttr = geo.index;
++                  if (indexAttr) {
++                    for (let i = 0; i < indexAttr.count; i++) {
++                      indices.push(indexAttr.getX(i));
++                    }
++                  } else {
++                    for (let i = 0; i < posAttr.count; i++) {
++                      indices.push(i);
++                    }
++                  }
++                  
++                  newParts.push({
++                    material_index: 0,
++                    vertex_mask: 19,
++                    vertices,
++                    indices
++                  });
++                }
++              }
++            }
++          });
++          
++          if (newParts.length > 0) {
++            const updatedMeshes = model.meshes.map((m) => {
++              if (m.name === mesh.name && m.lod === mesh.lod) {
++                return { ...m, parts: newParts };
++              }
++              return m;
++            });
++            onModelChange?.({ ...model, meshes: updatedMeshes });
++            invoke("log_event", { level: "INFO", message: `Successfully imported OBJ mesh into: ${mesh.name}` }).catch(console.error);
++            alert(`Mesh "${mesh.name}" geometry successfully replaced by imported OBJ file!`);
++          } else {
++            alert("No valid geometries found in the OBJ file.");
++          }
++        } catch (e: any) {
++          console.error(e);
++          alert(`Import failed: ${e.toString()}`);
++        }
++      };
++
++      const totalParts = mesh.parts.length;
++      const totalVerts = mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
++      const totalIndices = mesh.parts.reduce((sum, p) => sum + p.indices.length, 0);
++      const totalTris = totalIndices / 3;
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              Selected Mesh Part
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {mesh.name} (LOD {mesh.lod})
++            </div>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          {/* Mesh Properties Form */}
++          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
++                Mesh Name
++              </label>
++              <input
++                type="text"
++                value={mesh.name}
++                onChange={(e) => {
++                  const newName = e.target.value;
++                  if (!newName) return;
++                  const updatedMeshes = model.meshes.map(m => {
++                    if (m.name === mesh.name && m.lod === mesh.lod) {
++                      return { ...m, name: newName };
++                    }
++                    return m;
++                  });
++                  onModelChange?.({ ...model, meshes: updatedMeshes });
++                }}
++              />
++            </div>
++
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
++                LOD Level
++              </label>
++              <input
++                type="number"
++                min="0"
++                max="10"
++                value={mesh.lod}
++                onChange={(e) => {
++                  const newLod = parseInt(e.target.value, 10);
++                  if (isNaN(newLod)) return;
++                  const updatedMeshes = model.meshes.map(m => {
++                    if (m.name === mesh.name && m.lod === mesh.lod) {
++                      return { ...m, lod: newLod };
++                    }
++                    return m;
++                  });
++                  onModelChange?.({ ...model, meshes: updatedMeshes });
++                }}
++              />
++            </div>
++
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
++                Skeletal Joint Parent
++              </label>
++              <select
++                value={mesh.parent_name || "Root"}
++                onChange={(e) => {
++                  const newParent = e.target.value === "Root" ? "Root" : e.target.value;
++                  const updatedMeshes = model.meshes.map(m => {
++                    if (m.name === mesh.name && m.lod === mesh.lod) {
++                      return { ...m, parent_name: newParent };
++                    }
++                    return m;
++                  });
++                  onModelChange?.({ ...model, meshes: updatedMeshes });
++                }}
++                style={{ width: "100%", height: "32px", fontSize: "12px" }}
++              >
++                <option value="Root">Root (None)</option>
++                {model.joints.map(j => (
++                  <option key={j.name} value={j.name}>{j.name}</option>
++                ))}
++              </select>
++              <div style={{ marginTop: "8px", background: "rgba(22, 160, 255, 0.05)", border: "1px solid rgba(22, 160, 255, 0.15)", borderRadius: "4px", padding: "8px 10px", fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
++                <span style={{ fontWeight: "600", color: "var(--accent-cyan)", marginRight: "4px" }}>💡 Positioning Note:</span>
++                Meshes do not contain individual local coordinates. Their spatial position and rotation are inherited entirely from their parent joint bone (<strong>{mesh.parent_name || "Root"}</strong>). To move this mesh, please select and edit its parent joint bone.
++              </div>
++            </div>
++
++            <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px", borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>
++                3D Model Actions (OBJ Wavefront)
++              </label>
++              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
++                <button
++                  onClick={handleExportOBJ}
++                  style={{
++                    height: "32px",
++                    fontSize: "12px",
++                    display: "flex",
++                    alignItems: "center",
++                    justifyContent: "center",
++                    gap: "6px"
++                  }}
++                  title="Export this mesh and its materials as separate OBJ and MTL files"
++                >
++                  <Upload size={14} style={{ color: "var(--accent-blue)" }} />
++                  <span>Export OBJ</span>
++                </button>
++                <button
++                  onClick={handleImportOBJ}
++                  style={{
++                    height: "32px",
++                    fontSize: "12px",
++                    display: "flex",
++                    alignItems: "center",
++                    justifyContent: "center",
++                    gap: "6px"
++                  }}
++                  title="Import an external OBJ file to fully replace this mesh's geometry"
++                >
++                  <Download size={14} style={{ color: "var(--accent-cyan)" }} />
++                  <span>Import OBJ</span>
++                </button>
++              </div>
++            </div>
++
++            {model.materials && model.materials.length > 0 && (
++              <div>
++                <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
++                  Material Assignment (per Part)
++                </label>
++                <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(0,0,0,0.15)", padding: "10px", borderRadius: "4px" }}>
++                  {mesh.parts.map((part, pIdx) => (
++                    <div key={pIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
++                      <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Part {pIdx}</span>
++                      <select
++                        value={part.material_index}
++                        onChange={(e) => {
++                          const newMatIdx = parseInt(e.target.value, 10);
++                          const updatedMeshes = model.meshes.map(m => {
++                            if (m.name === mesh.name && m.lod === mesh.lod) {
++                              const updatedParts = m.parts.map((p, idx) => {
++                                if (idx === pIdx) {
++                                  return { ...p, material_index: newMatIdx };
++                                }
++                                return p;
++                              });
++                              return { ...m, parts: updatedParts };
++                            }
++                            return m;
++                          });
++                          onModelChange?.({ ...model, meshes: updatedMeshes });
++                        }}
++                        style={{ width: "160px", height: "28px", padding: "2px 6px", fontSize: "11px" }}
++                      >
++                        {model.materials.map((mat, mIdx) => (
++                          <option key={mIdx} value={mIdx}>{mat.name} (ID {mIdx})</option>
++                        ))}
++                      </select>
++                    </div>
++                  ))}
++                </div>
++              </div>
++            )}
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          {/* Mesh Statistics Card */}
++          <div>
++            <div style={{ fontSize: "11px", fontWeight: "500", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: "8px" }}>
++              Mesh Geometry Info
++            </div>
++            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-color)", padding: "12px", borderRadius: "4px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
++              <div>
++                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>LOD PARTS</div>
++                <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--text-primary)" }}>{totalParts}</div>
++              </div>
++              <div>
++                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
++                <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--text-primary)" }}>{totalTris}</div>
++              </div>
++              <div style={{ gridColumn: "span 2" }}>
++                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TOTAL VERTICES</div>
++                <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--text-primary)" }}>{totalVerts}</div>
++              </div>
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "engine_burn") {
++      const burn = model.engine_burns?.find(b => b.name === selectedNode.name);
++      if (!burn) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Burn not found</div>;
++
++      const handleBurnFieldChange = (fieldName: "num_divisions" | "num_flames", valueStr: string) => {
++        const val = parseInt(valueStr, 10);
++        if (isNaN(val)) return;
++        const updatedBurns = model.engine_burns.map((b) => {
++          if (b.name === burn.name) {
++            return { ...b, [fieldName]: val };
++          }
++          return b;
++        });
++        onModelChange?.({ ...model, engine_burns: updatedBurns });
++      };
++
++      const handleAddBurnVertex = () => {
++        const newVertex = { x: 0, y: 0, z: -1.0 }; // default backward vertex
++        const updatedBurns = model.engine_burns.map((b) => {
++          if (b.name === burn.name) {
++            return { ...b, vertices: [...(b.vertices || []), newVertex] };
++          }
++          return b;
++        });
++        onModelChange?.({ ...model, engine_burns: updatedBurns });
++        invoke("log_event", { level: "INFO", message: `Added new vertex to engine burn ${burn.name}` }).catch(console.error);
++      };
++
++      const handleRemoveBurnVertex = (ptIdx: number) => {
++        const updatedBurns = model.engine_burns.map((b) => {
++          if (b.name === burn.name) {
++            return { ...b, vertices: b.vertices.filter((_, idx) => idx !== ptIdx) };
++          }
++          return b;
++        });
++        onModelChange?.({ ...model, engine_burns: updatedBurns });
++        invoke("log_event", { level: "INFO", message: `Removed vertex index ${ptIdx} from engine burn ${burn.name}` }).catch(console.error);
++      };
++
++      const handleBurnVertexCoordinateChange = (ptIdx: number, axis: "x" | "y" | "z", valueStr: string) => {
++        const val = parseFloat(valueStr);
++        if (isNaN(val)) return;
++
++        const updatedBurns = model.engine_burns.map((b) => {
++          if (b.name === burn.name) {
++            const updatedVerts = b.vertices.map((v, idx) => {
++              if (idx === ptIdx) {
++                return { ...v, [axis]: val };
++              }
++              return v;
++            });
++            return { ...b, vertices: updatedVerts };
++          }
++          return b;
++        });
++        onModelChange?.({ ...model, engine_burns: updatedBurns });
++      };
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              <Flame size={12} style={{ color: "var(--accent-cyan)" }} />
++              <span>Selected Engine Burn</span>
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Parent Joint</div>
++            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
++              {burn.parent_name}
++            </div>
++          </div>
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>Divisions / Flames</div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
++              <div>
++                <label style={{ display: "block", fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "2px" }}>Divisions</label>
++                <NumericInput
++                  value={burn.num_divisions}
++                  onChange={(val) => handleBurnFieldChange("num_divisions", val)}
++                  onWheel={(e) => handleNumericWheel(e, (val) => handleBurnFieldChange("num_divisions", val), 1)}
++                  style={{ height: "28px", fontSize: "12px", fontFamily: "var(--font-mono)", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", padding: "0 8px", width: "100%" }}
++                />
++              </div>
++              <div>
++                <label style={{ display: "block", fontSize: "9px", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "2px" }}>Flames</label>
++                <NumericInput
++                  value={burn.num_flames}
++                  onChange={(val) => handleBurnFieldChange("num_flames", val)}
++                  onWheel={(e) => handleNumericWheel(e, (val) => handleBurnFieldChange("num_flames", val), 1)}
++                  style={{ height: "28px", fontSize: "12px", fontFamily: "var(--font-mono)", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", padding: "0 8px", width: "100%" }}
++                />
++              </div>
++            </div>
++          </div>
++          <div>
++            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
++              <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>Burn Vertices ({burn.vertices.length})</div>
++              <button
++                onClick={handleAddBurnVertex}
++                style={{
++                  fontSize: "10px",
++                  padding: "2px 8px",
++                  background: "rgba(22, 160, 255, 0.15)",
++                  color: "var(--accent-cyan)",
++                  border: "1px solid rgba(22, 160, 255, 0.3)",
++                  borderRadius: "4px",
++                  cursor: "pointer",
++                  fontWeight: "600"
++                }}
++              >
++                + Add Vertex
++              </button>
++            </div>
++            <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "250px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "6px" }}>
++              {burn.vertices && burn.vertices.length > 0 ? (
++                burn.vertices.map((v, idx) => (
++                  <div key={idx} style={{ padding: "8px", fontSize: "11px", background: "rgba(255,255,255,0.02)", borderRadius: "6px", display: "flex", flexDirection: "column", gap: "6px" }}>
++                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "600" }}>
++                      <span style={{ color: "var(--accent-cyan)" }}>Vertex {idx}</span>
++                      <button
++                        onClick={() => handleRemoveBurnVertex(idx)}
++                        style={{
++                          background: "transparent",
++                          border: "none",
++                          color: "var(--accent-danger)",
++                          cursor: "pointer",
++                          fontSize: "11px",
++                          padding: "0 2px"
++                        }}
++                        title="Remove Vertex"
++                      >
++                        ✕
++                      </button>
++                    </div>
++                    {/* XYZ Editable fields */}
++                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px" }}>
++                      {["x", "y", "z"].map((axis) => (
++                        <div key={axis}>
++                          <label style={{ fontSize: "8px", color: "var(--text-muted)", textTransform: "uppercase" }}>{axis}</label>
++                          <NumericInput
++                            step="1"
++                            value={v[axis as "x" | "y" | "z"]}
++                            onChange={(val) => handleBurnVertexCoordinateChange(idx, axis as "x" | "y" | "z", val)}
++                            onWheel={(e) => handleNumericWheel(e, (val) => handleBurnVertexCoordinateChange(idx, axis as "x" | "y" | "z", val), 1.0)}
++                            style={{ height: "24px", fontSize: "11px", fontFamily: "var(--font-mono)", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", padding: "0 6px", width: "100%" }}
++                          />
++                        </div>
++                      ))}
++                    </div>
++                  </div>
++                ))
++              ) : (
++                <div style={{ padding: "12px", color: "var(--text-muted)", fontSize: "11px", textAlign: "center" }}>
++                  No vertices defined in this engine burn.
++                </div>
++              )}
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "engine_glow") {
++      const glow = model.engine_glows?.find(g => g.name === selectedNode.name);
++      if (!glow) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Glow not found</div>;
++      const totalVerts = glow.mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
++      const totalTris = glow.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3;
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              <Flame size={12} style={{ color: "var(--accent-cyan)" }} />
++              <span>Selected Engine Glow</span>
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Parent Joint</div>
++            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
++              {glow.parent_name}
++            </div>
++          </div>
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>LOD Level</div>
++            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
++              {glow.lod}
++            </div>
++          </div>
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>Mesh Statistics</div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "12px" }}>
++              <div>
++                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
++                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalTris}</div>
++              </div>
++              <div>
++                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>VERTICES</div>
++                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalVerts}</div>
++              </div>
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "engine_shape") {
++      const shape = model.engine_shapes?.find(s => s.name === selectedNode.name);
++      if (!shape) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Shape not found</div>;
++      const totalVerts = shape.mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
++      const totalTris = shape.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3;
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              <Flame size={12} style={{ color: "var(--accent-cyan)" }} />
++              <span>Selected Engine Shape</span>
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Parent Joint</div>
++            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
++              {shape.parent_name}
++            </div>
++          </div>
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>Mesh Statistics</div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "12px" }}>
++              <div>
++                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
++                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalTris}</div>
++              </div>
++              <div>
++                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>VERTICES</div>
++                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalVerts}</div>
++              </div>
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "dockpath") {
++      const path = model.dockpaths?.find(p => p.name === selectedNode.name);
++      if (!path) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Dockpath not found</div>;
++
++      const handleAddPoint = () => {
++        const newPt = {
++          position: { x: 0, y: 0, z: 0 },
++          rotation: {
++            m: [
++              [1, 0, 0, 0],
++              [0, 1, 0, 0],
++              [0, 0, 1, 0],
++              [0, 0, 0, 1]
++            ]
++          },
++          tolerance: 10.0,
++          max_speed: 150.0
++        };
++
++        const updatedPaths = model.dockpaths.map((dp) => {
++          if (dp.name === path.name) {
++            return { ...dp, points: [...(dp.points || []), newPt] };
++          }
++          return dp;
++        });
++
++        onModelChange?.({ ...model, dockpaths: updatedPaths });
++        invoke("log_event", { level: "INFO", message: `Added new dockpoint to path ${path.name}` }).catch(console.error);
++      };
++
++      const handleRemovePoint = (ptIdx: number) => {
++        const updatedPaths = model.dockpaths.map((dp) => {
++          if (dp.name === path.name) {
++            return { ...dp, points: dp.points.filter((_, pIdx) => pIdx !== ptIdx) };
++          }
++          return dp;
++        });
++
++        onModelChange?.({ ...model, dockpaths: updatedPaths });
++        invoke("log_event", { level: "INFO", message: `Removed dockpoint index ${ptIdx} from path ${path.name}` }).catch(console.error);
++      };
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div>
++            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++              <Activity size={12} style={{ color: "var(--accent-cyan)" }} />
++              <span>Selected Dockpath</span>
++            </div>
++            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++              {selectedNode.name}
++            </div>
++          </div>
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++          <div>
++            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Parent Joint</div>
++            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
++              {path.parent_name}
++            </div>
++          </div>
++          <div>
++            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
++              <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500" }}>Dockpoints ({path.points?.length || 0})</div>
++              <button
++                onClick={handleAddPoint}
++                style={{
++                  fontSize: "10px",
++                  padding: "2px 8px",
++                  background: "rgba(22, 160, 255, 0.15)",
++                  color: "var(--accent-cyan)",
++                  border: "1px solid rgba(22, 160, 255, 0.3)",
++                  borderRadius: "4px",
++                  cursor: "pointer",
++                  fontWeight: "600"
++                }}
++              >
++                + Add Point
++              </button>
++            </div>
++            <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "250px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "6px" }}>
++              {path.points && path.points.length > 0 ? (
++                path.points.map((pt, idx) => (
++                  <div key={idx} style={{ padding: "6px 8px", fontSize: "11px", background: "rgba(255,255,255,0.02)", borderRadius: "3px", display: "flex", flexDirection: "column", gap: "2px" }}>
++                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "500" }}>
++                      <span style={{ color: "var(--accent-cyan)" }}>Pt {idx}</span>
++                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
++                        <span style={{ color: "var(--text-muted)" }}>Tol: {pt.tolerance} | Spd: {pt.max_speed}</span>
++                        <button
++                          onClick={() => handleRemovePoint(idx)}
++                          style={{
++                            background: "transparent",
++                            border: "none",
++                            color: "var(--accent-danger)",
++                            cursor: "pointer",
++                            fontSize: "11px",
++                            padding: "0 2px"
++                          }}
++                          title="Remove Point"
++                        >
++                          ✕
++                        </button>
++                      </div>
++                    </div>
++                    <div style={{ fontFamily: "var(--font-mono)", color: "var(--text-secondary)", fontSize: "10px" }}>
++                      Pos: [{pt.position.x.toFixed(2)}, {pt.position.y.toFixed(2)}, {pt.position.z.toFixed(2)}]
++                    </div>
++                  </div>
++                ))
++              ) : (
++                <div style={{ padding: "12px", color: "var(--text-muted)", fontSize: "11px", textAlign: "center" }}>
++                  No dockpoints defined in this path.
++                </div>
++              )}
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "material") {
++      const material = model.materials?.find(m => m.name === selectedNode.name);
++      if (!material) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Material not found</div>;
++
++      const handleMaterialNameChange = (newName: string) => {
++        if (!newName) return;
++        const updatedMaterials = model.materials.map(m => {
++          if (m.name === material.name) {
++            return { ...m, name: newName };
++          }
++          return m;
++        });
++        onModelChange?.({ ...model, materials: updatedMaterials });
++        // Also update the selection node name so it stays active!
++        selectedNode.name = newName;
++      };
++
++      const handleShaderChange = (newShader: string) => {
++        const updatedMaterials = model.materials.map(m => {
++          if (m.name === material.name) {
++            return { ...m, shader_name: newShader };
++          }
++          return m;
++        });
++        onModelChange?.({ ...model, materials: updatedMaterials });
++      };
++
++      const handleTextureChange = (tIdx: number, newTextureName: string) => {
++        const updatedMaterials = model.materials.map(m => {
++          if (m.name === material.name) {
++            const updatedMaps = [...m.texture_maps];
++            while (updatedMaps.length <= tIdx) {
++              updatedMaps.push("");
++            }
++            updatedMaps[tIdx] = newTextureName;
++            return { ...m, texture_maps: updatedMaps };
++          }
++          return m;
++        });
++        onModelChange?.({ ...model, materials: updatedMaterials });
++      };
++
++      const handleImportTGA = async () => {
++        if (!filePath) {
++          alert("Please save the HOD file first so we know where to copy and bind the imported TGA texture.");
++          return;
++        }
++
++        try {
++          const importedTex = await invoke<any | null>("import_tga_texture", { hodFilePath: filePath });
++          if (!importedTex) return;
++
++          let updatedTextures = [...(model.textures || [])];
++          const existsIdx = updatedTextures.findIndex(t => t.name.toLowerCase() === importedTex.name.toLowerCase());
++          if (existsIdx !== -1) {
++            updatedTextures[existsIdx] = importedTex;
++          } else {
++            updatedTextures.push(importedTex);
++          }
++
++          onModelChange?.({ ...model, textures: updatedTextures });
++          invoke("log_event", { level: "INFO", message: `Imported and bound TGA texture: ${importedTex.name}` }).catch(console.error);
++          alert(`Successfully imported and copied TGA texture "${importedTex.name}" to your HOD folder!\n\nIt is now available in the texture slots dropdown list below.`);
++        } catch (e: any) {
++          console.error(e);
++          alert(`Failed to import TGA texture: ${e.toString()}`);
++        }
++      };
++
++      const handleRemoveMaterial = (name: string) => {
++        const matIndex = model.materials.findIndex(m => m.name === name);
++        const updatedMaterials = model.materials.filter(m => m.name !== name);
++        let updatedMeshes = model.meshes;
++        if (matIndex !== -1) {
++          updatedMeshes = model.meshes.map((mesh) => {
++            const updatedParts = mesh.parts.map((part) => {
++              if (part.material_index === matIndex) {
++                return { ...part, material_index: 0 };
++              } else if (part.material_index > matIndex) {
++                return { ...part, material_index: part.material_index - 1 };
++              }
++              return part;
++            });
++            return { ...mesh, parts: updatedParts };
++          });
++        }
++        onModelChange?.({ ...model, materials: updatedMaterials, meshes: updatedMeshes });
++        onSelectedNodeChange?.(null);
++        invoke("log_event", { level: "INFO", message: `Removed material: ${name} from Inspector.` }).catch(console.error);
++      };
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
++            <div>
++              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
++                <Palette size={12} style={{ color: "var(--accent-cyan)" }} />
++                <span>Material Configuration</span>
++              </div>
++              <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++                {material.name}
++              </div>
++            </div>
++            <button
++              onClick={() => {
++                if (window.confirm(`Are you sure you want to remove the material "${material.name}"?`)) {
++                  handleRemoveMaterial(material.name);
++                }
++              }}
++              style={{
++                padding: "4px 10px",
++                background: "rgba(255, 23, 68, 0.15)",
++                border: "1px solid rgba(255, 23, 68, 0.35)",
++                color: "#ff1744",
++                fontSize: "11px",
++                fontWeight: "600",
++                cursor: "pointer",
++                borderRadius: "4px",
++                height: "28px"
++              }}
++              title="Remove this material"
++            >
++              Remove Material
++            </button>
++          </div>
++
++          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
++
++          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
++                Material Name
++              </label>
++              <input
++                type="text"
++                value={material.name}
++                onChange={(e) => handleMaterialNameChange(e.target.value)}
++              />
++            </div>
++
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
++                Shader / Pipeline Name
++              </label>
++              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
++                <select
++                  value={pipelines.includes(material.shader_name) ? material.shader_name : "custom"}
++                  onChange={(e) => {
++                    const val = e.target.value;
++                    if (val !== "custom") {
++                      handleShaderChange(val);
++                    } else {
++                      handleShaderChange("");
++                    }
++                  }}
++                  style={{ width: "100%" }}
++                >
++                  {pipelines.map((p) => (
++                    <option key={p} value={p}>{p}</option>
++                  ))}
++                  <option value="custom">(Custom shader/pipeline...)</option>
++                </select>
++                {(!pipelines.includes(material.shader_name) || !material.shader_name) && (
++                  <input
++                    type="text"
++                    placeholder="Enter custom shader name..."
++                    value={material.shader_name}
++                    onChange={(e) => handleShaderChange(e.target.value)}
++                  />
++                )}
++              </div>
++            </div>
++
++            <div>
++              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
++                Texture Mapping
++              </label>
++              <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(0,0,0,0.15)", padding: "10px", borderRadius: "4px" }}>
++                {(() => {
++                  const shaderLower = (material.shader_name || "").toLowerCase();
++                  const expectedSlots = SHADER_SLOTS[shaderLower] || ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"];
++                  const slotsToRender = expectedSlots.map((slotLabel, idx) => {
++                    const mapName = material.texture_maps?.[idx] || "";
++                    return { slotLabel, mapName, idx };
++                  });
++
++                  return slotsToRender.map((slot, idx) => {
++                    const mapName = slot.mapName;
++                    const slotLabel = slot.slotLabel;
++
++                    const cleanTexName = (name: string) => name.toLowerCase().replace(/\.(tga|png|dds|bmp|jpg|jpeg)$/, "").trim();
++                    const matchedTexture = model.textures?.find(t => {
++                      const tName = cleanTexName(t.name);
++                      const mName = cleanTexName(mapName);
++                      return tName === mName || tName.includes(mName) || mName.includes(tName);
++                    });
++
++                    return (
++                      <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "4px", borderBottom: idx < slotsToRender.length - 1 ? "1px solid rgba(255,255,255,0.03)" : "none", paddingBottom: idx < slotsToRender.length - 1 ? "8px" : "0", marginBottom: idx < slotsToRender.length - 1 ? "4px" : "0" }}>
++                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
++                          <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: "500" }}>{slotLabel}</span>
++                          {mapName && matchedTexture && (
++                            <span style={{ fontSize: "9px", color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
++                              {matchedTexture.width}x{matchedTexture.height} [{matchedTexture.format}]
++                            </span>
++                          )}
++                        </div>
++                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
++                          {mapName && matchedTexture && matchedTexture.png_preview && (
++                            <img
++                              src={matchedTexture.png_preview.startsWith("data:") ? matchedTexture.png_preview : `data:image/png;base64,${matchedTexture.png_preview}`}
++                              alt={mapName}
++                              style={{ width: "24px", height: "24px", objectFit: "cover", borderRadius: "3px", border: "1px solid var(--border-color)", background: "#000", flexShrink: 0 }}
++                            />
++                          )}
++                          <select
++                            value={mapName}
++                            onChange={(e) => handleTextureChange(idx, e.target.value)}
++                            style={{ flex: 1, height: "26px", padding: "2px 6px", fontSize: "11px" }}
++                          >
++                            <option value="">(None)</option>
++                            {model.textures?.map((t) => (
++                              <option key={t.name} value={t.name}>{t.name}</option>
++                            ))}
++                          </select>
++                        </div>
++                      </div>
++                    );
++                  });
++                })()}
++
++                <div style={{ borderTop: "1px dashed var(--border-color)", marginTop: "8px", paddingTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
++                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
++                    <strong>📁 Homeworld TGA Directory:</strong>{" "}
++                    {filePath ? (
++                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
++                        {filePath.substring(0, Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\")))}
++                      </span>
++                    ) : (
++                      <span style={{ color: "var(--accent-danger)", fontWeight: "600" }}>
++                        Unsaved HOD (Save HOD to enable TGA imports)
++                      </span>
++                    )}
++                  </div>
++                  <button
++                    onClick={handleImportTGA}
++                    className="secondary"
++                    style={{
++                      height: "28px",
++                      fontSize: "11px",
++                      display: "flex",
++                      alignItems: "center",
++                      justifyContent: "center",
++                      gap: "6px"
++                    }}
++                    title="Import an external .TGA image file directly into your saved HOD folder and make it available in slots"
++                  >
++                    <Upload size={12} style={{ color: "var(--accent-cyan)" }} />
++                    <span>Import .TGA Texture...</span>
++                  </button>
++                </div>
++              </div>
++            </div>
++          </div>
++        </div>
++      );
++    }
++
++    if (selectedNode.type === "keyframe") {
++      const parts = selectedNode.name.split(":");
++      const jointName = parts[0];
++      const kfIdx = parseInt(parts[1] || "0", 10);
++
++      const activeAnimIdx = selectedAnimIdx ?? 0;
++      const activeAnim = model?.animations?.[activeAnimIdx];
++      if (!activeAnim) {
++        return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>No active animation found</div>;
++      }
++
++      const track = activeAnim.tracks.find(t => t.joint_name.toLowerCase() === jointName.toLowerCase());
++      if (!track) {
++        return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Track not found</div>;
++      }
++
++      const kf = track.keyframes[kfIdx];
++      if (!kf) {
++        return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Keyframe not found</div>;
++      }
++
++      const p = kf.position || { x: 0, y: 0, z: 0 };
++      const q = kf.rotation || { x: 0, y: 0, z: 0, w: 1 };
++
++      const handlePositionChange = (axis: "x" | "y" | "z", valueStr: string) => {
++        const val = parseFloat(valueStr) || 0;
++        const updatedTracks = activeAnim.tracks.map(t => {
++          if (t.joint_name.toLowerCase() !== jointName.toLowerCase()) return t;
++          const updatedKfs = t.keyframes.map((keyf, idx) => {
++            if (idx !== kfIdx) return keyf;
++            const newPos = { ...(keyf.position || { x: 0, y: 0, z: 0 }), [axis]: val };
++            return { ...keyf, position: newPos };
++          });
++          return { ...t, keyframes: updatedKfs };
++        });
++        const updatedAnim = { ...activeAnim, tracks: updatedTracks };
++        const updatedAnims = (model.animations ?? []).map((anim, idx) => idx === activeAnimIdx ? updatedAnim : anim);
++        onModelChange?.({ ...model, animations: updatedAnims });
++      };
++
++      const handleTimeChange = (valueStr: string) => {
++        const val = parseFloat(valueStr) || 0;
++        const updatedTracks = activeAnim.tracks.map(t => {
++          if (t.joint_name.toLowerCase() !== jointName.toLowerCase()) return t;
++          const updatedKfs = t.keyframes.map((keyf, idx) => {
++            if (idx !== kfIdx) return keyf;
++            return { ...keyf, time: Math.max(0, Math.min(activeAnim.duration, val)) };
++          });
++          updatedKfs.sort((a, b) => a.time - b.time);
++          return { ...t, keyframes: updatedKfs };
++        });
++        const updatedAnim = { ...activeAnim, tracks: updatedTracks };
++        const updatedAnims = (model.animations ?? []).map((anim, idx) => idx === activeAnimIdx ? updatedAnim : anim);
++        onModelChange?.({ ...model, animations: updatedAnims });
++      };
++
++      const handleRotationChange = (axis: "x" | "y" | "z", valueStr: string) => {
++        const val = parseFloat(valueStr) || 0;
++        const currentEuler = quatToEulerDegrees(q);
++        const newEuler = { ...currentEuler, [axis]: val };
++        const newQuat = eulerDegreesToQuat(newEuler.x, newEuler.y, newEuler.z);
++        const newEulerRad = { x: newEuler.x * Math.PI / 180, y: newEuler.y * Math.PI / 180, z: newEuler.z * Math.PI / 180 };
++        const updatedTracks = activeAnim.tracks.map(t => {
++          if (t.joint_name.toLowerCase() !== jointName.toLowerCase()) return t;
++          const updatedKfs = t.keyframes.map((keyf, idx) => {
++            if (idx !== kfIdx) return keyf;
++            return { ...keyf, rotation: newQuat, rotation_euler: newEulerRad };
++          });
++          return { ...t, keyframes: updatedKfs };
++        });
++        const updatedAnim = { ...activeAnim, tracks: updatedTracks };
++        const updatedAnims = (model.animations ?? []).map((anim, idx) => idx === activeAnimIdx ? updatedAnim : anim);
++        onModelChange?.({ ...model, animations: updatedAnims });
++      };
++
++      const euler = quatToEulerDegrees(q);
++
++      return (
++        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
++          <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "rgba(255, 171, 0, 0.08)", border: "1px solid rgba(255, 171, 0, 0.25)", borderRadius: "6px", padding: "10px 12px" }}>
++            <Activity size={18} style={{ color: "#ffd600" }} />
++            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
++              <span style={{ fontWeight: "700", fontSize: "13px", color: "var(--accent-cyan)", textTransform: "uppercase" }}>Keyframe Editor</span>
++              <span style={{ fontSize: "10px", color: "var(--text-secondary)" }}>Track: {jointName}</span>
++            </div>
++          </div>
++
++          <div className="card-bg" style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px", borderRadius: "6px", border: "1px solid var(--border-color)", background: "rgba(0,0,0,0.15)" }}>
++            <div style={{ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent-cyan)" }}>
++              Timeline Position
++            </div>
++            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
++              <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>Time (seconds)</span>
++              <NumericInput
++                step="0.05"
++                min="0"
++                max={activeAnim.duration.toString()}
++                value={kf.time}
++                onChange={handleTimeChange}
++                onWheel={(e) => handleNumericWheel(e, handleTimeChange, 0.05)}
++                style={{ height: "28px", fontSize: "12px" }}
++              />
++            </div>
++          </div>
++
++          <div className="card-bg" style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px", borderRadius: "6px", border: "1px solid var(--border-color)", background: "rgba(0,0,0,0.15)" }}>
++            <div style={{ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent-cyan)" }}>
++              Position Delta
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
++                <span style={{ fontSize: "9px", color: "var(--accent-danger)", fontWeight: "600" }}>X</span>
++                <NumericInput
++                  step="0.05"
++                  value={p.x}
++                  onChange={(v) => handlePositionChange("x", v)}
++                  onWheel={(e) => handleNumericWheel(e, (v) => handlePositionChange("x", v), 0.05)}
++                  style={{ height: "28px", fontSize: "12px" }}
++                />
++              </div>
++              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
++                <span style={{ fontSize: "9px", color: "var(--accent-success)", fontWeight: "600" }}>Y</span>
++                <NumericInput
++                  step="0.05"
++                  value={p.y}
++                  onChange={(v) => handlePositionChange("y", v)}
++                  onWheel={(e) => handleNumericWheel(e, (v) => handlePositionChange("y", v), 0.05)}
++                  style={{ height: "28px", fontSize: "12px" }}
++                />
++              </div>
++              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
++                <span style={{ fontSize: "9px", color: "var(--accent-blue)", fontWeight: "600" }}>Z</span>
++                <NumericInput
++                  step="0.05"
++                  value={p.z}
++                  onChange={(v) => handlePositionChange("z", v)}
++                  onWheel={(e) => handleNumericWheel(e, (v) => handlePositionChange("z", v), 0.05)}
++                  style={{ height: "28px", fontSize: "12px" }}
++                />
++              </div>
++            </div>
++          </div>
++
++          <div className="card-bg" style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px", borderRadius: "6px", border: "1px solid var(--border-color)", background: "rgba(0,0,0,0.15)" }}>
++            <div style={{ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent-cyan)" }}>
++              Rotation Angles (Euler Degrees)
++            </div>
++            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
++              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
++                <span style={{ fontSize: "9px", color: "var(--accent-danger)", fontWeight: "600" }}>Pitch</span>
++                <NumericInput
++                  step="1.0"
++                  value={euler.x}
++                  onChange={(v) => handleRotationChange("x", v)}
++                  onWheel={(e) => handleNumericWheel(e, (v) => handleRotationChange("x", v), 1.0)}
++                  style={{ height: "28px", fontSize: "12px" }}
++                />
++              </div>
++              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
++                <span style={{ fontSize: "9px", color: "var(--accent-success)", fontWeight: "600" }}>Yaw</span>
++                <NumericInput
++                  step="1.0"
++                  value={euler.y}
++                  onChange={(v) => handleRotationChange("y", v)}
++                  onWheel={(e) => handleNumericWheel(e, (v) => handleRotationChange("y", v), 1.0)}
++                  style={{ height: "28px", fontSize: "12px" }}
++                />
++              </div>
++              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
++                <span style={{ fontSize: "9px", color: "var(--accent-blue)", fontWeight: "600" }}>Roll</span>
++                <NumericInput
++                  step="1.0"
++                  value={euler.z}
++                  onChange={(v) => handleRotationChange("z", v)}
++                  onWheel={(e) => handleNumericWheel(e, (v) => handleRotationChange("z", v), 1.0)}
++                  style={{ height: "28px", fontSize: "12px" }}
++                />
++              </div>
++            </div>
++          </div>
++
++          <div className="card-bg" style={{ display: "flex", flexDirection: "column", gap: "6px", padding: "10px 12px", borderRadius: "6px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
++            <span style={{ fontSize: "8px", color: "var(--text-muted)", textTransform: "uppercase" }}>Raw Quaternion Value</span>
++            <span style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--text-secondary)", wordBreak: "break-all" }}>
++              [{q.x.toFixed(4)}, {q.y.toFixed(4)}, {q.z.toFixed(4)}, {q.w.toFixed(4)}]
++            </span>
++          </div>
++        </div>
++      );
++    }
++
++    return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Unsupported node selection</div>;
++  };
++
++  return (
++    <div className="panel panel-right" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
++      <div className="panel-header">Inspector</div>
++      <div className="panel-content" style={{ display: "flex", flexDirection: "column", gap: "16px", overflowY: "auto", flex: 1, padding: "15px" }}>
++        {/* Selected element form details */}
++        {renderSelectedContent()}
++      </div>
++    </div>
++  );
++};

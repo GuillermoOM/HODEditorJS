@@ -1966,49 +1966,86 @@ export const Viewport: React.FC<ViewportProps> = ({
           colGroup.name = `collision:${col.name}`;
           colGroup.renderOrder = 1;
 
-          // Semi-transparent red box
-          const sizeX = col.max_extents.x - col.min_extents.x;
-          const sizeY = col.max_extents.y - col.min_extents.y;
-          const sizeZ = col.max_extents.z - col.min_extents.z;
-          const boxGeo = new THREE.BoxGeometry(sizeX || 0.1, sizeY || 0.1, sizeZ || 0.1);
-          const boxMat = new THREE.MeshBasicMaterial({
-            color: "#ff1744",
-            transparent: true,
-            opacity: 0.15,
-            wireframe: false,
-            depthWrite: false,
-          });
-          const boxMesh = new THREE.Mesh(boxGeo, boxMat);
-          boxMesh.renderOrder = 1;
+          // Render actual mesh if it exists
+          if (col.mesh && col.mesh.parts && col.mesh.parts.length > 0 && col.mesh.parts[0].indices.length > 0) {
+            const meshMat = new THREE.MeshBasicMaterial({
+              color: "#ff1744",
+              transparent: true,
+              opacity: 0.35,
+              wireframe: false,
+              depthWrite: false,
+              side: THREE.DoubleSide
+            });
+            const wireMat = new THREE.LineBasicMaterial({
+              color: "#ff1744",
+              transparent: true,
+              opacity: 0.8,
+              depthWrite: false
+            });
 
-          const boxWire = new THREE.LineSegments(
-            new THREE.EdgesGeometry(boxGeo),
-            new THREE.LineBasicMaterial({ color: "#ff1744", transparent: true, opacity: 0.6, depthWrite: false })
-          );
-          boxWire.renderOrder = 2;
-          boxMesh.add(boxWire);
+            col.mesh.parts.forEach(part => {
+              const geo = new THREE.BufferGeometry();
+              const vertices = new Float32Array(part.vertices.length * 3);
+              part.vertices.forEach((v, i) => {
+                vertices[i * 3] = v.position.x;
+                vertices[i * 3 + 1] = v.position.y;
+                vertices[i * 3 + 2] = v.position.z;
+              });
+              geo.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+              geo.setIndex(part.indices);
+              
+              const m = new THREE.Mesh(geo, meshMat);
+              m.renderOrder = 1;
+              const w = new THREE.LineSegments(new THREE.WireframeGeometry(geo), wireMat);
+              w.renderOrder = 2;
+              m.add(w);
+              colGroup.add(m);
+            });
+          } else {
+            // Fallback: Semi-transparent red box
+            const sizeX = col.max_extents.x - col.min_extents.x;
+            const sizeY = col.max_extents.y - col.min_extents.y;
+            const sizeZ = col.max_extents.z - col.min_extents.z;
+            const boxGeo = new THREE.BoxGeometry(sizeX || 0.1, sizeY || 0.1, sizeZ || 0.1);
+            const boxMat = new THREE.MeshBasicMaterial({
+              color: "#ff1744",
+              transparent: true,
+              opacity: 0.15,
+              wireframe: false,
+              depthWrite: false,
+            });
+            const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+            boxMesh.renderOrder = 1;
 
-          const boxCenter = new THREE.Vector3(
-            (col.min_extents.x + col.max_extents.x) / 2,
-            (col.min_extents.y + col.max_extents.y) / 2,
-            (col.min_extents.z + col.max_extents.z) / 2
-          );
-          boxMesh.position.copy(boxCenter);
-          colGroup.add(boxMesh);
+            const boxWire = new THREE.LineSegments(
+              new THREE.EdgesGeometry(boxGeo),
+              new THREE.LineBasicMaterial({ color: "#ff1744", transparent: true, opacity: 0.6, depthWrite: false })
+            );
+            boxWire.renderOrder = 2;
+            boxMesh.add(boxWire);
 
-          // Wireframe sphere representing center and radius
-          const sphereGeo = new THREE.SphereGeometry(col.radius || 0.1, 16, 16);
-          const sphereMat = new THREE.MeshBasicMaterial({
-            color: "#ff1744",
-            wireframe: true,
-            transparent: true,
-            opacity: 0.25,
-            depthWrite: false,
-          });
-          const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
-          sphereMesh.renderOrder = 1;
-          sphereMesh.position.set(col.center.x, col.center.y, col.center.z);
-          colGroup.add(sphereMesh);
+            const boxCenter = new THREE.Vector3(
+              (col.min_extents.x + col.max_extents.x) / 2,
+              (col.min_extents.y + col.max_extents.y) / 2,
+              (col.min_extents.z + col.max_extents.z) / 2
+            );
+            boxMesh.position.copy(boxCenter);
+            colGroup.add(boxMesh);
+
+            // Wireframe sphere representing center and radius
+            const sphereGeo = new THREE.SphereGeometry(col.radius || 0.1, 16, 16);
+            const sphereMat = new THREE.MeshBasicMaterial({
+              color: "#ff1744",
+              wireframe: true,
+              transparent: true,
+              opacity: 0.25,
+              depthWrite: false,
+            });
+            const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+            sphereMesh.renderOrder = 1;
+            sphereMesh.position.set(col.center.x, col.center.y, col.center.z);
+            colGroup.add(sphereMesh);
+          }
 
           colGroup.applyMatrix4(jointMatrix);
           colGroup.userData = {

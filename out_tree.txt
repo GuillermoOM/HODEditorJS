@@ -1,0 +1,720 @@
+commit 51e325f881fc35b9860b1434a16fefbe9cd926fc
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Sun May 31 15:39:47 2026 -0700
+
+    feat: Add EngineNozzle refactor and GlowLODInspector
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index 644bc46..cc8cc0f 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -280,8 +280,30 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   };
+ 
+   const handleAddNode = () => {
+-    if (!model || !newNodeName.trim()) return;
+-    const name = newNodeName.trim();
++    if (!model) return;
++    let autoName = newNodeName.trim();
++    const isAutoNumbered = ["engine_nozzle", "repair_point_template", "capture_point_template", "salvage_point_template"].includes(addNodeType);
++    
++    if (isAutoNumbered) {
++        let maxNum = -1;
++        let prefix = "";
++        if (addNodeType === "engine_nozzle") prefix = "EngineNozzle";
++        else if (addNodeType === "repair_point_template") prefix = "RepairPoint";
++        else if (addNodeType === "capture_point_template") prefix = "CapturePoint";
++        else if (addNodeType === "salvage_point_template") prefix = "SalvagePoint";
++
++        model.joints.forEach(j => {
++            const match = j.name.match(new RegExp(`^${prefix}(\\d+)$`, "i"));
++            if (match) {
++                maxNum = Math.max(maxNum, parseInt(match[1]));
++            }
++        });
++        autoName = `${prefix}${maxNum + 1}`;
++    } else if (!autoName) {
++        return; // Empty name not allowed for non-auto nodes
++    }
++
++    const name = autoName;
+     const parent = newNodeParent === "Root" ? "Root" : newNodeParent;
+ 
+     
+@@ -298,8 +320,14 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+       return false;
+     };
+ 
+-    if (checkDuplicate(name)) {
+-      window.alert(`A node with the name "${name}" already exists! Please choose a unique name.`);
++    let finalNodeName = name;
++    if (addNodeType === "weapon_template") finalNodeName = name.startsWith("Weapon_") || name.startsWith("weapon_") ? name : `Weapon_${name}`;
++    else if (addNodeType === "turret_template") finalNodeName = name.startsWith("Weapon_") || name.startsWith("Turret_") ? name : `Weapon_${name}_Turret`;
++    else if (addNodeType === "repair_point_template" || addNodeType === "capture_point_template" || addNodeType === "salvage_point_template") finalNodeName = name; // already computed autoName
++    else if (addNodeType === "engine_nozzle") finalNodeName = name;
++
++    if (checkDuplicate(finalNodeName)) {
++      window.alert(`A node with the name "${finalNodeName}" already exists! Please choose a unique name.`);
+       return;
+     }
+     
+@@ -468,7 +496,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+       updatedModel.joints = [...model.joints, ...templateJoints];
+       invoke("log_event", { level: "INFO", message: `Baked and added new Weapon template family for base name: ${base}` }).catch(console.error);
+     } else if (addNodeType === "turret_template") {
+-      const base = name.startsWith("Weapon_") || name.startsWith("weapon_") ? name : `Weapon_${name}`;
++      const base = finalNodeName;
+       const posName = `${base}_Position`;
+       const latName = `${base}_Latitude`;
+       const dirName = `${base}_Direction`;
+@@ -553,11 +581,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+       updatedModel.joints = [...model.joints, ...templateJoints];
+       invoke("log_event", { level: "INFO", message: `Baked and added new Turret template family for base name: ${base}` }).catch(console.error);
+     } else if (addNodeType === "engine_nozzle") {
+-      if (model.engine_burns.length >= 9) {
+-        alert("Maximum limit of 9 engine burns reached.");
+-        return;
+-      }
+-      const baseJointName = name.toLowerCase().includes("nozzle") ? name : `Nozzle_${name}`;
++      const baseJointName = finalNodeName;
+       const newJoint = {
+         name: baseJointName,
+         parent_name: parent === "(None)" ? undefined : parent,
+@@ -570,24 +594,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+           ]
+         }
+       };
+-
+-      const burnName = `burn_${name}`;
+-      const newBurn = {
+-        name: burnName,
+-        parent_name: baseJointName,
+-        num_divisions: 16,
+-        num_flames: 4,
+-        vertices: [
+-          { x: 0, y: 0, z: 0 },
+-          { x: 0, y: 0, z: -1.0 },
+-          { x: 0, y: 0, z: -2.0 },
+-          { x: 0, y: 0, z: -3.0 },
+-        ]
+-      };
+-
++      // Don't auto-add engine_burn here, let the user add it via the inspector
+       updatedModel.joints = [...model.joints, newJoint];
+-      updatedModel.engine_burns = [...model.engine_burns, newBurn];
+-      invoke("log_event", { level: "INFO", message: `Added new Engine Nozzle joint ${baseJointName} and fire plume ${burnName} parented under ${parent}` }).catch(console.error);
++      invoke("log_event", { level: "INFO", message: `Added new Engine Nozzle joint ${baseJointName} parented under ${parent}` }).catch(console.error);
+     } else if (addNodeType === "mesh") {
+       const newMesh = {
+         name,
+@@ -598,7 +607,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+       updatedModel.meshes = [...model.meshes, newMesh];
+       invoke("log_event", { level: "INFO", message: `Added new empty HODMesh: ${name} parented under ${parent}` }).catch(console.error);
+     } else if (addNodeType === "repair_point_template") {
+-      const base = name.startsWith("RepairPoint") ? name : `RepairPoint${name}`;
++      const base = finalNodeName;
+       const headingName = `${base}_Heading`;
+       const leftName = `${base}_Left`;
+       const upName = `${base}_Up`;
+@@ -656,7 +665,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+       updatedModel.joints = [...model.joints, ...templateJoints];
+       invoke("log_event", { level: "INFO", message: `Added new repair point template: ${base} parented under ${parent}` }).catch(console.error);
+     } else if (addNodeType === "capture_point_template") {
+-      const base = name.startsWith("CapturePoint") ? name : `CapturePoint${name}`;
++      const base = finalNodeName;
+       const headingName = `${base}_Heading`;
+       const leftName = `${base}_Left`;
+       const upName = `${base}_Up`;
+@@ -760,7 +769,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+       updatedModel.joints = [...model.joints, ...templateJoints];
+       invoke("log_event", { level: "INFO", message: `Added new hardpoint template: ${base} parented under ${parent}` }).catch(console.error);
+     } else if (addNodeType === "salvage_point_template") {
+-      const base = name.startsWith("SalvagePoint") ? name : `SalvagePoint${name}`;
++      const base = finalNodeName;
+       const headingName = `${base}_Heading`;
+       const leftName = `${base}_Left`;
+       const upName = `${base}_Up`;
+@@ -883,10 +892,14 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   const handleRenameNode = (oldName: string, type: string) => {
+     if (!model) return;
+     if (oldName === "Root") {
+-      alert("The Root node cannot be renamed.");
++      alert("The 'Root' node cannot be renamed as it is required by the engine.");
+       return;
+     }
+-    
++    if (oldName.toLowerCase().startsWith("enginenozzle") || oldName.toLowerCase().startsWith("repairpoint") || oldName.toLowerCase().startsWith("capturepoint") || oldName.toLowerCase().startsWith("salvagepoint")) {
++      alert("Auto-generated point and nozzle nodes cannot be manually renamed.");
++      return;
++    }
++
+     let cleanOldName = oldName;
+     let prefix = "";
+     let suffix = "";
+@@ -1565,12 +1578,15 @@ const handleDeleteNode = (name: string, type: string) => {
+ 
+     if (searchTerm && !matchesSearchRecursive(jointName)) return null;
+ 
++    const isEngineNozzle = jointName.toLowerCase().startsWith("enginenozzle") || engineBurns.length > 0 || engineGlows.length > 0 || engineShapes.length > 0;
++    const nodeType = isEngineNozzle ? "engine_nozzle" : "joint";
++
+     return (
+       <div key={jointName} style={{ marginLeft: depth > 0 ? "12px" : "0px" }}>
+         <div
+           className={`list-item ${isSelected ? "active" : ""}`}
+-          onClick={() => setSelectedNode({ type: "joint", name: jointName })}
+-          onContextMenu={(e) => handleContextMenu(e, jointName, "joint")}
++          onClick={() => setSelectedNode({ type: nodeType, name: jointName })}
++          onContextMenu={(e) => handleContextMenu(e, jointName, nodeType)}
+           draggable={jointName !== "Root" && !(getWeaponGroupInfo(jointName) && jointName !== getWeaponGroupInfo(jointName)?.baseName) ? "true" : "false"}
+           onDragStart={(e) => {
+             if (jointName === "Root") {
+@@ -3080,22 +3096,29 @@ const handleDeleteNode = (name: string, type: string) => {
+               </div>
+ 
+               {/* Node Name */}
+-              <div>
+-                <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "6px" }}>
+-                  {addNodeType === "weapon_template" || addNodeType === "turret_template" ? "Base Weapon Name" : "Node Name"}
+-                </label>
+-                <input
+-                  placeholder={addNodeType === "weapon_template" || addNodeType === "turret_template" ? "e.g. Laser_Turret" : "e.g. MyNewNode"}
+-                  value={newNodeName}
+-                  onChange={(e) => setNewNodeName(e.target.value)}
+-                  style={{ height: "36px", fontSize: "13px" }}
+-                />
+-                {(addNodeType === "weapon_template" || addNodeType === "turret_template") && (
+-                  <div style={{ fontSize: "10px", color: "var(--accent-cyan)", marginTop: "4px" }}>
+-                    ℹ️ This will auto-generate the complete compliant {addNodeType === "turret_template" ? "6-joint Turret" : "4-joint Weapon"} family!
+-                  </div>
+-                )}
+-              </div>
++              {!["engine_nozzle", "repair_point_template", "capture_point_template", "salvage_point_template"].includes(addNodeType) && (
++                <div>
++                  <label style={{ display: "block", fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "6px" }}>
++                    {addNodeType === "weapon_template" || addNodeType === "turret_template" ? "Base Weapon Name" : "Node Name"}
++                  </label>
++                  <input
++                    placeholder={addNodeType === "weapon_template" || addNodeType === "turret_template" ? "e.g. Laser_Turret" : "e.g. MyNewNode"}
++                    value={newNodeName}
++                    onChange={(e) => setNewNodeName(e.target.value)}
++                    style={{ height: "36px", fontSize: "13px" }}
++                  />
++                  {(addNodeType === "weapon_template" || addNodeType === "turret_template") && (
++                    <div style={{ fontSize: "10px", color: "var(--accent-cyan)", marginTop: "4px" }}>
++                      ℹ️ This will auto-generate the complete compliant {addNodeType === "turret_template" ? "6-joint Turret" : "4-joint Weapon"} family!
++                    </div>
++                  )}
++                </div>
++              )}
++              {["engine_nozzle", "repair_point_template", "capture_point_template", "salvage_point_template"].includes(addNodeType) && (
++                <div style={{ fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic", marginBottom: "8px" }}>
++                  Name will be auto-generated sequentially (e.g. {addNodeType === "engine_nozzle" ? "EngineNozzle0" : "Point0"}).
++                </div>
++              )}
+ 
+               {/* Node Parent */}
+               <div>
+
+commit 2239ac70c03c6559b8c4fa78a91af831af37a9be
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Sun May 31 15:23:54 2026 -0700
+
+    UI Audit fixes: Turret detection, Engine Burns, Engine Glow/Shape OBJ imports
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index 8bae53a..644bc46 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -229,8 +229,18 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   // Weapon Grouping helpers
+   const getWeaponGroupInfo = (name: string) => {
+     // Check weapon and turret assemblies
+-    const weaponMatch = name.match(/^(Weapon_[A-Za-z0-9_]+|Turret_[A-Za-z0-9_]+)_(Position|Direction|Muzzle\d*|Rest|Latitude|Pitch|Yaw|Barrel\d*)$/i);
+-    if (weaponMatch) return { baseName: weaponMatch[1], suffix: weaponMatch[2], type: weaponMatch[1].startsWith('Turret') ? 'turret_group' : 'weapon_group' };
++    const weaponMatch = name.match(/^(Weapon_[A-Za-z0-9_]+|Turret_[A-Za-z0-9_]+)_(Position|Direction|Heading|Muzzle\d*|Rest|Latitude|Pitch|Yaw|Barrel\d*)$/i);
++    if (weaponMatch) {
++      const baseName = weaponMatch[1];
++      const isTurretExplicit = baseName.startsWith('Turret');
++      let isTurretDetected = false;
++      if (model && !isTurretExplicit) {
++        // Auto-detect turret if it has Latitude, Pitch, Yaw, or Barrel anywhere in its hierarchy tree
++        const hasTurretParts = model.joints.some(j => j.name.startsWith(baseName + "_") && (j.name.includes("_Latitude") || j.name.includes("_Pitch") || j.name.includes("_Yaw") || j.name.includes("_Barrel")));
++        if (hasTurretParts) isTurretDetected = true;
++      }
++      return { baseName, suffix: weaponMatch[2], type: (isTurretExplicit || isTurretDetected) ? 'turret_group' : 'weapon_group' };
++    }
+     
+     // Check point groups (Capture, Repair, Salvage, Hardpoint)
+     const pointMatch = name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+|Hardpoint[A-Za-z0-9_]*)_(Heading|Left|Up|Position|Direction|Rest)$/i);
+@@ -872,6 +882,10 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+ 
+   const handleRenameNode = (oldName: string, type: string) => {
+     if (!model) return;
++    if (oldName === "Root") {
++      alert("The Root node cannot be renamed.");
++      return;
++    }
+     
+     let cleanOldName = oldName;
+     let prefix = "";
+@@ -1383,7 +1397,8 @@ const handleDeleteNode = (name: string, type: string) => {
+         label: "Turret group",
+         required: [
+           { key: "Position", suffix: "_Position" },
+-          { key: "Heading", suffix: "_Heading" },
++          { key: "Direction", suffix: "_Direction" },
++          { key: "Latitude", suffix: "_Latitude" },
+           { key: "Muzzle", suffix: "_Muzzle", allowPrefix: true },
+           { key: "Rest", suffix: "_Rest" },
+         ],
+@@ -1459,10 +1474,10 @@ const handleDeleteNode = (name: string, type: string) => {
+       }
+     });
+ 
+-    if (model.engine_burns && model.engine_burns.length >= 9) {
++    if (model.engine_burns && model.engine_burns.length > 9) {
+       warnings.push({
+         type: "warning",
+-        message: `Engine burn limit reached (${model.engine_burns.length}/9). Adding more may cause instability.`
++        message: `Engine burn limit exceeded. Having more than 9 may cause instability.`
+       });
+     }
+ 
+
+commit 19b9fa9ed06d073ec80d72806a3c58046f8864a7
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 19:18:01 2026 -0700
+
+    Add loading screens for OBJ/TGA/Materials IO operations and HOD saving
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index 98ba178..8bae53a 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -17,6 +17,8 @@ interface HierarchyTreeProps {
+   targetBoxes?: any[];
+   setTargetBoxes?: (boxes: any[]) => void;
+   onTabChange?: (tab: string) => void;
++  setIsLoading?: (loading: boolean) => void;
++  setStatusMsg?: (msg: string) => void;
+ }
+ 
+ const handleNumericWheel = (e: React.WheelEvent<HTMLInputElement>, onChange: (val: string) => void, step = 1) => {
+@@ -108,6 +110,8 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   targetBoxes = [],
+   setTargetBoxes,
+   onTabChange,
++  setIsLoading,
++  setStatusMsg,
+ }) => {
+   const [searchTerm, setSearchTerm] = useState("");
+   const [activeTab, setActiveTab] = useState<"hierarchy" | "materials" | "animations" | "targetboxes">("hierarchy");
+@@ -1282,9 +1286,12 @@ const handleDeleteNode = (name: string, type: string) => {
+   };
+ 
+   const handleExportMaterials = async () => {
+-    if (!model || !model.materials) return;
++    if (!model) return;
+     try {
+-      const jsonStr = JSON.stringify(model.materials, null, 2);
++      setIsLoading?.(true);
++      setStatusMsg?.("Exporting Materials...");
++      const matsToExport = model.materials || [];
++      const jsonStr = JSON.stringify(matsToExport, null, 2);
+       const defaultName = `${model.name}_materials.json`;
+       const savedPath = await invoke<string | null>("save_text_file", {
+         defaultName,
+@@ -1300,6 +1307,7 @@ const handleDeleteNode = (name: string, type: string) => {
+         
+         // Export separate TGA files in the same directory!
+         if (model.textures && model.textures.length > 0) {
++          setStatusMsg?.("Exporting TGA textures...");
+           await invoke("export_textures_tga", {
+             folderPath,
+             textures: model.textures
+@@ -1310,6 +1318,8 @@ const handleDeleteNode = (name: string, type: string) => {
+     } catch (e: any) {
+       console.error(e);
+       invoke("log_event", { level: "ERROR", message: `Failed to export materials and textures: ${e.toString()}` }).catch(console.error);
++    } finally {
++      setIsLoading?.(false);
+     }
+   };
+ 
+@@ -1320,6 +1330,9 @@ const handleDeleteNode = (name: string, type: string) => {
+         filters: ["json"]
+       });
+       if (jsonContent) {
++        setIsLoading?.(true);
++        setStatusMsg?.("Importing Materials...");
++        
+         const parsedMaterials = JSON.parse(jsonContent);
+         if (Array.isArray(parsedMaterials)) {
+           onModelChange?.({
+@@ -1328,13 +1341,15 @@ const handleDeleteNode = (name: string, type: string) => {
+           });
+           invoke("log_event", { level: "INFO", message: `Successfully imported ${parsedMaterials.length} materials from JSON file.` }).catch(console.error);
+         } else {
+-          throw new Error("Invalid format: Root of JSON file must be an array of materials.");
++          invoke("log_event", { level: "ERROR", message: "Imported JSON is not a valid materials array." }).catch(console.error);
++          alert("The selected file does not contain a valid materials array.");
+         }
+       }
+     } catch (e: any) {
+       console.error(e);
+       invoke("log_event", { level: "ERROR", message: `Failed to import materials: ${e.toString()}` }).catch(console.error);
+-      alert(`Import Failed: ${e.toString()}`);
++    } finally {
++      setIsLoading?.(false);
+     }
+   };
+ 
+
+commit 4b0fb9e3fd0bd5ef19da210af43efefe39c7d673
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 18:47:02 2026 -0700
+
+    AnimationDock only visible when animations tab is active
+    
+    - Added onTabChange callback to HierarchyTree
+    - App tracks activeHierarchyTab state
+    - AnimationDock only rendered when activeHierarchyTab === 'animations'
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index cb747fa..98ba178 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -16,6 +16,7 @@ interface HierarchyTreeProps {
+   setSelectedAnimIdx: (idx: number) => void;
+   targetBoxes?: any[];
+   setTargetBoxes?: (boxes: any[]) => void;
++  onTabChange?: (tab: string) => void;
+ }
+ 
+ const handleNumericWheel = (e: React.WheelEvent<HTMLInputElement>, onChange: (val: string) => void, step = 1) => {
+@@ -106,6 +107,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   setSelectedAnimIdx,
+   targetBoxes = [],
+   setTargetBoxes,
++  onTabChange,
+ }) => {
+   const [searchTerm, setSearchTerm] = useState("");
+   const [activeTab, setActiveTab] = useState<"hierarchy" | "materials" | "animations" | "targetboxes">("hierarchy");
+@@ -2084,7 +2086,7 @@ const handleDeleteNode = (name: string, type: string) => {
+       {/* Tab Selector */}
+       <div style={{ display: "flex", borderBottom: "1px solid var(--border-color)", background: "rgba(10, 16, 27, 0.5)", flexShrink: 0 }}>
+         <button
+-          onClick={() => { setActiveTab("hierarchy"); setSearchTerm(""); }}
++          onClick={() => { setActiveTab("hierarchy"); setSearchTerm(""); onTabChange?.("hierarchy"); }}
+           style={{
+             flex: 1,
+             background: activeTab === "hierarchy" ? "rgba(22, 160, 255, 0.12)" : "transparent",
+@@ -2105,7 +2107,7 @@ const handleDeleteNode = (name: string, type: string) => {
+           Hierarchy
+         </button>
+         <button
+-          onClick={() => { setActiveTab("materials"); setSearchTerm(""); }}
++          onClick={() => { setActiveTab("materials"); setSearchTerm(""); onTabChange?.("materials"); }}
+           style={{
+             flex: 1,
+             background: activeTab === "materials" ? "rgba(22, 160, 255, 0.12)" : "transparent",
+@@ -2126,7 +2128,7 @@ const handleDeleteNode = (name: string, type: string) => {
+           Materials
+         </button>
+         <button
+-          onClick={() => { setActiveTab("animations"); setSearchTerm(""); }}
++          onClick={() => { setActiveTab("animations"); setSearchTerm(""); onTabChange?.("animations"); }}
+           style={{
+             flex: 1,
+             background: activeTab === "animations" ? "rgba(22, 160, 255, 0.12)" : "transparent",
+@@ -2147,7 +2149,7 @@ const handleDeleteNode = (name: string, type: string) => {
+           Animations
+         </button>
+         <button
+-          onClick={() => { setActiveTab("targetboxes"); setSearchTerm(""); }}
++          onClick={() => { setActiveTab("targetboxes"); setSearchTerm(""); onTabChange?.("targetboxes"); }}
+           style={{
+             flex: 1,
+             background: activeTab === "targetboxes" ? "rgba(22, 160, 255, 0.12)" : "transparent",
+
+commit 188e35496899cd40a94a18e77df9d86e2a037e3c
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:37:20 2026 -0700
+
+    Shader dropdown: remove custom input, add refresh button
+    
+    - Removed custom shader text box and '(Custom shader/pipeline...)' option
+    - Shader dropdown only shows scanned shaders from configured directories
+    - Added 'Refresh' button to reload shaders from config
+    - Shader list auto-loads on app startup from config file
+    - Empty state shows 'No shaders loaded' message with Settings hint
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index 440e5f3..cb747fa 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -196,21 +196,27 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   // Material Addition State
+   const [isAddMatOpen, setIsAddMatOpen] = useState(false);
+   const [newMatName, setNewMatName] = useState("");
+-  const [newMatShader, setNewMatShader] = useState("ship");
++  const [newMatShader, setNewMatShader] = useState("");
+   const [pipelines, setPipelines] = useState<string[]>([]);
+ 
+-  React.useEffect(() => {
+-    const loadPipelines = async () => {
+-      try {
+-        const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
+-        if (config.shader_directories.length > 0) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
+-          setPipelines(list);
++  const loadPipelines = async () => {
++    try {
++      const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
++      if (config.shader_directories.length > 0) {
++        const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
++        setPipelines(list);
++        if (!newMatShader && list.length > 0) {
++          setNewMatShader(list[0]);
+         }
+-      } catch (e) {
+-        console.error("Failed to load shader pipelines:", e);
++      } else {
++        setPipelines([]);
+       }
+-    };
++    } catch (e) {
++      console.error("Failed to load shader pipelines:", e);
++    }
++  };
++
++  React.useEffect(() => {
+     loadPipelines();
+   }, []);
+ 
+
+commit 08a404362f7d631acb04979a7b19798425d37ff9
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:29:55 2026 -0700
+
+    Shader config persisted to file next to app binary
+    
+    - Backend: load_shader_config/save_shader_config read/write
+      hod_editor_config.json next to the executable
+    - Frontend: loads shader directories from config on startup
+    - Shader dropdown empty until user configures directories
+    - Removed localStorage dependency for shader paths
+    - Shaders scanned from configured directories with texture mapping
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index bfec0d9..440e5f3 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -200,55 +200,18 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   const [pipelines, setPipelines] = useState<string[]>([]);
+ 
+   React.useEffect(() => {
+-    if (!model) return;
+-    let defName = "";
+-    if (addNodeType === "joint") {
+-      defName = `Joint_${model.joints.length}`;
+-    } else if (addNodeType === "marker") {
+-      defName = `marker${model.markers.length}`;
+-    } else if (addNodeType === "navlight") {
+-      defName = `NavLight${model.nav_lights.length}`;
+-    } else if (addNodeType === "dockpath") {
+-      defName = `Dockpath_${model.dockpaths.length + 1}`;
+-    } else if (addNodeType === "collision") {
+-      defName = `Collision_${model.collision_meshes.length + 1}`;
+-    } else if (addNodeType === "weapon_template") {
+-      defName = `Weapon_${getUniqueAssemblyGroups().length}`;
+-    } else if (addNodeType === "turret_template") {
+-      defName = `Turret_${getUniqueAssemblyGroups().length}`;
+-    } else if (addNodeType === "engine_nozzle") {
+-      defName = `EngineBurn${model.engine_burns.length}`;
+-    } else if (addNodeType === "mesh") {
+-      defName = `Root_mesh_LOD${model.meshes.filter(m => m.name === "Root_mesh").length}`;
+-    } else if (addNodeType === "repair_point_template") {
+-      const count = model.joints.filter(j => j.name.startsWith("RepairPoint")).length;
+-      defName = `RepairPoint${count}`;
+-    } else if (addNodeType === "capture_point_template") {
+-      const count = model.joints.filter(j => j.name.startsWith("CapturePoint")).length;
+-      defName = `CapturePoint${count}`;
+-    } else if (addNodeType === "hardpoint_template") {
+-      const count = model.joints.filter(j => j.name.startsWith("Hardpoint_")).length;
+-      defName = `Hardpoint_${count}`;
+-    } else if (addNodeType === "salvage_point_template") {
+-      const count = model.joints.filter(j => j.name.startsWith("SalvagePoint")).length;
+-      defName = `SalvagePoint${count}`;
+-    }
+-    setNewNodeName(defName);
+-  }, [addNodeType, isAddNodeOpen, model]);
+-
+-  React.useEffect(() => {
+-    const fetchPipelines = async () => {
++    const loadPipelines = async () => {
+       try {
+-        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
+-        if (keeperTxtPaths.length > 0) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
++        const config = await invoke<{ shader_directories: string[] }>("load_shader_config");
++        if (config.shader_directories.length > 0) {
++          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: config.shader_directories });
+           setPipelines(list);
+         }
+       } catch (e) {
+-        console.error("Failed to fetch shader pipelines:", e);
++        console.error("Failed to load shader pipelines:", e);
+       }
+     };
+-    fetchPipelines();
++    loadPipelines();
+   }, []);
+ 
+   // Weapon Grouping helpers
+
+commit d7a0b80b767cfd4b68d22e7dd59250a411e6ee4f
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:26:37 2026 -0700
+
+    Revert "Shader dropdown: use SHADER_SLOTS directly, no backend scan"
+    
+    This reverts commit e456919fc429190dbde08e07f8d967f937f91a2b.
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index 3eb53b2..bfec0d9 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -197,7 +197,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   const [isAddMatOpen, setIsAddMatOpen] = useState(false);
+   const [newMatName, setNewMatName] = useState("");
+   const [newMatShader, setNewMatShader] = useState("ship");
+-  const pipelines = ["ship", "badge", "badgeglow", "bay", "thruster", "innateSS", "matte", "mattealpha", "mattescissor", "matte2s", "mattealpha2s", "mattescissor2s", "shipglow", "shipglow_ns"];
++  const [pipelines, setPipelines] = useState<string[]>([]);
+ 
+   React.useEffect(() => {
+     if (!model) return;
+@@ -236,6 +236,21 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+     setNewNodeName(defName);
+   }, [addNodeType, isAddNodeOpen, model]);
+ 
++  React.useEffect(() => {
++    const fetchPipelines = async () => {
++      try {
++        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
++        if (keeperTxtPaths.length > 0) {
++          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
++          setPipelines(list);
++        }
++      } catch (e) {
++        console.error("Failed to fetch shader pipelines:", e);
++      }
++    };
++    fetchPipelines();
++  }, []);
++
+   // Weapon Grouping helpers
+   const getWeaponGroupInfo = (name: string) => {
+     // Check weapon and turret assemblies
+
+commit e456919fc429190dbde08e07f8d967f937f91a2b
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:23:14 2026 -0700
+
+    Shader dropdown: use SHADER_SLOTS directly, no backend scan
+    
+    - Inspector: pipelines derived from Object.keys(SHADER_SLOTS)
+    - HierarchyTree: pipelines hardcoded to match SHADER_SLOTS keys
+    - Removed backend get_shader_pipelines calls and localStorage dependency
+    - Shader list is now session-only and always available
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index bfec0d9..3eb53b2 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -197,7 +197,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   const [isAddMatOpen, setIsAddMatOpen] = useState(false);
+   const [newMatName, setNewMatName] = useState("");
+   const [newMatShader, setNewMatShader] = useState("ship");
+-  const [pipelines, setPipelines] = useState<string[]>([]);
++  const pipelines = ["ship", "badge", "badgeglow", "bay", "thruster", "innateSS", "matte", "mattealpha", "mattescissor", "matte2s", "mattealpha2s", "mattescissor2s", "shipglow", "shipglow_ns"];
+ 
+   React.useEffect(() => {
+     if (!model) return;
+@@ -236,21 +236,6 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+     setNewNodeName(defName);
+   }, [addNodeType, isAddNodeOpen, model]);
+ 
+-  React.useEffect(() => {
+-    const fetchPipelines = async () => {
+-      try {
+-        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
+-        if (keeperTxtPaths.length > 0) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
+-          setPipelines(list);
+-        }
+-      } catch (e) {
+-        console.error("Failed to fetch shader pipelines:", e);
+-      }
+-    };
+-    fetchPipelines();
+-  }, []);
+-
+   // Weapon Grouping helpers
+   const getWeaponGroupInfo = (name: string) => {
+     // Check weapon and turret assemblies
+
+commit e8c8915ff1414d6cf2025d838d33ddfb08a80d00
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:17:07 2026 -0700
+
+    Multiple keeper paths support for shader scanning
+    
+    - Backend get_shader_pipelines accepts Vec<String> of paths, scans all
+    - Frontend stores keeperTxtPaths as JSON array in localStorage
+    - UI shows list of paths with add/remove buttons
+    - Migrates from old single-path 'keeperTxtPath' format automatically
+    - Shader dropdown populates from all configured data directories
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index 81fff0f..bfec0d9 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -239,9 +239,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   React.useEffect(() => {
+     const fetchPipelines = async () => {
+       try {
+-        const keeperTxtPath = localStorage.getItem("keeperTxtPath") || "";
+-        if (keeperTxtPath) {
+-          const list = await invoke<string[]>("get_shader_pipelines", { keeperPath: keeperTxtPath });
++        const keeperTxtPaths = JSON.parse(localStorage.getItem("keeperTxtPaths") || "[]") as string[];
++        if (keeperTxtPaths.length > 0) {
++          const list = await invoke<string[]>("get_shader_pipelines", { keeperPaths: keeperTxtPaths });
+           setPipelines(list);
+         }
+       } catch (e) {
+
+commit ba3777a1943c2176f65b1db8be07b374aee68cdc
+Author: GuillermoOM <guille8ameou@gmail.com>
+Date:   Fri May 29 16:06:47 2026 -0700
+
+    Shader dropdown: no defaults, only from directory scan
+    
+    - Backend get_shader_pipelines starts with empty list, populates only
+      from game shaders directory when keeper path is set
+    - Frontend pipelines state initialized empty, populated by backend
+
+diff --git a/src/components/HierarchyTree.tsx b/src/components/HierarchyTree.tsx
+index 7155db8..81fff0f 100644
+--- a/src/components/HierarchyTree.tsx
++++ b/src/components/HierarchyTree.tsx
+@@ -197,7 +197,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
+   const [isAddMatOpen, setIsAddMatOpen] = useState(false);
+   const [newMatName, setNewMatName] = useState("");
+   const [newMatShader, setNewMatShader] = useState("ship");
+-  const [pipelines, setPipelines] = useState<string[]>(["ship", "badge", "badgeglow", "bay", "thruster", "innateSS", "matte", "mattealpha", "mattescissor", "matte2s", "mattealpha2s", "mattescissor2s", "shipglow", "shipglow_ns"]);
++  const [pipelines, setPipelines] = useState<string[]>([]);
+ 
+   React.useEffect(() => {
+     if (!model) return;

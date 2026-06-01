@@ -53,6 +53,7 @@ const NumericInput: React.FC<NumericInputProps> = ({
   const [localValue, setLocalValue] = useState(value.toString());
   const isFocusedRef = useRef(false);
   const isWheelingRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!isFocusedRef.current || isWheelingRef.current) {
@@ -60,6 +61,25 @@ const NumericInput: React.FC<NumericInputProps> = ({
       isWheelingRef.current = false;
     }
   }, [value]);
+
+  React.useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    
+    const handleNativeWheel = (e: WheelEvent) => {
+      if (onWheel) {
+        // Prevent browser's native default scroll which would scroll the parent container
+        e.preventDefault();
+        isWheelingRef.current = true;
+        onWheel(e as unknown as React.WheelEvent<HTMLInputElement>);
+      }
+    };
+    
+    el.addEventListener("wheel", handleNativeWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, [onWheel]);
 
   const handleBlur = () => {
     isFocusedRef.current = false;
@@ -73,15 +93,9 @@ const NumericInput: React.FC<NumericInputProps> = ({
     }
   };
 
-  const handleWheel = (e: React.WheelEvent<HTMLInputElement>) => {
-    if (onWheel) {
-      isWheelingRef.current = true;
-      onWheel(e);
-    }
-  };
-
   return (
     <input
+      ref={inputRef}
       type="number"
       step={step}
       min={min}
@@ -91,7 +105,6 @@ const NumericInput: React.FC<NumericInputProps> = ({
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
       onChange={(e) => setLocalValue(e.target.value)}
-      onWheel={handleWheel}
       style={style}
     />
   );
@@ -899,6 +912,16 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       alert("Auto-generated point and nozzle nodes cannot be manually renamed.");
       return;
     }
+    if (type === "engine_burn" || type === "engine_glow" || type === "engine_shape") {
+      let parentName = "";
+      if (type === "engine_burn") parentName = model.engine_burns?.find(b => b.name === oldName)?.parent_name || "";
+      if (type === "engine_glow") parentName = model.engine_glows?.find(g => g.name === oldName)?.parent_name || "";
+      if (type === "engine_shape") parentName = model.engine_shapes?.find(s => s.name === oldName)?.parent_name || "";
+      if (parentName.toLowerCase().startsWith("enginenozzle")) {
+        alert("EngineNozzle subnodes cannot be renamed.");
+        return;
+      }
+    }
 
     let cleanOldName = oldName;
     let prefix = "";
@@ -1236,6 +1259,17 @@ const handleDeleteNode = (name: string, type: string) => {
           }
         });
       }
+
+      // If toggling an engine glow base name, toggle all its LODs
+      if (nodeKey.startsWith("engine_glow:") && model?.engine_glows) {
+        const glowBaseName = nodeKey.substring("engine_glow:".length);
+        model.engine_glows.forEach((g) => {
+          const gBase = g.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+          if (gBase === glowBaseName) {
+            updated[`engine_glow:${g.name}`] = nextVisibility;
+          }
+        });
+      }
       
       // If we toggle a Joint node, propagate that same visibility recursively to all descendants!
       if (nodeKey.startsWith("joint:")) {
@@ -1275,6 +1309,18 @@ const handleDeleteNode = (name: string, type: string) => {
         return mBase === baseName && visibleMeshes[`${m.name}_lod_${m.lod}`] !== false;
       });
       isVisible = hasVisibleLod;
+    }
+    
+    // For engine glow base names, check if any LOD is visible
+    if (nodeKey.startsWith("engine_glow:") && model?.engine_glows) {
+      const glowBaseName = nodeKey.substring("engine_glow:".length);
+      const hasVisibleLod = model.engine_glows.some((g) => {
+        const gBase = g.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+        return gBase === glowBaseName && visibleMeshes[`engine_glow:${g.name}`] !== false;
+      });
+      if (model.engine_glows.some(g => g.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "") === glowBaseName)) {
+         isVisible = hasVisibleLod;
+      }
     }
     return (
       <span
@@ -1854,36 +1900,46 @@ const handleDeleteNode = (name: string, type: string) => {
             })}
 
             {/* 4. Render Engine Glows */}
-            {engineGlows.map((glow) => {
-              const isGlowSelected = selectedNode?.type === "engine_glow" && selectedNode.name === glow.name;
-              if (searchTerm && !glow.name.toLowerCase().includes(searchTerm.toLowerCase())) return null;
-              return (
-                <div
-                  key={glow.name}
-                  className={`list-item ${isGlowSelected ? "active" : ""}`}
-                  onClick={() => setSelectedNode({ type: "engine_glow", name: glow.name })}
-                  onContextMenu={(e) => handleContextMenu(e, glow.name, "engine_glow")}
-                  style={{ 
-                    paddingLeft: "16px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center"
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden", flex: 1 }}>
-                    <span style={{ width: "14px", flexShrink: 0 }} />
-                    <Flame size={13} style={{ color: "#ffd600", flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {glow.name}
-                    </span>
+            {(() => {
+              const groupedGlows = new Map<string, typeof engineGlows>();
+              engineGlows.forEach((glow) => {
+                const baseName = glow.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+                if (!groupedGlows.has(baseName)) groupedGlows.set(baseName, []);
+                groupedGlows.get(baseName)!.push(glow);
+              });
+              return Array.from(groupedGlows.entries()).map(([baseName, lodGlows]) => {
+                const glowKey = baseName;
+                const isGlowSelected = selectedNode?.type === "engine_glow" && selectedNode.name === glowKey;
+                if (searchTerm && !baseName.toLowerCase().includes(searchTerm.toLowerCase())) return null;
+                const sortedLods = [...lodGlows].sort((a, b) => a.lod - b.lod);
+                return (
+                  <div
+                    key={glowKey}
+                    className={`list-item ${isGlowSelected ? "active" : ""}`}
+                    onClick={() => setSelectedNode({ type: "engine_glow", name: glowKey })}
+                    onContextMenu={(e) => handleContextMenu(e, glowKey, "engine_glow")}
+                    style={{ 
+                      paddingLeft: "16px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", overflow: "hidden", flex: 1 }}>
+                      <span style={{ width: "14px", flexShrink: 0 }} />
+                      <Flame size={13} style={{ color: "#ffd600", flexShrink: 0 }} />
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {baseName} ({sortedLods.length} LOD{sortedLods.length !== 1 ? "s" : ""})
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      {renderEyeToggle(`engine_glow:${glowKey}`)}
+                      {renderDeleteButton(glowKey, "engine_glow")}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    {renderEyeToggle(`engine_glow:${glow.name}`)}
-                    {renderDeleteButton(glow.name, "engine_glow")}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
 
             {/* 5. Render Engine Shapes */}
             {engineShapes.map((shape) => {
