@@ -223,7 +223,7 @@ fn load_hod(file_path: String, keeper_path: Option<String>) -> Result<HODModel, 
 }
 
 #[tauri::command]
-fn save_hod(file_path: String, mut model: HODModel) -> Result<(), String> {
+fn save_hod(file_path: String, model: HODModel) -> Result<(), String> {
     write_log("INFO", &format!("Saving HOD edits to: {}", file_path));
 
     // 1. Read the original HOD file bytes (or use empty if new file)
@@ -245,10 +245,9 @@ fn save_hod(file_path: String, mut model: HODModel) -> Result<(), String> {
         ),
     );
 
-    // 2. Patch HIER and MRKR chunks, and MULT chunks using save_edits
-    // Always use save_edits to preserve the exact original chunk structure, including
-    // skipping CFHodEd-specific NRML wrappers that generate_v2_from_model produces.
-    let patched_bytes = hwr_hod_parser::hod::save_edits(&original_bytes, &model).map_err(|e| {
+    // 2. Generate a fresh HOD 2.0 file from the in-memory model.
+    // As per the architecture rules, we never patch the original file using save_edits.
+    let patched_bytes = hwr_hod_parser::hod::generate_v2_from_model(&original_bytes, &model).map_err(|e| {
         let err_msg = format!("Failed to serialize HOD edits: {}", e);
         write_log("ERROR", &err_msg);
         err_msg
@@ -329,7 +328,7 @@ fn select_save_hod_file(default_name: Option<String>) -> Result<Option<String>, 
 fn save_hod_as(
     source_path: String,
     target_path: String,
-    mut model: HODModel,
+    model: HODModel,
 ) -> Result<(), String> {
     write_log(
         "INFO",
@@ -346,7 +345,7 @@ fn save_hod_as(
         })?
     };
 
-    let patched_bytes = hwr_hod_parser::hod::save_edits(&original_bytes, &model).map_err(|e| {
+    let patched_bytes = hwr_hod_parser::hod::generate_v2_from_model(&original_bytes, &model).map_err(|e| {
         let err_msg = format!("Failed to serialize HOD edits: {}", e);
         write_log("ERROR", &err_msg);
         err_msg

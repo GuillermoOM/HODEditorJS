@@ -3964,9 +3964,9 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
                     z: rz,
                 }),
                 scale: Some(Vector3 {
-                    x: 1.0,
-                    y: 1.0,
-                    z: 1.0,
+                    x: sx,
+                    y: sy,
+                    z: sz,
                 }),
             });
         }
