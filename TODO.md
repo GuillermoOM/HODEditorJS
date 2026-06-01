@@ -58,3 +58,11 @@ For all of the above, have as reference:
 
 - CFHODed repo (for HOD 2.0 file viewer) "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/CFHodEd/" and analyse the .NET UI on what was used to edit everything.
 - DAEnerys repo (for .DAE file viewer and editor except for animations) "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/DAEnerys/"
+
+
+Here are my tests and results: (using `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/ter_zephyrus/`)
+  - FAIL: Opening HOD 2.0 (hodor created) -> Textures look flipped -> saving directly as HOD 2.0 -> Meshes look incomplete, textures look correct, whole ship/model is now pointing toward the forward vector (fixed)
+  - FAIL: Reponening first saved HOD 2.0 file -> Textures look flipped, mesh incomplete, no collision mesh -> saving directly as HOD 2.0 -> Meshes look incomplete (broken) textures look correct, whole ship/model is now pointing toward the forward vector (fixed)
+  - FAIL: Opening HOD 1.0 (ter_zephyrus_1.0.hod) -> Texture look correct, collision mesh loads -> recreate collision mesh from root mesh LOD0 and save as HOD 2.0 -> Mesh is complete, textures look filpped, whole ship/model is rotated away from it's supposed forward vector
+
+All test files here: `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/ter_zephyrus/` 
