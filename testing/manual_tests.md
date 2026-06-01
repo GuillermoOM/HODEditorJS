@@ -199,3 +199,62 @@ Test hod: `ter_zephyrus`
     - Full meshes shown: [x] PASS
     - Correct Ship Orientation: [ ] FAIL - Ship not oriented towards their forward vector
     - All expected nodes working: [ ] FAIL - Although the docking path and points show up on the editor on opening edited, they don't seem to work (no interaction with other ships), maybe compare with HOD 2.0 original?
+
+---
+SHA: `b7644d25f1459e3b6b2324cf7b1bc0bc9cfdfc9b`
+Timestamp: `01/06/2026 15:47`
+Test hod: `ter_zephyrus`
+
+**Goal**: Verify texture path names parsing fix and removal of duplicated collision chunks on save.
+
+2.0 HOD Test:
+
+1. Opened `*_2.0_original.hod` in editor:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+2. Saved as `*_from_2.0_to_2.0.hod`:
+    - No saving errors: [ ] 
+3. Opened `_from_2.0_to_2.0.hod` in editor again:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+4. Loaded `_from_2.0_to_2.0.hod` in game:
+    - No crash on loading: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Correct Ship Orientation: [ ] 
+    - All expected nodes working: [ ] 
+
+1.0 HOD Test:
+
+1. Opened `*_1.0_original.hod` in editor:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+2. Saved as `*_from_1.0_to_2.0.hod`:
+    - No saving errors: [ ] 
+3. Opened `_from_1.0_to_2.0.hod` in editor again:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+4. Loaded `_from_1.0_to_2.0.hod` in game:
+    - No crash on loading: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Correct Ship Orientation: [ ] 
+    - All expected nodes working: [ ] 
