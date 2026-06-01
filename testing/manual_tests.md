@@ -140,8 +140,10 @@ Test hod: `ter_zephyrus`
     - Full meshes shown: [X] PASS
     - Correct Ship Orientation: [ ] FAIL - Ship not looking towards their forward vector
     - All expected nodes working: [ ] FAIL - Due to missing docking paths and points, ships can't dock
+
 ---
----
+
+SHA: `22ea37e51c6a138e61770e6e1a1ab6a747e445ec`
 Timestamp: `01/06/2026 21:30`
 Test hod: `ter_zephyrus`
 
@@ -150,51 +152,50 @@ Test hod: `ter_zephyrus`
 2.0 HOD Test:
 
 1. Opened `*_2.0_original.hod` in editor:
-    - No loading errors: [ ] 
-    - Textures orientation: [ ] 
-    - Textures assigned to correct materials: [ ] 
-    - Full meshes shown: [ ] 
-    - Collision mesh loaded: [ ] 
-    - All expected nodes loaded: [ ] 
+    - No loading errors: [x] PASS 
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
 2. Saved as `*_from_2.0_to_2.0.hod`:
-    - No saving errors: [ ] 
+    - No saving errors: [x] PASS
 3. Opened `_from_2.0_to_2.0.hod` in editor again:
-    - No loading errors: [ ] 
-    - Textures orientation: [ ] 
-    - Textures assigned to correct materials: [ ] 
-    - Full meshes shown: [ ] 
-    - Collision mesh loaded: [ ] 
-    - All expected nodes loaded: [ ] (Please verify docking path nodes are now loaded)
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PARTIAL PASS - I see two COL nodes now, where is this being added? there should be no new node being added at any moment, only load if there is an existing one
+    - All expected nodes loaded: [x ] PASS, docking nodes and points shown
 4. Loaded `_from_2.0_to_2.0.hod` in game:
-    - No crash on loading: [ ] 
-    - Textures orientation: [ ] 
-    - Textures assigned to correct materials: [ ] 
-    - Full meshes shown: [ ] 
-    - Correct Ship Orientation: [ ] 
-    - All expected nodes working: [ ] (Please verify docking works now)
-
+    - No crash on loading: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Correct Ship Orientation: [x] PASS
+    - All expected nodes working: [ ] FAIL - Although the docking path and points show up on the editor on opening edited, they don't seem to work (no interaction with other ships), maybe compare with HOD 2.0 original?
 1.0 HOD Test:
 
 1. Opened `*_1.0_original.hod` in editor:
-    - No loading errors: [ ]
-    - Textures orientation: [ ] 
-    - Textures assigned to correct materials: [ ] 
-    - Full meshes shown: [ ] 
-    - Collision mesh loaded: [ ] 
-    - All expected nodes loaded: [ ] 
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
 2. Saved as `*_from_1.0_to_2.0.hod`:
-    - No saving errors: [ ]
+    - No saving errors: [x] PASS
 3. Opened `_from_1.0_to_2.0.hod` in editor again:
-    - No loading errors: [ ] (This should no longer crash!)
-    - Textures orientation: [ ] 
-    - Textures assigned to correct materials: [ ] 
-    - Full meshes shown: [ ] 
-    - Collision mesh loaded: [ ] 
-    - All expected nodes loaded: [ ] (Please verify docking path nodes are now loaded)
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [ ] FAIL - Some textures are incorrectly assigned, the texture names in dropdown selection also have "G:\GOG.com\zephyrus\" prefix for some reason, while also not having DIFF/GLOW/etc suffix anymore in the name, can't tell which is which. Not a case for the 2.0 HOD file test.
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PARTIAL PASS - I see two COL nodes now, where is this being added? there should be no new node being added at any moment, only load if there is an existing one
+    - All expected nodes loaded: [x ] PASS, docking nodes and points shown
 4. Loaded `_from_1.0_to_2.0.hod` in game:
-    - No crash on loading: [ ] 
-    - Textures orientation: [ ] 
-    - Textures assigned to correct materials: [ ] 
-    - Full meshes shown: [ ] 
-    - Correct Ship Orientation: [ ] 
-    - All expected nodes working: [ ] (Please verify docking works now)
+    - No crash on loading: [x]  PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [ ] FAIL, shown the same way as file opened in editor
+    - Full meshes shown: [x] PASS
+    - Correct Ship Orientation: [ ] FAIL - Ship not oriented towards their forward vector
+    - All expected nodes working: [ ] FAIL - Although the docking path and points show up on the editor on opening edited, they don't seem to work (no interaction with other ships), maybe compare with HOD 2.0 original?

@@ -221,7 +221,6 @@ fn load_tga_texture(path: &Path, name: &str) -> Result<HODTexture, String> {
         png_preview: Some(format!("data:image/png;base64,{}", b64)),
         png_data: Some(b64),
         source_path: None,
-        legacy_storage_y_flipped: false,
     })
 }
 

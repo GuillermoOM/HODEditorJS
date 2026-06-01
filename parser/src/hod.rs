@@ -642,6 +642,7 @@ impl HODModel {
                     );
                     // Data logical structures
                     let mut pending_kdop_collision: Option<HODCollisionMesh> = None;
+                    let mut pending_cold_collision: Option<HODCollisionMesh> = None;
                     for sub_chunk in &chunk.children {
                         println!(
                             "[RUST]       DTRM Sub-chunk: '{}' (size={})",
@@ -1136,25 +1137,7 @@ impl HODModel {
                                     };
                                 let cold_collision = parse_cold()
                                     .map_err(|e| format!("Error in COLD: {}", e))?;
-                                if let Some(mut kdop_collision) = pending_kdop_collision.take() {
-                                    kdop_collision.name = cold_collision.name.clone();
-                                    kdop_collision.mesh.name = "CollisionMesh".to_string();
-                                    kdop_collision.mesh.parent_name = cold_collision.name.clone();
-                                    if cold_collision.mesh.parts.iter().any(|part| {
-                                        !part.vertices.is_empty() && !part.indices.is_empty()
-                                    }) {
-                                        kdop_collision.mesh.parts = cold_collision.mesh.parts;
-                                    }
-                                    if cold_collision.radius > 0.0 {
-                                        kdop_collision.min_extents = cold_collision.min_extents;
-                                        kdop_collision.max_extents = cold_collision.max_extents;
-                                        kdop_collision.center = cold_collision.center;
-                                        kdop_collision.radius = cold_collision.radius;
-                                    }
-                                    collision_meshes.push(kdop_collision);
-                                } else {
-                                    collision_meshes.push(cold_collision);
-                                }
+                                pending_cold_collision = Some(cold_collision);
                             }
                             _ => {
                                 // Preserve unparsed DTRM sub-chunks (KDOP, SCAR, etc.)
@@ -1163,13 +1146,32 @@ impl HODModel {
                         }
                     }
                     if let Some(mut kdop_collision) = pending_kdop_collision.take() {
-                        let root_name = joints
-                            .first()
-                            .map(|j| j.name.clone())
-                            .unwrap_or_else(|| "Root".to_string());
-                        kdop_collision.name = "CollisionMesh".to_string();
-                        kdop_collision.mesh.parent_name = root_name;
+                        if let Some(cold_collision) = pending_cold_collision.take() {
+                            kdop_collision.name = cold_collision.name.clone();
+                            kdop_collision.mesh.name = "CollisionMesh".to_string();
+                            kdop_collision.mesh.parent_name = cold_collision.name.clone();
+                            if cold_collision.mesh.parts.iter().any(|part| {
+                                !part.vertices.is_empty() && !part.indices.is_empty()
+                            }) {
+                                kdop_collision.mesh.parts = cold_collision.mesh.parts;
+                            }
+                            if cold_collision.radius > 0.0 {
+                                kdop_collision.min_extents = cold_collision.min_extents;
+                                kdop_collision.max_extents = cold_collision.max_extents;
+                                kdop_collision.center = cold_collision.center;
+                                kdop_collision.radius = cold_collision.radius;
+                            }
+                        } else {
+                            let root_name = joints
+                                .first()
+                                .map(|j| j.name.clone())
+                                .unwrap_or_else(|| "Root".to_string());
+                            kdop_collision.name = "CollisionMesh".to_string();
+                            kdop_collision.mesh.parent_name = root_name;
+                        }
                         collision_meshes.push(kdop_collision);
+                    } else if let Some(cold_collision) = pending_cold_collision.take() {
+                        collision_meshes.push(cold_collision);
                     }
                 }
                 _ => {
@@ -2578,12 +2580,13 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
     }
 
     let name = if context.is_v2 {
-        format!("{}{}", name_base, format_str)
+        if name_base.ends_with(&format_str) { name_base.clone() } else { format!("{}{}", name_base, format_str) }
     } else {
         // HOD 1.0 names are often full paths (e.g. "G:\GOG.com\centaur\support01.dds"). Extract just the stem.
-        let path = std::path::Path::new(&name_base);
-        let stem = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
-        format!("{}{}", stem, format_str)
+        // std::path::Path::new fails on Linux for Windows paths, so split manually.
+        let file_name = name_base.split('\\').last().unwrap_or(&name_base).split('/').last().unwrap_or(&name_base);
+        let stem = file_name.rsplit_once('.').map(|(s, _)| s).unwrap_or(file_name);
+        if stem.ends_with(&format_str) { stem.to_string() } else { format!("{}{}", stem, format_str) }
     };
     
     let format = format_str;
@@ -5762,7 +5765,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         }
         dtrm_children.push(IffChunk {
             id: "DOCK".to_string(),
-            chunk_type: ChunkType::Normal,
+            chunk_type: ChunkType::Default,
             version: 0,
             data: dock_data,
             children: Vec::new(),
@@ -5770,34 +5773,27 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     }
 
     let dtrm_sub_chunk_ids = ["HIER", "MRKR", "BURN", "NAVL", "MRKS", "DOCK", "COLD", "KDOP", "SCAR", "BNDV", "ETSH", "BSRM", "PATH", "PNTS", "MAD"];
-    let mut has_cold = false;
-    let mut has_kdop = false;
-    for chunk in &model.preserved_chunks {
-        if chunk.id == "DTRM" {
-            for child in &chunk.children {
-                if dtrm_sub_chunk_ids.contains(&child.id.as_str()) {
-                    if child.id == "COLD" {
-                        has_cold = true;
-                    }
-                    if child.id == "KDOP" {
-                        has_kdop = true;
-                    }
-                    dtrm_children.push(child.clone());
+    if let Some(dtrm) = model.preserved_chunks.iter().find(|c| c.id == "DTRM") {
+        for child in &dtrm.children {
+            if dtrm_sub_chunk_ids.contains(&child.id.as_str()) {
+                if child.id == "COLD" || child.id == "KDOP" {
+                    // Do not preserve old collision chunks; they will be regenerated
+                    continue;
                 }
+                dtrm_children.push(child.clone());
             }
-        } else if ["KDOP", "COLD", "SCAR", "BNDV", "ETSH"].contains(&chunk.id.as_str()) {
-            if chunk.id == "COLD" {
-                has_cold = true;
+        }
+    } else {
+        // Handle case where DTRM was not preserved but its children were top-level
+        for chunk in &model.preserved_chunks {
+            if ["SCAR", "BNDV", "ETSH"].contains(&chunk.id.as_str()) {
+                dtrm_children.push(chunk.clone());
             }
-            if chunk.id == "KDOP" {
-                has_kdop = true;
-            }
-            dtrm_children.push(chunk.clone());
         }
     }
 
     // Generate COLD chunk from collision mesh data if not preserved
-    if !has_cold && !model.collision_meshes.is_empty() {
+    if !model.collision_meshes.is_empty() {
         for cm in &model.collision_meshes {
             let mut cold_children = Vec::new();
 
@@ -5882,7 +5878,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         }
     }
 
-    if !has_kdop && !model.collision_meshes.is_empty() {
+    if !model.collision_meshes.is_empty() {
         for cm in &model.collision_meshes {
             if let Some(part) = cm.mesh.parts.first() {
                 let verts: Vec<[f32; 3]> = part
