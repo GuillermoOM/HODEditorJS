@@ -84,6 +84,7 @@ It is an established pattern in this repo for agents to write temporary, throwaw
 4. **Verification**:
    - If UI: Update `docs/ui-source-of-truth/` if behavior fundamentally changed.
    - If Parser: Run `cd parser && cargo run --bin verify_lossless`.
+   - **MANDATORY FOR MANUAL TESTS**: If you modify the binary parser, HOD generation logic, or any feature requiring the user to load/save in the editor and test in-game, you **MUST** document the test snapshot in `testing/manual_tests.md`. Add a new entry to the "Test Runs" section of that file specifying the SHA, Timestamp, the HOD tested, and the expected results (pass/fail for loading, meshes, textures, etc.). This ensures a persistent history of manual verifications to prevent regressions.
 
 ## 6. Pre-Flight Checklist (Preventing Regressions)
 
