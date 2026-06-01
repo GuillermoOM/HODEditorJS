@@ -1,10 +1,10 @@
-use hwr_hod_parser::hod::{HODModel, save_edits};
+use hwr_hod_parser::hod::{HODModel, save_edits, generate_v2_from_model};
 use std::fs;
 
 fn main() {
-    let hod_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/ter_zephyrus/ter_zephyrus_2.0_original.hod";
+    let hod_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/ter_zephyrus/ter_zephyrus_1.0_original.hod";
     
-    println!("=== Loading ter_zephyrus_2.0_original.hod ===\n");
+    println!("=== Loading ter_zephyrus_1.0_original.hod ===\n");
     
     let hod_bytes = fs::read(hod_path).expect("Failed to read HOD file");
     let model = HODModel::parse(&hod_bytes).expect("Failed to parse HOD");
@@ -12,27 +12,24 @@ fn main() {
     println!("\n=== Parse Complete ===");
     println!("Textures: {}", model.textures.len());
     for (i, tex) in model.textures.iter().enumerate() {
-        println!("  Texture {}: {} ({}x{}, {}, preview={}, data={})", 
-                i, tex.name, tex.width, tex.height, tex.format,
-                tex.png_preview.is_some(), tex.png_data.is_some());
+        println!("  Texture {}: {} ({}x{}, {})", 
+                i, tex.name, tex.width, tex.height, tex.format);
+    }
+    println!("Materials: {}", model.materials.len());
+    for (i, mat) in model.materials.iter().enumerate() {
+        println!("  Material {}: {} ({}) -> {:?}", i, mat.name, mat.shader_name, mat.texture_maps);
     }
     
-    println!("\n=== Saving as HOD 2.0 ===\n");
-    let output_bytes = save_edits(&hod_bytes, &model).expect("Failed to save");
-    
-    println!("\n=== Save Complete ===");
-    println!("Output size: {} bytes", output_bytes.len());
-    
-    let output_path = "/tmp/ter_zephyrus_debug_output.hod";
-    fs::write(output_path, &output_bytes).expect("Failed to write output");
-    println!("Written to: {}", output_path);
-    
-    println!("\n=== Re-parsing output ===\n");
-    let reparsed = HODModel::parse(&output_bytes).expect("Failed to reparse");
-    println!("Re-parsed textures: {}", reparsed.textures.len());
+    println!("\n=== Generating HOD 2.0 bytes ===");
+    let out_bytes = generate_v2_from_model(&[], &model).expect("Failed");
+    let reparsed = HODModel::parse(&out_bytes).expect("Failed to reparse");
+    println!("Reparsed Textures: {}", reparsed.textures.len());
     for (i, tex) in reparsed.textures.iter().enumerate() {
-        println!("  Texture {}: {} ({}x{}, {}, preview={}, data={})", 
-                i, tex.name, tex.width, tex.height, tex.format,
-                tex.png_preview.is_some(), tex.png_data.is_some());
+        println!("  Texture {}: {} ({}x{}, {})", 
+                i, tex.name, tex.width, tex.height, tex.format);
+    }
+    println!("Reparsed Materials: {}", reparsed.materials.len());
+    for (i, mat) in reparsed.materials.iter().enumerate() {
+        println!("  Material {}: {} ({}) -> {:?}", i, mat.name, mat.shader_name, mat.texture_maps);
     }
 }

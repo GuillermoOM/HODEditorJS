@@ -58,14 +58,3 @@ For all of the above, have as reference:
 
 - CFHODed repo (for HOD 2.0 file viewer) "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/CFHodEd/" and analyse the .NET UI on what was used to edit everything.
 - DAEnerys repo (for .DAE file viewer and editor except for animations) "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/DAEnerys/"
-
-
-Here are my tests and results: (using files in `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/ter_zephyrus/`) (compare with ter_zephyrus_2.0_original.hod being the correct hod)
-  - FAIL: Opening HOD 2.0 ter_zephyrus_2.0_original.hod (hodor created) -> all textures look flipped (in correct materials), collision mesh loaded/shown on editor -> saving directly as HOD 2.0 (ter_zephyrus_from_2.0_to_2.0.hod) -> Meshes look complete, textures look correct, whole ship/model is rotated away from it's supposed forward vector
-  - FAIL: Opening HOD 1.0 (ter_zephyrus_1.0.hod) -> All textures look flipped (in correct materials), collision mesh loads -> recreate collision mesh from root mesh LOD0 and save as HOD 2.0 (ter_zephyrus_from_1.0_to_2.0.hod) -> Mesh look complete, textures got assigned to the wrong materials, whole ship/model is rotated away from it's supposed forward vector 
-
-I noticed that the wrong textures were being loaded and assigned to unrelated materials at some point, not the case currently, it wasn't that one texture wasn't flipped, it was more that the rest of the textures were in the wrong materials
-
-We have regressed, compare to the first set of test results presented:
-- FAIL: Opening HOD 2.0 (hodor created) -> Textures look flipped -> saving directly as HOD 2.0 -> Meshes look incomplete, textures look correct, whole ship/model is now pointing toward the forward vector (fixed) 
-- FAIL: Opening HOD 1.0 (ter_zephyrus_1.0.hod) -> Texture look correct, collision mesh loads -> recreate collision mesh from root mesh LOD0 and save as HOD 2.0 -> Mesh is complete, textures look filpped, whole ship/model is rotated away from it's supposed forward vector 

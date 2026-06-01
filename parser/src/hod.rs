@@ -2660,11 +2660,9 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
     let mut png_data = None;
 
     if let Some(mut rgba) = decoded_rgba {
-        // HOD 2.0 textures are stored flipped in the DXT stream (DirectX convention).
+        // All HOD textures (1.0 and 2.0) are stored flipped in the DXT stream (DirectX convention).
         // Un-flip them here so the editor UI preview shows them correctly.
-        if context.is_v2 {
-            flip_rgba_vertical_in_place(&mut rgba, width, height);
-        }
+        flip_rgba_vertical_in_place(&mut rgba, width, height);
         png_preview = encode_b64_png_thumbnail(&rgba, width, height, 128);
         png_data = encode_b64_png_thumbnail(&rgba, width, height, 1024);
     }
@@ -5295,33 +5293,13 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         extracted_pool_type = 3518;
     }
 
-    // For v1, mesh data is inline in BMSH chunks; generate empty pool
-    // For v2, mesh data goes into the POOL chunk
-    let mut pool_data = if !model.is_v2 {
-        // V1: empty mesh/face pools (data is inline)
-        let mut pool_buf = Vec::new();
-        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // pool_type
-        pool_buf
-            .write_u32::<LittleEndian>(comp_tex_buf.len() as u32)
-            .unwrap();
-        pool_buf
-            .write_u32::<LittleEndian>(decomp_tex_len_val)
-            .unwrap();
-        pool_buf.extend_from_slice(&comp_tex_buf);
-        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // comp_mesh_len = 0
-        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // decomp_mesh_len = 0
-        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // comp_face_len = 0
-        pool_buf.write_u32::<LittleEndian>(0).unwrap(); // decomp_face_len = 0
-        pool_buf
-    } else {
-        crate::compiler::generate_pool_data(
-            &compiled,
-            &comp_tex_buf,
-            decomp_tex_len_val,
-            extracted_pool_type,
-        )
-        .map_err(|e| e.to_string())?
-    };
+    let mut pool_data = crate::compiler::generate_pool_data(
+        &compiled,
+        &comp_tex_buf,
+        decomp_tex_len_val,
+        extracted_pool_type,
+    )
+    .map_err(|e| e.to_string())?;
 
     let has_preserved_collision_chunks = model.preserved_chunks.iter().any(|chunk| {
         chunk.id == "KDOP"
@@ -5693,13 +5671,111 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         });
     }
 
-    let dtrm_sub_chunk_ids = ["HIER", "MRKR", "BURN", "NAVL", "MRKS"];
+    if !model.dockpaths.is_empty() {
+        let mut dock_data = Vec::new();
+        dock_data
+            .write_u32::<LittleEndian>(model.dockpaths.len() as u32)
+            .map_err(|e| e.to_string())?;
+        for path in &model.dockpaths {
+            write_len_string(&mut dock_data, &path.name)?;
+            write_len_string(&mut dock_data, &path.parent_name)?;
+            dock_data
+                .write_u32::<LittleEndian>(path.val1)
+                .map_err(|e| e.to_string())?;
+            dock_data
+                .write_u32::<LittleEndian>(path.val2)
+                .map_err(|e| e.to_string())?;
+            dock_data
+                .write_u32::<LittleEndian>(path.val3)
+                .map_err(|e| e.to_string())?;
+            dock_data
+                .write_u32::<LittleEndian>(path.val4)
+                .map_err(|e| e.to_string())?;
+            dock_data
+                .write_u32::<LittleEndian>(path.val5)
+                .map_err(|e| e.to_string())?;
+            write_len_string(&mut dock_data, &path.compatible_ships)?;
+            dock_data
+                .write_u32::<LittleEndian>(path.padding1)
+                .map_err(|e| e.to_string())?;
+            dock_data
+                .write_u32::<LittleEndian>(path.padding2)
+                .map_err(|e| e.to_string())?;
+            dock_data
+                .write_i32::<LittleEndian>(path.points.len() as i32)
+                .map_err(|e| e.to_string())?;
+
+            for pt in &path.points {
+                dock_data
+                    .write_f32::<LittleEndian>(pt.position.x)
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.position.y)
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.position.z)
+                    .map_err(|e| e.to_string())?;
+
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[0][0])
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[0][1])
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[0][2])
+                    .map_err(|e| e.to_string())?;
+
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[1][0])
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[1][1])
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[1][2])
+                    .map_err(|e| e.to_string())?;
+
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[2][0])
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[2][1])
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.rotation.m[2][2])
+                    .map_err(|e| e.to_string())?;
+
+                dock_data
+                    .write_f32::<LittleEndian>(pt.tolerance)
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_f32::<LittleEndian>(pt.max_speed)
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_u32::<LittleEndian>(pt.extra1)
+                    .map_err(|e| e.to_string())?;
+                dock_data
+                    .write_u32::<LittleEndian>(pt.extra2)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        dtrm_children.push(IffChunk {
+            id: "DOCK".to_string(),
+            chunk_type: ChunkType::Normal,
+            version: 0,
+            data: dock_data,
+            children: Vec::new(),
+        });
+    }
+
+    let dtrm_sub_chunk_ids = ["HIER", "MRKR", "BURN", "NAVL", "MRKS", "DOCK", "COLD", "KDOP", "SCAR", "BNDV", "ETSH", "BSRM", "PATH", "PNTS", "MAD"];
     let mut has_cold = false;
     let mut has_kdop = false;
     for chunk in &model.preserved_chunks {
         if chunk.id == "DTRM" {
             for child in &chunk.children {
-                if !dtrm_sub_chunk_ids.contains(&child.id.as_str()) {
+                if dtrm_sub_chunk_ids.contains(&child.id.as_str()) {
                     if child.id == "COLD" {
                         has_cold = true;
                     }
@@ -5939,11 +6015,11 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
         };
         // If no POOL or empty original, generate from scratch
         if !has_pool || original_bytes.is_empty() {
-            return generate_v2_from_model(original_bytes, updated_model);
+            return generate_v2_from_model(&[], updated_model);
         }
     }
     if original_needs_full_v2_regeneration(original_bytes, updated_model) {
-        return generate_v2_from_model(original_bytes, updated_model);
+        return generate_v2_from_model(&[], updated_model);
     }
 
     let mut chunks = Vec::new();
