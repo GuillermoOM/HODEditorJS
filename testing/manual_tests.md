@@ -873,17 +873,17 @@ Automated checks:
 1.0 HOD Manual Retest:
 
 1. Opened `ter_fenris_1.0_original.hod` in editor:
-    - No loading errors: [ ]
-    - Textures orientation: [ ]
-    - Textures assigned to correct materials: [ ]
-    - Full meshes shown: [ ]
-    - Collision mesh loaded: [ ]
-    - All expected nodes loaded: [ ]
-    - Animations loading: [ ]
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+    - Animations loading: [x] PASS
 2. Opened `ter_centaur_1.0_original.hod` in editor:
-    - DXT1 textures loaded correctly: [ ]
-    - DXT5 transparent material loaded correctly: [ ]
-    - Material `(none)` slot remains untextured: [ ]
+    - DXT1 textures loaded correctly: [x] PASS
+    - DXT5 transparent material loaded correctly: [x] PASS
+    - Material `(none)` slot remains untextured: [x] PASS
 3. Opened HOD 1.0 `ter_leviathan.hod` from uncompressed_bigs in editor:
-    - DXT5 `leviathan DIFF` loaded correctly: [ ]
-    - Textures orientation: [ ]
+    - DXT5 `leviathan DIFF` loaded correctly: [x] PASS
+    - Textures orientation: [x] PASS
