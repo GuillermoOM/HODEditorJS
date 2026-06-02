@@ -1,0 +1,264 @@
+    Checking hwr_hod_parser v0.1.0 (/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/parser)
+warning: unused import: `std::io::Write`
+ --> src/kdop.rs:2:5
+  |
+2 | use std::io::Write;
+  |     ^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0599]: no method named `upgrade_v1_to_v2` found for struct `hod::HODModel` in the current scope
+    --> src/hod.rs:1409:19
+     |
+ 207 | pub struct HODModel {
+     | ------------------- method `upgrade_v1_to_v2` not found for this struct
+...
+1409 |             model.upgrade_v1_to_v2();
+     |                   ^^^^^^^^^^^^^^^^ method not found in `hod::HODModel`
+
+warning: use of deprecated method `image::codecs::png::PngEncoder::<W>::encode`: Use `PngEncoder::write_image` instead. Beware that `write_image` has a different endianness convention
+    --> src/hod.rs:2522:72
+     |
+2522 |     if let Ok(_) = image::codecs::png::PngEncoder::new(&mut png_bytes).encode(
+     |                                                                        ^^^^^^
+     |
+     = note: `#[warn(deprecated)]` on by default
+
+warning: unused variable: `triangles`
+   --> src/dae.rs:293:29
+    |
+293 |                         for triangles in mesh
+    |                             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_triangles`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `is_v2`
+    --> src/hod.rs:2807:5
+     |
+2807 |     is_v2: bool,
+     |     ^^^^^ help: if this is intentional, prefix it with an underscore: `_is_v2`
+
+warning: value assigned to `rx` is never read
+    --> src/hod.rs:3850:18
+     |
+3850 |     let mut rx = 0.0;
+     |                  ^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `ry` is never read
+    --> src/hod.rs:3851:18
+     |
+3851 |     let mut ry = 0.0;
+     |                  ^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `rz` is never read
+    --> src/hod.rs:3852:18
+     |
+3852 |     let mut rz = 0.0;
+     |                  ^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: variable `original_comp_mesh_buf` is assigned to, but never used
+    --> src/hod.rs:5207:9
+     |
+5207 |     let mut original_comp_mesh_buf = Vec::new();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_comp_mesh_buf` instead
+
+warning: variable `original_decomp_mesh_len_val` is assigned to, but never used
+    --> src/hod.rs:5208:9
+     |
+5208 |     let mut original_decomp_mesh_len_val = 0u32;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_decomp_mesh_len_val` instead
+
+warning: variable `original_comp_face_buf` is assigned to, but never used
+    --> src/hod.rs:5209:9
+     |
+5209 |     let mut original_comp_face_buf = Vec::new();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_comp_face_buf` instead
+
+warning: variable `original_decomp_face_len_val` is assigned to, but never used
+    --> src/hod.rs:5210:9
+     |
+5210 |     let mut original_decomp_face_len_val = 0u32;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_decomp_face_len_val` instead
+
+warning: variable `original_mesh_pool_preserved` is assigned to, but never used
+    --> src/hod.rs:5211:9
+     |
+5211 |     let mut original_mesh_pool_preserved = false;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_mesh_pool_preserved` instead
+
+warning: value assigned to `original_comp_mesh_buf` is never read
+    --> src/hod.rs:5235:45
+     |
+5235 | ...                   original_comp_mesh_buf = comp_mesh;
+     |                       ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_decomp_mesh_len_val` is never read
+    --> src/hod.rs:5236:45
+     |
+5236 | ...                   original_decomp_mesh_len_val = dm_len;
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_comp_face_buf` is never read
+    --> src/hod.rs:5244:53
+     |
+5244 | ...                   original_comp_face_buf = comp_face;
+     |                       ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_decomp_face_len_val` is never read
+    --> src/hod.rs:5245:53
+     |
+5245 | ...                   original_decomp_face_len_val = df_len;
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_mesh_pool_preserved` is never read
+    --> src/hod.rs:5246:53
+     |
+5246 | ...                   original_mesh_pool_preserved = true;
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: variable `original_comp_mesh` is assigned to, but never used
+    --> src/hod.rs:6098:9
+     |
+6098 |     let mut original_comp_mesh = Vec::new();
+     |         ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_comp_mesh` instead
+
+warning: variable `original_decomp_mesh_len` is assigned to, but never used
+    --> src/hod.rs:6099:9
+     |
+6099 |     let mut original_decomp_mesh_len = 0;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_decomp_mesh_len` instead
+
+warning: variable `original_comp_face` is assigned to, but never used
+    --> src/hod.rs:6100:9
+     |
+6100 |     let mut original_comp_face = Vec::new();
+     |         ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_comp_face` instead
+
+warning: variable `original_decomp_face_len` is assigned to, but never used
+    --> src/hod.rs:6101:9
+     |
+6101 |     let mut original_decomp_face_len = 0;
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_decomp_face_len` instead
+
+warning: variable `original_texture_pool` is assigned to, but never used
+    --> src/hod.rs:6103:9
+     |
+6103 |     let mut original_texture_pool = Vec::new();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_original_texture_pool` instead
+
+warning: value assigned to `original_comp_mesh` is never read
+    --> src/hod.rs:6134:45
+     |
+6134 | ...                   original_comp_mesh = comp_mesh.clone();
+     |                       ^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_decomp_mesh_len` is never read
+    --> src/hod.rs:6135:45
+     |
+6135 | ...                   original_decomp_mesh_len = decomp_mesh_len;
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_comp_face` is never read
+    --> src/hod.rs:6153:45
+     |
+6153 | ...                   original_comp_face = comp_face.clone();
+     |                       ^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_decomp_face_len` is never read
+    --> src/hod.rs:6154:45
+     |
+6154 | ...                   original_decomp_face_len = decomp_face_len;
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_texture_pool` is never read
+    --> src/hod.rs:6125:41
+     |
+6125 | ...                   original_texture_pool = decomp_tex;
+     |                       ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `original_texture_pool` is never read
+    --> src/hod.rs:6121:41
+     |
+6121 | ...                   original_texture_pool = comp_tex.clone();
+     |                       ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: unused variable: `start_time`
+    --> src/hod.rs:7316:13
+     |
+7316 |         let start_time = r_mark
+     |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: variable `used_le` is assigned to, but never used
+  --> src/iff.rs:38:13
+   |
+38 |         let mut used_le = false;
+   |             ^^^^^^^^^^^
+   |
+   = note: consider using `_used_le` instead
+
+warning: value assigned to `used_le` is never read
+  --> src/iff.rs:41:13
+   |
+41 |             used_le = true;
+   |             ^^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: unused variable: `next_offset`
+   --> src/xpress.rs:257:30
+    |
+257 |                 if let Some((next_offset, next_length, _)) = match_at[input_idx + 1] {
+    |                              ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_next_offset`
+
+For more information about this error, try `rustc --explain E0599`.
+warning: `hwr_hod_parser` (lib) generated 32 warnings
+error: could not compile `hwr_hod_parser` (lib) due to 1 previous error; 32 warnings emitted

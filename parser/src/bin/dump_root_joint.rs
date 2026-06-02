@@ -1,18 +1,16 @@
 use hwr_hod_parser::hod::HODModel;
-use std::env;
+use std::fs;
+
+fn dump_root(path: &str) {
+    let bytes = fs::read(path).unwrap();
+    let m = HODModel::parse(&bytes).unwrap();
+    let root = &m.joints[0];
+    println!("File: {}", path);
+    println!("  Root: {}", root.name);
+    println!("  local_transform: {:?}", root.local_transform);
+}
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let bytes = std::fs::read(&args[1]).unwrap();
-    let model = HODModel::parse(&bytes).unwrap();
-    if let Some(root) = model.joints.first() {
-        println!("Root Joint: {}", root.name);
-        println!("Pos: {:?}", root.position);
-        println!("Rot: {:?}", root.rotation);
-        println!("Scl: {:?}", root.scale);
-        println!("Transform:");
-        for row in &root.local_transform.m {
-            println!("  {:?}", row);
-        }
-    }
+    dump_root("../testing/ter_zephyrus/ter_zephyrus_1.0_original.hod");
+    dump_root("../testing/ter_zephyrus/ter_zephyrus_2.0_original.hod");
 }
