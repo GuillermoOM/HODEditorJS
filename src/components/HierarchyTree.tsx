@@ -2762,9 +2762,10 @@ const handleDeleteNode = (name: string, type: string) => {
               <div>
                 <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "8px", paddingLeft: "8px" }}>Materials</div>
                 {model.materials && model.materials.length > 0 ? (
-                  model.materials
-                    .filter(m => !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase()) || m.shader_name.toLowerCase().includes(searchTerm.toLowerCase()))
-                    .map((material, idx) => {
+                  <>
+                    {model.materials
+                      .filter(m => !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase()) || m.shader_name.toLowerCase().includes(searchTerm.toLowerCase()))
+                      .map((material, idx) => {
                       const isMatSelected = selectedNode?.type === "material" && selectedNode.name === material.name;
                       return (
                         <div
@@ -2788,7 +2789,8 @@ const handleDeleteNode = (name: string, type: string) => {
                           </div>
                         </div>
                       );
-                    })
+                    })}
+                  </>
                 ) : (
                   <div style={{ padding: "10px", color: "var(--text-muted)", fontSize: "12px", textAlign: "center" }}>
                     No materials defined.
@@ -2807,10 +2809,11 @@ const handleDeleteNode = (name: string, type: string) => {
                 </div>
                 {model.textures && model.textures.length > 0 ? (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4px" }}>
-                    {model.textures
-                      .filter(t => !searchTerm || t.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                      .map((texture, idx) => (
-                        <div
+                    <>
+                      {model.textures
+                        .filter(t => !searchTerm || t.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                        .map((texture, idx) => (
+                          <div
                           key={texture.name + "_" + idx}
                           onContextMenu={(e) => {
                             e.preventDefault();
@@ -2850,6 +2853,7 @@ const handleDeleteNode = (name: string, type: string) => {
                           </div>
                         </div>
                       ))}
+                    </>
                   </div>
                 ) : (
                   <div style={{ padding: "10px", color: "var(--text-muted)", fontSize: "12px", textAlign: "center" }}>
@@ -2860,15 +2864,17 @@ const handleDeleteNode = (name: string, type: string) => {
             </div>
           ) : activeTab === "animations" ? (
             model.animations && model.animations.length > 0 ? (
-              model.animations
-                .filter(a => !searchTerm || a.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                .map((anim, animIdx) => {
-                  const isActive = animIdx === selectedAnimIdx;
-                  return (
-                    <div
-                      key={anim.name}
-                      className={`list-item ${isActive ? "active" : ""}`}
-                      onClick={() => setSelectedAnimIdx(animIdx)}
+              <>
+                {model.animations
+                  .filter(a => !searchTerm || a.name.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .map((anim) => {
+                    const animIdx = model.animations!.indexOf(anim);
+                    const isActive = animIdx === selectedAnimIdx;
+                    return (
+                      <div
+                        key={anim.name}
+                        className={`list-item ${isActive ? "active" : ""}`}
+                        onClick={() => setSelectedAnimIdx(animIdx)}
                       style={{
                         padding: "10px 12px",
                         display: "flex",
@@ -2929,9 +2935,10 @@ const handleDeleteNode = (name: string, type: string) => {
                           ))}
                         </div>
                       )}
-                    </div>
-                  );
-                })
+                      </div>
+                    );
+                  })}
+              </>
             ) : (
               <div style={{ padding: "30px 20px", color: "var(--text-muted)", fontSize: "13px", textAlign: "center", display: "flex", flexDirection: "column", gap: "10px", alignItems: "center" }}>
                 <Activity size={24} style={{ color: "var(--border-color)", opacity: 0.5 }} />

@@ -1378,7 +1378,6 @@ function App() {
           selectedAnimIdx={selectedAnimIdx}
           visibleMeshes={visibleMeshes}
           onToggleVisibility={handleToggleVisibility}
-          onConfigureShaders={selectAndSaveKeeperPath}
           setIsLoading={setIsLoading}
           setStatusMsg={setStatusMsg}
         />

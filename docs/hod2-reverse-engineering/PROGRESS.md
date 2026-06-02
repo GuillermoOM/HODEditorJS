@@ -686,3 +686,12 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
   1. Reverted the `0.01` positional downscaling across all meshes and collision vectors in `upgrade_v1_to_v2`. The method now strictly only zeros the `joint.scale` bounds to satisfy HWRM gimbal limits.
   2. Removed `STAT` and `MATT` chunk extraction entirely. `generate_v2_from_model` now dynamically rebuilds `STAT` chunks correctly out of `model.materials`, ensuring the user dropdown overrides are respected on save, successfully restoring the lost `Miner01-02` matte material natively!
 * **Next Steps**: Await user testing of the newly corrected HOD 1.0 -> 2.0 conversion scaling.
+
+## 2026-06-02: React Animation/Material Unmount Crash Fix
+* **What failed**: Deleting the final animation in the Animation Dock or filtering materials/textures caused the editor to crash with `[Error] NotFoundError: The object can not be found here` in the console. 
+* **Root Cause**: In `HierarchyTree.tsx`, conditionally rendering an array returned by `.map` in a ternary operator and then switching to a single React element (e.g. `<div>No animations loaded</div>`) without a `<Fragment>` wrapper triggered a known React reconciling bug where `removeChild` attempts to delete an unmounted node. Furthermore, `animIdx` passed to `setSelectedAnimIdx` used the index of the *filtered* array, causing the wrong animation to be deleted when the user used the search bar.
+* **What was fixed**:
+  1. Wrapped the `.map` returned arrays for `animations`, `materials`, and `textures` strictly inside `<>` fragment wrappers. This preserves the React rendering boundary and allows safely transitioning to single fallback nodes when the arrays are emptied out.
+  2. Fixed the animation selection logic to fetch the *true* array index (`model.animations!.indexOf(anim)`) instead of the filter iterator's index.
+  3. Cleaned up an orphaned `onConfigureShaders` prop in `App.tsx` that caused a minor build TS error.
+* **Next Steps**: Await user confirmation for in-game testing of the latest changes.
