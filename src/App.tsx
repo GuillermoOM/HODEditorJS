@@ -163,31 +163,7 @@ function App() {
     }
   };
 
-  // Open native OS file selector dialog for keeper.txt
-  const selectAndSaveKeeperPath = async () => {
-    try {
-      const selectedPath = await invoke<string | null>("select_keeper_file");
-      if (selectedPath) {
-        let dirPath = selectedPath;
-        if (selectedPath.toLowerCase().endsWith("keeper.txt")) {
-          dirPath = selectedPath.substring(0, selectedPath.toLowerCase().lastIndexOf("keeper.txt"));
-          if (dirPath.endsWith("/") || dirPath.endsWith("\\")) {
-            dirPath = dirPath.substring(0, dirPath.length - 1);
-          }
-        }
-        if (!keeperTxtPaths.includes(dirPath)) {
-          const updated = [...keeperTxtPaths, dirPath];
-          setKeeperTxtPaths(updated);
-          await invoke("save_shader_config", { config: { shader_directories: updated } });
-        }
-        setStatusMsg("Successfully linked and persisted uncompressed directory!");
-      }
-    } catch (e: any) {
-      const err = "Failed to select keeper.txt file: " + e.toString();
-      invoke("log_event", { level: "ERROR", message: err }).catch(console.error);
-      setStatusMsg("Keeper browser error");
-    }
-  };
+
 
   const resetUIState = () => {
     setModel(null);
@@ -987,7 +963,7 @@ function App() {
             <div style={{ position: "relative", width: "100%", height: "100%", flex: 1, minHeight: 0 }}>
               {keeperTxtPaths.length === 0 && (
                 <div
-                  onClick={selectAndSaveKeeperPath}
+                  onClick={() => setIsSettingsOpen(true)}
                   style={{
                     position: "absolute",
                     top: "12px",
@@ -1008,10 +984,10 @@ function App() {
                     cursor: "pointer",
                     userSelect: "none"
                   }}
-                  title="Click to select keeper.txt and set your game data directory"
+                  title="Click to open Settings and configure your game data directories"
                 >
                   <AlertTriangle size={14} style={{ color: "#ffb74d" }} />
-                  <span>Uncompressed .big path is not set. Click here to configure.</span>
+                  <span>Game data directories are not set. Click here to configure.</span>
                 </div>
               )}
 

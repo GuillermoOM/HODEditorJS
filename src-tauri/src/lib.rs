@@ -23,10 +23,7 @@ pub fn write_log(level: &str, message: &str) {
     let path = match log_path {
         Some(p) => p,
         None => {
-            let mut p = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|parent| parent.to_path_buf()))
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            let mut p = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             p.push("hwr_hod_editor.log");
             p
         }
@@ -390,15 +387,23 @@ fn save_hod_as(
     Ok(())
 }
 
-fn get_config_path() -> PathBuf {
-    let exe_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
-    let exe_dir = exe_path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    exe_dir.join("hod_editor_config.json")
+fn get_config_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let config_dir = app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Could not get app config directory: {}", e))?;
+        
+    if !config_dir.exists() {
+        fs::create_dir_all(&config_dir)
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    }
+    
+    Ok(config_dir.join("hod_editor_config.json"))
 }
 
 #[tauri::command]
-fn load_shader_config() -> Result<ShaderConfig, String> {
-    let config_path = get_config_path();
+fn load_shader_config(app_handle: tauri::AppHandle) -> Result<ShaderConfig, String> {
+    let config_path = get_config_path(&app_handle)?;
     if config_path.exists() {
         let data = fs::read_to_string(&config_path)
             .map_err(|e| format!("Failed to read config: {}", e))?;
@@ -410,8 +415,8 @@ fn load_shader_config() -> Result<ShaderConfig, String> {
 }
 
 #[tauri::command]
-fn save_shader_config(config: ShaderConfig) -> Result<(), String> {
-    let config_path = get_config_path();
+fn save_shader_config(app_handle: tauri::AppHandle, config: ShaderConfig) -> Result<(), String> {
+    let config_path = get_config_path(&app_handle)?;
     let data = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
     fs::write(&config_path, data)
@@ -719,15 +724,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // Get directory next to the application executable
-            let mut log_dir = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|parent| parent.to_path_buf()))
-                .unwrap_or_else(|| {
-                    app.path().app_log_dir().unwrap_or_else(|_| {
-                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-                    })
-                });
+            // Get directory for logs (will be ~/.config/com.gbx.hodeditorjs/logs on Linux, AppData on Windows)
+            let mut log_dir = app.path().app_log_dir().unwrap_or_else(|_| {
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+            });
             let _ = fs::create_dir_all(&log_dir);
             log_dir.push("hwr_hod_editor.log");
 
