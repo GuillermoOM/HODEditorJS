@@ -1295,7 +1295,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         // Update model state
         const updatedJoints = model.joints.map((j) => {
           if (j.name === joint.name) {
-            return { ...j, local_transform: { m: nextMatrix } };
+            return { ...j, local_transform: { m: nextMatrix }, rotation: newRot };
           }
           return j;
         });

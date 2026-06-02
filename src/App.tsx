@@ -740,14 +740,14 @@ function App() {
   const handleNodeTransform = (name: string, type: string, pos: Vector3D) => {
     if (!model) return;
 
-    if (type === "joint") {
+    if (type === "joint" || type === "engine_nozzle") {
       const updatedJoints = model.joints.map((joint) => {
         if (joint.name === name) {
           const m = joint.local_transform.m.map(row => [...row]);
           m[3][0] = pos.x;
           m[3][1] = pos.y;
           m[3][2] = pos.z;
-          return { ...joint, local_transform: { m } };
+          return { ...joint, local_transform: { m }, position: pos };
         }
         return joint;
       });
@@ -768,7 +768,7 @@ function App() {
           m[3][0] = pos.x;
           m[3][1] = pos.y;
           m[3][2] = pos.z;
-          return { ...joint, local_transform: { m } };
+          return { ...joint, local_transform: { m }, position: pos };
         }
         return joint;
       });
@@ -780,7 +780,7 @@ function App() {
           m[3][0] = pos.x;
           m[3][1] = pos.y;
           m[3][2] = pos.z;
-          return { ...joint, local_transform: { m } };
+          return { ...joint, local_transform: { m }, position: pos };
         }
         return joint;
       });
