@@ -779,58 +779,73 @@ Test hod: `ter_fenris`
 
 2.0 HOD Test:
 
-1. Opened `*_2.0_original.hod` via parser semantic dump:
+1. Opened `*_2.0_original.hod` in editor:
     - No loading errors: [x] PASS
-    - Companion MAD found from normalized stem: [x] PASS - `ter_fenris_2.0_original.hod` found `ter_fenris.mad`
-    - Animations loaded: [x] PASS - `Loaded 1 animations from companion MAD file.`
-    - Textures orientation: [ ] PENDING - manual editor check required
-    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
-    - Full meshes shown: [ ] PENDING - manual editor check required
-    - Collision mesh loaded: [ ] PENDING - manual editor check required
-    - All expected nodes loaded: [ ] PENDING - manual editor check required
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+    - Animations loading: [x] PASS
 2. Removed Extra LODs (left LOD0), Saved as `*_from_2.0_to_2.0.hod`:
-    - No saving errors: [ ] PENDING - manual editor check required
+    - No saving errors: [x] PASS
 3. Opened `_from_2.0_to_2.0.hod` in editor again:
-    - No loading errors: [ ] PENDING - manual editor check required
-    - Animations loaded: [ ] PENDING - manual editor check required
-    - Textures orientation: [ ] PENDING - manual editor check required
-    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
-    - Full meshes shown: [ ] PENDING - manual editor check required
-    - Collision mesh loaded: [ ] PENDING - manual editor check required
-    - All expected nodes loaded: [ ] PENDING - manual editor check required
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+    - Animations Loading: [x] PASS
 4. Loaded `_from_2.0_to_2.0.hod` in game:
-    - No crash on loading: [ ] PENDING - manual game check required
-    - Textures orientation: [ ] PENDING - manual game check required
-    - Textures assigned to correct materials: [ ] PENDING - manual game check required
-    - Full meshes shown: [ ] PENDING - manual game check required
-    - Correct Ship Orientation: [ ] PENDING - manual game check required
-    - All expected nodes working: [ ] PENDING - manual game check required
+    - No crash on loading: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Correct Ship Orientation: [x] PASS
+    - All expected nodes working: [x] PASS
+    - Animations Loading: [x] PASS
 
 1.0 HOD Test:
 
-1. Opened `*_1.0_original.hod` via parser semantic dump:
+1. Opened `*_1.0_original.hod` in editor:
     - No loading errors: [x] PASS
-    - Companion MAD found from normalized stem: [x] PASS - `ter_fenris_1.0_original.hod` found `ter_fenris.mad`
-    - Animations loaded: [x] PASS - `Loaded 1 animations from companion MAD file.`
-    - Textures orientation: [ ] PENDING - manual editor check required
-    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
-    - Full meshes shown: [ ] PENDING - manual editor check required
-    - Collision mesh loaded: [ ] PENDING - manual editor check required
-    - All expected nodes loaded: [ ] PENDING - manual editor check required
+    - Textures orientation: [ ] FAILED - Textures loaded y flipped
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+    - Animations loading: [x] PASS
 2. Removed Extra LODs (left LOD0), Saved as `*_from_1.0_to_2.0.hod`:
-    - No saving errors: [ ] PENDING - manual editor check required
+    - No saving errors: [x] PASS
 3. Opened `_from_1.0_to_2.0.hod` in editor again:
-    - No loading errors: [ ] PENDING - manual editor check required
-    - Animations loaded: [ ] PENDING - manual editor check required
-    - Textures orientation: [ ] PENDING - manual editor check required
-    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
-    - Full meshes shown: [ ] PENDING - manual editor check required
-    - Collision mesh loaded: [ ] PENDING - manual editor check required
-    - All expected nodes loaded: [ ] PENDING - manual editor check required
+    - No loading errors: [ ]
+    - Textures orientation: [ ]
+    - Textures assigned to correct materials: [ ]
+    - Full meshes shown: [ ]
+    - Collision mesh loaded: [ ]
+    - All expected nodes loaded: [ ]
+    - Animations Loading: [ ]
 4. Loaded `_from_1.0_to_2.0.hod` in game:
-    - No crash on loading: [ ] PENDING - manual game check required
-    - Textures orientation: [ ] PENDING - manual game check required
-    - Textures assigned to correct materials: [ ] PENDING - manual game check required
-    - Full meshes shown: [ ] PENDING - manual game check required
-    - Correct Ship Orientation: [ ] PENDING - manual game check required
-    - All expected nodes working: [ ] PENDING - manual game check required
+    - No crash on loading: [ ]
+    - Textures orientation: [ ]
+    - Textures assigned to correct materials: [ ]
+    - Full meshes shown: [ ]
+    - Correct Ship Orientation: [ ]
+    - All expected nodes working: [ ]
+    - Animations Loading: [ ]
+
+Additional findings on HOD 1.0 loading regarding textures:
+For HOD 1.0 files loaded onto editor from `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
+Something we need to take a look at, strictly for fixing loading of textures in HOD 1.0 files
+
+- ter_centaur: DXT1 textures loaded correctly, DXT5 texture is broken
+- ter_zephyrus: all textures loading correctly and not flipped (all DXT1)
+- ter_fenris: textures loading at full, but y flipped (all DXT1)
+- ter_leviathan: texture leviathan DIFF (DXT5) corrupted on load.
+- ter_demon: Texture Capital04-01 loaded corrupted (DXT5), all textures y flipped
+- shi_azrael: all textures loaded correctly (DXT1)
+- shi_scorpion: all textures loaded correctly (DXT1)
+- if material has DIFF selected as (none), the texture defaults to another DIFF instead of no texture. (this is a regression of existing functionality)
+
+Pattern here is weird, all DXT5 textures load corrupted and flipped, but not all DXT1 textures looks correct in orientation
