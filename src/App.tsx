@@ -1181,56 +1181,34 @@ function App() {
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", fontWeight: "600", fontSize: "14px", color: "#ffb74d" }}>
                     <AlertTriangle size={18} />
-                    <span>HWRM Uncompressed .big Path Required</span>
+                    <span>Game Data Directories Required</span>
                   </div>
                   <div style={{ fontSize: "12px", lineHeight: "1.5", color: "rgba(255, 255, 255, 0.85)" }}>
-                    Configure your uncompressed game data directories (containing 'keeper.txt') to automatically render .TGA textures and high-fidelity shader materials. You can add multiple paths.
+                    Configure your game data directories to automatically render .TGA textures and high-fidelity shader materials.
                   </div>
-                  {keeperTxtPaths.map((p, i) => (
-                    <div key={i} style={{ display: "flex", gap: "8px", width: "100%" }}>
-                      <input
-                        value={p}
-                        onChange={(e) => {
-                          const updated = [...keeperTxtPaths];
-                          updated[i] = e.target.value;
-                          setKeeperTxtPaths(updated);
-                        }}
-                        style={{ height: "32px", fontSize: "12px", flex: 1, padding: "0 8px", borderRadius: "4px", background: "rgba(13, 22, 37, 0.6)", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}
-                      />
-                      <button
-                        onClick={async () => {
-                          const updated = keeperTxtPaths.filter((_, j) => j !== i);
-                          setKeeperTxtPaths(updated);
-                          await invoke("save_shader_config", { config: { shader_directories: updated } });
-                        }}
-                        style={{ height: "32px", fontSize: "12px", padding: "0 8px", background: "#c62828", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  <div style={{ display: "flex", gap: "8px", width: "100%" }}>
-                    <button 
-                      onClick={selectAndSaveKeeperPath}
-                      style={{
-                        height: "32px",
-                        fontSize: "12px",
-                        padding: "0 12px",
-                        background: "#ff9800",
-                        color: "#000",
-                        border: "none",
-                        borderRadius: "4px",
-                        cursor: "pointer",
-                        fontWeight: "600",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px"
-                      }}
-                    >
-                      <FolderOpen size={14} />
-                      Add keeper.txt...
-                    </button>
-                  </div>
+                  <button 
+                    onClick={() => setIsSettingsOpen(true)}
+                    style={{
+                      marginTop: "4px",
+                      height: "32px",
+                      fontSize: "12px",
+                      padding: "0 12px",
+                      background: "#ff9800",
+                      color: "#000",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontWeight: "600",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      width: "fit-content"
+                    }}
+                  >
+                    <FolderOpen size={14} />
+                    Open Settings...
+                  </button>
                 </div>
               )}
 
