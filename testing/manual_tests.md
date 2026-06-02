@@ -890,7 +890,7 @@ Automated checks:
 
 ---
 
-SHA: `pending`
+SHA: `289380c`
 Timestamp: `01/06/2026 21:41`
 Test hod: `ter_centaur`, `ter_fenris`, DAE import
 
