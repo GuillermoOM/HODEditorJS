@@ -462,8 +462,7 @@ impl HODModel {
                         match sub_chunk.id.trim() {
                             "LMIP" => {
                                 // Extract textures from LMIP
-                                // LMIP chunks can be tiny headers (36 bytes) — skip if too small for the 48-byte header
-                                if sub_chunk.data.len() < 36 {
+                                if sub_chunk.data.len() < 12 {
                                     println!("[RUST]       Skipping tiny LMIP chunk (len={})", sub_chunk.data.len());
                                     continue;
                                 }

@@ -233,8 +233,67 @@ Test hod: `ter_zephyrus`
     - Textures assigned to correct materials: [x] PASS
     - Full meshes shown: [x] PASS
     - Correct Ship Orientation: [x] PASS
-    - Material shader parameters correct (glossiness, specular, team colors): [x] PASS
     - All expected nodes working: [x] PASS
+
+---
+
+SHA: `pending`
+Timestamp: `01/06/2026 20:00`
+Test hod: `ter_centaur`
+
+**Goal**: Verify MULT path mesh index fix and LMIP tiny chunk threshold fix.
+
+2.0 HOD Test:
+
+1. Opened `*_2.0_original.hod` in editor:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+2. Removed Extra LODs (left LOD0), Saved as `*_from_2.0_to_2.0.hod`:
+    - No saving errors: [ ] 
+3. Opened `_from_2.0_to_2.0.hod` in editor again:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+4. Loaded `_from_2.0_to_2.0.hod` in game:
+    - No crash on loading: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Correct Ship Orientation: [ ] 
+    - All expected nodes working: [ ] 
+
+1.0 HOD Test:
+
+1. Opened `*_1.0_original.hod` in editor:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+2. Removed Extra LODs (left LOD0), Saved as `*_from_1.0_to_2.0.hod`:
+    - No saving errors: [ ] 
+3. Opened `_from_1.0_to_2.0.hod` in editor again:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+4. Loaded `_from_1.0_to_2.0.hod` in game:
+    - No crash on loading: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Correct Ship Orientation: [ ] 
+    - All expected nodes working: [ ] 
 
 1.0 HOD Test:
 
@@ -558,66 +617,7 @@ Test hod: `ter_zephyrus`
     - All expected nodes working: [x] PASS
 
 ---
-SHA: `pending`
-Timestamp: `01/06/2026 17:53`
-Test hod: `ter_zephyrus`
-
-**Goal**: Verify HOD 2.0→2.0 STAT chunk regeneration fix — texture-to-material assignments should now persist correctly after save.
-
-2.0 HOD Test:
-
-1. Opened `*_2.0_original.hod` in editor:
-    - No loading errors: [x] PASS
-    - Textures orientation: [x] PASS
-    - Textures assigned to correct materials: [x] PASS
-    - Full meshes shown: [x] PASS
-    - Collision mesh loaded: [x] PASS
-    - All expected nodes loaded: [x] PASS
-2. Saved as `*_from_2.0_to_2.0.hod`:
-    - No saving errors: [x] PASS
-3. Opened `_from_2.0_to_2.0.hod` in editor again:
-    - No loading errors: [x] PASS
-    - Textures orientation: [x] PASS
-    - Textures assigned to correct materials: [x] FAIL - Some materials got the wrong textures assigned after the save, instead of keeping the same (didn't read from editor values)
-    - Full meshes shown: [x] PASS
-    - Collision mesh loaded: [x] PASS
-    - All expected nodes loaded: [x] PASS
-4. Loaded `_from_2.0_to_2.0.hod` in game:
-    - No crash on loading: [x] PASS
-    - Textures orientation: [x] PASS
-    - Textures assigned to correct materials: [x] FAIL - same reason as above
-    - Full meshes shown: [x] PASS
-    - Correct Ship Orientation: [x] PASS
-    - All expected nodes working: [x] PASS
-
-1.0 HOD Test:
-
-1. Opened `*_1.0_original.hod` in editor:
-    - No loading errors: [x] PASS
-    - Textures orientation: [x] PASS
-    - Textures assigned to correct materials: [x] PASS
-    - Full meshes shown: [x] PASS
-    - Collision mesh loaded: [x] PASS
-    - All expected nodes loaded: [x] PASS
-2. Saved as `*_from_1.0_to_2.0.hod`:
-    - No saving errors: [x] PASS
-3. Opened `_from_1.0_to_2.0.hod` in editor again:
-    - No loading errors: [x] PASS
-    - Textures orientation: [x] PASS
-    - Textures assigned to correct materials: [x] PASS
-    - Full meshes shown: [x] PASS
-    - Collision mesh loaded: [x] PASS
-    - All expected nodes loaded: [x] PASS
-4. Loaded `_from_1.0_to_2.0.hod` in game:
-    - No crash on loading: [x] PASS
-    - Textures orientation: [x] PASS
-    - Textures assigned to correct materials: [x] PASS
-    - Full meshes shown: [x] PASS
-    - Correct Ship Orientation: [x] PASS
-    - All expected nodes working: [x] PASS
-
----
-SHA: `pending`
+SHA: `9171f56`
 Timestamp: `01/06/2026 18:09`
 Test hod: `ter_zephyrus`
 
@@ -676,3 +676,61 @@ Test hod: `ter_zephyrus`
     - All expected nodes working: [x] PASS
 
 ---
+
+SHA: `9171f56`
+Timestamp: `01/06/2026 18:15`
+Test hod: `ter_centaur`
+
+**Goal**: Verify HOD 2.0→2.0 mesh is saved completely without issues.
+
+2.0 HOD Test:
+
+1. Opened `*_2.0_original.hod` in editor:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+2. Removed Extra LODs (left LOD0), Saved as `*_from_2.0_to_2.0.hod`:
+    - No saving errors: [x] PASS
+3. Opened `_from_2.0_to_2.0.hod` in editor again:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [ ] FAIL - Mesh is broken / incomplete with edges crossing on the inside. There was a fix for meshes missing faces before for ter_zephyrus before which could've affected smaller meshes like this one.
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+4. Loaded `_from_2.0_to_2.0.hod` in game:
+    - No crash on loading: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Correct Ship Orientation: [x] PASS
+    - All expected nodes working: [x] PASS
+
+1.0 HOD Test:
+
+1. Opened `*_1.0_original.hod` in editor:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+2. Removed Extra LODs (left LOD0), Saved as `*_from_1.0_to_2.0.hod`:
+    - No saving errors: [x] PASS
+3. Opened `_from_1.0_to_2.0.hod` in editor again:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [ ] FAIL - the original glass material is gone and not parsed (didn't have DIFF suffix or similar, just shows as "transparentDXT5" in editor when loading HOD 1.0 original)
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+4. Loaded `_from_1.0_to_2.0.hod` in game:
+    - No crash on loading: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Correct Ship Orientation: [x] PASS
+    - All expected nodes working: [x] PASS

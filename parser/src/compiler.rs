@@ -517,8 +517,8 @@ pub fn compile_model_meshes(model: &mut HODModel) -> Vec<CompiledMesh> {
                 let mut dedup = MeshDeduplicator::new();
                 let mut new_indices = Vec::new();
 
-                // If there are no indices, assume it's a flat triangle list
-                for v in &vertices {
+                for &idx in &part.indices {
+                    let v = &vertices[idx as usize];
                     let new_idx = dedup.add_vertex(v);
                     new_indices.push(new_idx);
                 }
