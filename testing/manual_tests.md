@@ -852,7 +852,7 @@ Pattern here is weird, all DXT5 textures load corrupted and flipped, but not all
 
 ---
 
-SHA: `pending`
+SHA: `e17c44d`
 Timestamp: `01/06/2026 21:19`
 Test hod: `ter_fenris`, `ter_centaur`, `ter_leviathan`
 
