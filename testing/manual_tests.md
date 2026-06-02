@@ -921,3 +921,24 @@ Manual COL Retest:
 4. Add Node modal:
     - Collision creation uses fixed `Root` name with no editable name field: [ ] PENDING
     - Adding a second collision is blocked until the existing COL is deleted: [ ] PENDING
+
+---
+
+SHA: `pending`
+Timestamp: `01/06/2026 22:02`
+Test hod: `ter_centaur`
+
+**Goal**: Verify follow-up fix for the singleton COL context menu showing Delete when the COL node is named `Root`.
+
+Automated checks:
+
+1. Frontend verification:
+    - `npm run build`: [x] PASS - existing Vite large chunk warning only.
+
+Manual COL Context Menu Retest:
+
+1. Open a HOD with a parsed COL node named `Root`:
+    - Right-click COL opens a non-empty context menu: [ ] PENDING
+    - Rename is still hidden for COL: [ ] PENDING
+    - Delete option is visible for COL: [ ] PENDING
+    - Delete removes the COL node: [ ] PENDING

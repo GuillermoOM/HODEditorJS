@@ -887,7 +887,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   };
 
   const isNodeDeletable = (name: string, type: string): boolean => {
-    if (name.toLowerCase() === "root") return false;
+    if (type === "joint" && name.toLowerCase() === "root") return false;
     if (type === "joint") {
       if (getWeaponGroupInfo(name) !== null) return false;
     }
