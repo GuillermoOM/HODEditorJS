@@ -376,3 +376,95 @@ Test hod: `ter_zephyrus`
     - Full meshes shown: [x] PASS
     - Correct Ship Orientation: [ ] FAIL, needs same correction for scaling I believe, it is oriented the same way as the `from_2.0_to_2.0` was before it got fixed on its creation.
     - All expected nodes working: [x] PASS
+
+---
+SHA: `eef4d2b`
+Timestamp: `01/06/2026 17:08`
+Test hod: `ter_zephyrus`
+
+**Goal**: Verify HOD 1.0 -> 2.0 conversion scaling and orientation fix. Check if the ship is properly scaled down (not 100x bigger) and not rotated sideways in game.
+
+2.0 HOD Test:
+
+1. Opened `*_2.0_original.hod` in editor:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+2. Saved as `*_from_2.0_to_2.0.hod`:
+    - No saving errors: [x] PASS
+3. Opened `_from_2.0_to_2.0.hod` in editor again:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+4. Loaded `_from_2.0_to_2.0.hod` in game:
+    - No crash on loading: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Correct Ship Orientation: [x] PASS
+    - All expected nodes working: [x] PASS
+
+1.0 HOD Test:
+
+1. Opened `*_1.0_original.hod` in editor:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [ ] FAIL - The mesh is scaled down! it used to show in proper size in renderer
+    - Collision mesh loaded: [x] PARTIAL PASS - mesh loads, but also scaled down in size
+    - All expected nodes loaded: [x] PASS
+2. Saved as `*_from_1.0_to_2.0.hod`:
+    - No saving errors: [x] PASS
+3. Opened `_from_1.0_to_2.0.hod` in editor again:
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [ ] FAIL - Still the wrong textures getting assigned on the wrong materials on save, instead of the originally assigned ones (we need to read the dropdown values for texture mapping on saving I think)
+    - Full meshes shown: [x] PARTIAL PASS - Affected by scaled down size
+    - Collision mesh loaded: [x] PARTIAL PASS - Affected by scaled down size
+    - All expected nodes loaded: [x] PASS
+4. Loaded `_from_1.0_to_2.0.hod` in game:
+    - No crash on loading: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [ ] FAIL - same issue with opening the saved file
+    - Full meshes shown: [ ] FAIL - While the full mesh shows up, it is scaled down to an ant size
+    - Correct Ship Orientation: [x] PASS - While the scale down made the mesh small, the ship is now pointing towards the correct direction
+    - All expected nodes working: [x] PASS
+
+---
+SHA: `latest`
+Timestamp: `01/06/2026 17:18`
+Test hod: `ter_zephyrus`
+
+**Goal**: Verify HOD 1.0 -> 2.0 conversion scaling fix (without making it an ant) and dynamic STAT/MATT generation for dropdown assignments.
+
+1.0 HOD Test:
+
+1. Opened `*_1.0_original.hod` in editor:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+2. Saved as `*_from_1.0_to_2.0.hod`:
+    - No saving errors: [ ] 
+3. Opened `_from_1.0_to_2.0.hod` in editor again:
+    - No loading errors: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Collision mesh loaded: [ ] 
+    - All expected nodes loaded: [ ] 
+4. Loaded `_from_1.0_to_2.0.hod` in game:
+    - No crash on loading: [ ] 
+    - Textures orientation: [ ] 
+    - Textures assigned to correct materials: [ ] 
+    - Full meshes shown: [ ] 
+    - Correct Ship Orientation: [ ] 
+    - All expected nodes working: [ ] 

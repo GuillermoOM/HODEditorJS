@@ -1591,65 +1591,28 @@ impl HODModel {
     }
 
 
+
     pub fn upgrade_v1_to_v2(&mut self) {
         if self.is_v2 {
             return;
         }
         
-        // HOD 1.0 (VERS 1000) used centimeters. HOD 2.0 uses meters.
-        // Scale down all geometry by 0.01
-        for mesh in &mut self.meshes {
-            for part in &mut mesh.parts {
-                for v in &mut part.vertices {
-                    v.position.x *= 0.01;
-                    v.position.y *= 0.01;
-                    v.position.z *= 0.01;
-                }
-            }
-        }
+        // HOD 1.0 (VERS 1000) and HOD 2.0 (VERS 1001) both use meters.
+        // We do NOT need to scale positions!
+        // The only incompatibility is that HOD 2.0 uses joint scale vectors as gimbal limits.
+        // HW2 Classic exported (1.0, 1.0, 1.0) for scale, which HWRM interprets as a 1.0 radian gimbal limit,
+        // causing severe coordinate space distortion and rotation.
         
         for joint in &mut self.joints {
-            if let Some(ref mut pos) = joint.position {
-                pos.x *= 0.01;
-                pos.y *= 0.01;
-                pos.z *= 0.01;
-            }
             // In HOD 2.0, the scale field acts as gimbal limits, not geometry scale.
             // Using (1,1,1) in HOD 2.0 causes the engine to rotate the ship sideways.
             joint.scale = Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
             
-            // Recompose matrix
+            // Recompose matrix with the zeroed scale
             if let (Some(ref pos), Some(ref rot), Some(ref scale)) = (&joint.position, &joint.rotation, &joint.scale) {
                 joint.local_transform = compose_transform_matrix(pos.clone(), rot.clone(), scale.clone());
             }
         }
-        
-        for col in &mut self.collision_meshes {
-            col.center.x *= 0.01;
-            col.center.y *= 0.01;
-            col.center.z *= 0.01;
-            col.radius *= 0.01;
-            col.min_extents.x *= 0.01;
-            col.min_extents.y *= 0.01;
-            col.min_extents.z *= 0.01;
-            col.max_extents.x *= 0.01;
-            col.max_extents.y *= 0.01;
-            col.max_extents.z *= 0.01;
-            for part in &mut col.mesh.parts {
-                for v in &mut part.vertices {
-                    v.position.x *= 0.01;
-                    v.position.y *= 0.01;
-                    v.position.z *= 0.01;
-                }
-            }
-        }
-        
-        for marker in &mut self.markers {
-            marker.position.x *= 0.01;
-            marker.position.y *= 0.01;
-            marker.position.z *= 0.01;
-        }
-        
         
         self.is_v2 = true;
     }
@@ -5341,10 +5304,6 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
                             let mut child_clone = child.clone();
                             child_clone.id = "LMIP".to_string();
                             original_lmip_chunks.push(child_clone);
-                        } else if child.id == "STAT" || child.id == "MATT" {
-                            let mut child_clone = child.clone();
-                            child_clone.id = "STAT".to_string();
-                            original_stat_chunks.push(child_clone);
                         }
                     }
                 }
@@ -5487,10 +5446,8 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         hvmd_children.extend(generated_texture_chunks);
     }
 
-    // Preserve original STAT chunks when available, otherwise generate from materials
-    if !original_stat_chunks.is_empty() {
-        hvmd_children.extend(original_stat_chunks);
-    } else if !model.materials.is_empty() {
+    // Generate STAT chunks directly from materials so UI edits apply
+    if !model.materials.is_empty() {
         for mat in &model.materials {
             let mut stat_buf = Vec::new();
             let mut stat_cursor = Cursor::new(&mut stat_buf);
