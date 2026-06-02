@@ -1275,9 +1275,9 @@ export const Viewport: React.FC<ViewportProps> = ({
           });
 
           // Helper to get or create a texture from base64Png
-          const getCachedTexture = (base64Png: string, name: string): THREE.Texture => {
+          const getCachedTexture = (base64Png: string, name: string, yFlipped: boolean = false): THREE.Texture => {
             const cache = textureCacheRef.current;
-            const cacheKey = `${name}:${base64Png.length}:${base64Png.slice(0, 64)}`;
+            const cacheKey = `${name}:${yFlipped}:${base64Png.length}:${base64Png.slice(0, 64)}`;
             if (cache.has(cacheKey)) {
               return cache.get(cacheKey)!;
             }
@@ -1286,7 +1286,7 @@ export const Viewport: React.FC<ViewportProps> = ({
             const tex = new THREE.Texture(img);
             tex.wrapS = THREE.RepeatWrapping;
             tex.wrapT = THREE.RepeatWrapping;
-            tex.flipY = true;
+            tex.flipY = !yFlipped; // True by default for standard HOD pipeline, false if y-flipped flag is set
             tex.colorSpace = THREE.SRGBColorSpace;
             tex.anisotropy = rendererRef.current?.capabilities.getMaxAnisotropy() ?? 1;
             tex.generateMipmaps = false;
@@ -1326,7 +1326,7 @@ export const Viewport: React.FC<ViewportProps> = ({
                 if (hTexture) {
                   const b64 = hTexture.png_data || hTexture.png_preview;
                   if (b64) {
-                    const tex = getCachedTexture(b64, hTexture.name);
+                    const tex = getCachedTexture(b64, hTexture.name, !!hTexture.legacy_storage_y_flipped);
                     const lowerName = texName.toLowerCase();
                     if (lowerName.includes("_team") || lowerName.includes("_temx")) {
                       teamMap = tex;
