@@ -849,3 +849,41 @@ Something we need to take a look at, strictly for fixing loading of textures in 
 - if material has DIFF selected as (none), the texture defaults to another DIFF instead of no texture. (this is a regression of existing functionality)
 
 Pattern here is weird, all DXT5 textures load corrupted and flipped, but not all DXT1 textures looks correct in orientation
+
+---
+
+SHA: `pending`
+Timestamp: `01/06/2026 21:19`
+Test hod: `ter_fenris`, `ter_centaur`, `ter_leviathan`
+
+**Goal**: Verify HOD 1.0 inline LMIP/TEXM multi-mip texture offset fix and `(None)` material texture slot regression fix.
+
+Automated checks:
+
+1. Parser/build verification:
+    - `cargo check --lib`: [x] PASS - 38 pre-existing warnings only.
+    - `cargo run --bin verify_lossless`: [x] PASS - structural re-parse counts match; expected size differences remain from recompression.
+    - `npm run build`: [x] PASS - existing Vite large chunk warning only.
+2. Targeted HOD 1.0 texture probes before cleanup:
+    - `ter_centaur transparentDXT5`: [x] PASS - legacy DXT5 data starts immediately after base dimensions; parsed PNG length changed 370 -> 210 after offset fix.
+    - `ter_fenris nameplateDXT5`: [x] PASS - multi-mip DXT5 no longer skips 72 bytes into compressed data; parsed PNG length changed 127938 -> 1214.
+    - `ter_leviathan leviathanDXT5`: [x] PASS - multi-mip DXT5 decodes from corrected base offset.
+    - Material DIFF `(none)` slot: [x] PASS - Viewport and Inspector no longer fuzzy-match empty texture names to the first texture.
+
+1.0 HOD Manual Retest:
+
+1. Opened `ter_fenris_1.0_original.hod` in editor:
+    - No loading errors: [ ]
+    - Textures orientation: [ ]
+    - Textures assigned to correct materials: [ ]
+    - Full meshes shown: [ ]
+    - Collision mesh loaded: [ ]
+    - All expected nodes loaded: [ ]
+    - Animations loading: [ ]
+2. Opened `ter_centaur_1.0_original.hod` in editor:
+    - DXT1 textures loaded correctly: [ ]
+    - DXT5 transparent material loaded correctly: [ ]
+    - Material `(none)` slot remains untextured: [ ]
+3. Opened HOD 1.0 `ter_leviathan.hod` from uncompressed_bigs in editor:
+    - DXT5 `leviathan DIFF` loaded correctly: [ ]
+    - Textures orientation: [ ]

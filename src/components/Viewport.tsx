@@ -1311,6 +1311,7 @@ export const Viewport: React.FC<ViewportProps> = ({
               const cleanTexName = (name: string) => name.toLowerCase().replace(/\.(tga|png|dds|bmp|jpg|jpeg)$/, "").trim();
               const findTexture = (texName: string) => {
                 const mName = cleanTexName(texName);
+                if (!mName) return undefined;
                 const exact = model.textures?.find(t => cleanTexName(t.name) === mName);
                 if (exact) return exact;
                 return model.textures?.find(t => {
@@ -1320,6 +1321,7 @@ export const Viewport: React.FC<ViewportProps> = ({
               };
 
               hMaterial.texture_maps.forEach((texName, tIdx) => {
+                if (!texName?.trim()) return;
                 const hTexture = findTexture(texName);
                 if (hTexture) {
                   const b64 = hTexture.png_data || hTexture.png_preview;

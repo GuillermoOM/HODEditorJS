@@ -2650,10 +2650,13 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
         height = reader
             .read_u32::<LittleEndian>()
             .map_err(|e| e.to_string())?;
-        // Skip the remaining mip dimensions
-        for _ in 1..mip_count {
-            let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-            let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+        if context.is_v2 {
+            // HOD 2.0 LMIP stores dimensions for each mip. Legacy HOD 1.0 inline
+            // LMIP/TEXM stores only the base dimensions, then compressed mip bytes.
+            for _ in 1..mip_count {
+                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+            }
         }
     }
 

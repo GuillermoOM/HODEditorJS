@@ -2692,6 +2692,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                     const matchedTexture = model.textures?.find(t => {
                       const tName = cleanTexName(t.name);
                       const mName = cleanTexName(mapName);
+                      if (!mName) return false;
                       return tName === mName || tName.includes(mName) || mName.includes(tName);
                     });
 
