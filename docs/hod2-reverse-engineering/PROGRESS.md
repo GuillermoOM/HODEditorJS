@@ -7,6 +7,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ---
 
 ## Current Status
+- ✅ Reduced marker and axis helper scale in the editor Viewport to improve visibility for large models, and filtered out `NavLight` joints from appearing as visible nodes in the viewport to match the `HierarchyTree` filtering logic (`src/components/Viewport.tsx`).
 - ✅ Moved shader configuration out of the material inspector into a global Settings modal. Created `SettingsModal.tsx` and linked it via a new Toolbar button, allowing users to configure a list of `keeper.txt` shader directories from anywhere.
 - ✅ Added Node Tree export/import to JSON format (joints, markers, etc. excluding meshes). Added functionality to the Hierarchy Tree toolbar to quickly serialize the non-mesh structural nodes and reload them.
 - ✅ Added glTF animation export/import capabilities. Used `three` `GLTFExporter` and `GLTFLoader` in `AnimationDock.tsx` to serialize animation tracks into a temporary skeleton scene for glTF export, and deserialize external glTF tracks back into `HODAnimation` format.

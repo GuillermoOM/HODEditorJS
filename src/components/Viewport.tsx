@@ -1521,6 +1521,9 @@ export const Viewport: React.FC<ViewportProps> = ({
       });
 
       model.joints.forEach((joint) => {
+        const isNavLight = model.nav_lights?.some(n => n.name.toLowerCase() === joint.name.toLowerCase());
+        if (isNavLight) return;
+
         const isJointVisible = visibleMeshes[`joint:${joint.name}`] !== false;
         if (!isJointVisible) return;
 
@@ -1573,7 +1576,7 @@ export const Viewport: React.FC<ViewportProps> = ({
       invoke("log_event", { level: "INFO", message: `Viewport: Joint rendering complete. Rendering ${model.markers.length} markers...` }).catch(console.error);
 
       // 4. Render markers using scaleFactor
-      const markerGeo = new THREE.ConeGeometry(0.15 * scaleFactor, 0.6 * scaleFactor, 8);
+      const markerGeo = new THREE.ConeGeometry(0.08 * scaleFactor, 0.35 * scaleFactor, 8);
       markerGeo.rotateX(Math.PI / 2); // Point forward along Z
       const markerMat = new THREE.MeshBasicMaterial({ 
         color: "#00d2ff", 
@@ -1613,7 +1616,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         };
         markersGroup.add(markerMesh);
         
-        const markerAxes = new THREE.AxesHelper(0.8 * scaleFactor);
+        const markerAxes = new THREE.AxesHelper(0.4 * scaleFactor);
         markerMesh.add(markerAxes);
       });
 
