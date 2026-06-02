@@ -768,3 +768,69 @@ Test hod: `ter_fenris`
     - Full meshes shown: [ ]
     - Correct Ship Orientation: [ ]
     - All expected nodes working: [ ]
+
+---
+
+SHA: `pending`
+Timestamp: `01/06/2026 20:10`
+Test hod: `ter_fenris`
+
+**Goal**: Verify normalized companion MAD lookup restores animation loading for suffixed HOD test names.
+
+2.0 HOD Test:
+
+1. Opened `*_2.0_original.hod` via parser semantic dump:
+    - No loading errors: [x] PASS
+    - Companion MAD found from normalized stem: [x] PASS - `ter_fenris_2.0_original.hod` found `ter_fenris.mad`
+    - Animations loaded: [x] PASS - `Loaded 1 animations from companion MAD file.`
+    - Textures orientation: [ ] PENDING - manual editor check required
+    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
+    - Full meshes shown: [ ] PENDING - manual editor check required
+    - Collision mesh loaded: [ ] PENDING - manual editor check required
+    - All expected nodes loaded: [ ] PENDING - manual editor check required
+2. Removed Extra LODs (left LOD0), Saved as `*_from_2.0_to_2.0.hod`:
+    - No saving errors: [ ] PENDING - manual editor check required
+3. Opened `_from_2.0_to_2.0.hod` in editor again:
+    - No loading errors: [ ] PENDING - manual editor check required
+    - Animations loaded: [ ] PENDING - manual editor check required
+    - Textures orientation: [ ] PENDING - manual editor check required
+    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
+    - Full meshes shown: [ ] PENDING - manual editor check required
+    - Collision mesh loaded: [ ] PENDING - manual editor check required
+    - All expected nodes loaded: [ ] PENDING - manual editor check required
+4. Loaded `_from_2.0_to_2.0.hod` in game:
+    - No crash on loading: [ ] PENDING - manual game check required
+    - Textures orientation: [ ] PENDING - manual game check required
+    - Textures assigned to correct materials: [ ] PENDING - manual game check required
+    - Full meshes shown: [ ] PENDING - manual game check required
+    - Correct Ship Orientation: [ ] PENDING - manual game check required
+    - All expected nodes working: [ ] PENDING - manual game check required
+
+1.0 HOD Test:
+
+1. Opened `*_1.0_original.hod` via parser semantic dump:
+    - No loading errors: [x] PASS
+    - Companion MAD found from normalized stem: [x] PASS - `ter_fenris_1.0_original.hod` found `ter_fenris.mad`
+    - Animations loaded: [x] PASS - `Loaded 1 animations from companion MAD file.`
+    - Textures orientation: [ ] PENDING - manual editor check required
+    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
+    - Full meshes shown: [ ] PENDING - manual editor check required
+    - Collision mesh loaded: [ ] PENDING - manual editor check required
+    - All expected nodes loaded: [ ] PENDING - manual editor check required
+2. Removed Extra LODs (left LOD0), Saved as `*_from_1.0_to_2.0.hod`:
+    - No saving errors: [ ] PENDING - manual editor check required
+3. Opened `_from_1.0_to_2.0.hod` in editor again:
+    - No loading errors: [ ] PENDING - manual editor check required
+    - Animations loaded: [ ] PENDING - manual editor check required
+    - Textures orientation: [ ] PENDING - manual editor check required
+    - Textures assigned to correct materials: [ ] PENDING - manual editor check required
+    - Full meshes shown: [ ] PENDING - manual editor check required
+    - Collision mesh loaded: [ ] PENDING - manual editor check required
+    - All expected nodes loaded: [ ] PENDING - manual editor check required
+4. Loaded `_from_1.0_to_2.0.hod` in game:
+    - No crash on loading: [ ] PENDING - manual game check required
+    - Textures orientation: [ ] PENDING - manual game check required
+    - Textures assigned to correct materials: [ ] PENDING - manual game check required
+    - Full meshes shown: [ ] PENDING - manual game check required
+    - Correct Ship Orientation: [ ] PENDING - manual game check required
+    - All expected nodes working: [ ] PENDING - manual game check required

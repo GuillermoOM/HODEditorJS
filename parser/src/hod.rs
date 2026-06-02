@@ -4,7 +4,7 @@ use crate::xpress;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Vector3 {
@@ -235,6 +235,46 @@ pub struct ParsingContext {
     pub hod_dir: Option<PathBuf>,
     pub uncompressed_dir: Option<PathBuf>,
     pub hod_file_path: Option<PathBuf>,
+}
+
+fn companion_mad_candidates(hod_path: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    candidates.push(hod_path.with_extension("mad"));
+
+    let parent = match hod_path.parent() {
+        Some(parent) => parent,
+        None => return candidates,
+    };
+
+    let stem = match hod_path.file_stem().and_then(|s| s.to_str()) {
+        Some(stem) => stem,
+        None => return candidates,
+    };
+
+    let mut normalized_stems = Vec::new();
+    for suffix in [
+        "_2.0_original",
+        "_1.0_original",
+        "_from_2.0_to_2.0",
+        "_from_1.0_to_2.0",
+    ] {
+        if let Some(base) = stem.strip_suffix(suffix) {
+            normalized_stems.push(base.to_string());
+        }
+    }
+
+    if let Some((base, _)) = stem.split_once("_from_") {
+        normalized_stems.push(base.to_string());
+    }
+
+    for normalized_stem in normalized_stems {
+        let candidate = parent.join(format!("{}.mad", normalized_stem));
+        if !candidates.iter().any(|existing| existing == &candidate) {
+            candidates.push(candidate);
+        }
+    }
+
+    candidates
 }
 
 impl HODModel {
@@ -1208,8 +1248,10 @@ impl HODModel {
 
         // Phase 3: Animation Loading & parsing companion .mad or legacy KEYF
         if let Some(ref path_buf) = context.hod_file_path {
-            let mad_path = path_buf.with_extension("mad");
-            if mad_path.exists() {
+            if let Some(mad_path) = companion_mad_candidates(path_buf)
+                .into_iter()
+                .find(|candidate| candidate.exists())
+            {
                 println!(
                     "[RUST] Found companion .mad file: {:?}. Loading...",
                     mad_path
