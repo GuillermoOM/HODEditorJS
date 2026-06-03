@@ -642,8 +642,10 @@ function App() {
       updateModel({ ...model, markers: updatedMarkers });
     } else if (type === "navlight") {
       // Translating NavLight translates its matching joint bone
+      let foundJoint = false;
       const updatedJoints = model.joints.map((joint) => {
-        if (joint.name === name) {
+        if (joint.name.toLowerCase() === name.toLowerCase()) {
+          foundJoint = true;
           const m = joint.local_transform.m.map(row => [...row]);
           m[3][0] = pos.x;
           m[3][1] = pos.y;
@@ -652,6 +654,23 @@ function App() {
         }
         return joint;
       });
+      if (!foundJoint) {
+        updatedJoints.push({
+          name,
+          parent_name: "Root",
+          position: pos,
+          rotation: { x: 0, y: 0, z: 0 },
+          scale: { x: 0, y: 0, z: 0 },
+          local_transform: {
+            m: [
+              [1, 0, 0, 0],
+              [0, 1, 0, 0],
+              [0, 0, 1, 0],
+              [pos.x, pos.y, pos.z, 1]
+            ]
+          }
+        });
+      }
       updateModel({ ...model, joints: updatedJoints });
     } else if (type.endsWith("_group")) {
       const updatedJoints = model.joints.map((joint) => {

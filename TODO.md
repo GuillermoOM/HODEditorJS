@@ -45,17 +45,18 @@
     - Animations not being loaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
     - Docking Paths not being loeaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
 - [x] Saving a HOD file (which creates a HOD 2.0) renders wrong in game, showing the whole mesh being turned some degrees to the left and down.
-- [x] Loading HOD 1.0 file still needs y flipping on all textures, it happened only on the first one
+- [x] Loading HOD 1.3 file still needs y flipping on all textures, it happened only on the first one
 - [x] Open HOD 2.0, "save it", compare with original HOD 2.0 file loaded to see if it similar
 - [x] Open HOD 1.0, test how it loads and which nodes are incorrectly assigned or unknown to HOD 2.0 template (need a template for 2.0 based on all knowledge we gathered on nodes).
 - [x] Create a new HOD and save it, test it in game.
 - [x] Open files by double cliking on them
 - [x] Rotation / scaling also seems to apply to all nodes! (engine burns looking sideways)
-- [x] Loading HOD 1.0 Collosus breaks
-- [x] Loading HOD 1.0 Hecate creates navlight nodes without coordinate editing
+- [x] Loading HOD 1.3 Collosus breaks
+- [x] Loading HOD 1.3 Hecate creates navlight nodes without coordinate editing
 - [x] Many nodes show up on viewport that are missing on the node tree
+- [x] DXT3 Texture compatiblity
 
-- [ ] DXT3 Texture compatiblity
+- [ ] Editor works slow on bigger ships with many nodes
 
 - [ ] Texture upscaling/smoothing/antialiasing on saving
 - [ ] Fix auto camera distance on loading model

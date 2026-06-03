@@ -1497,7 +1497,48 @@ export const Inspector: React.FC<InspectorProps> = ({
       const nav = model.nav_lights.find(n => n.name === selectedNode.name);
       if (!nav) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>NavLight not found</div>;
 
-      const underlyingJoint = model.joints.find(j => j.name === selectedNode.name);
+      const underlyingJoint = model.joints.find(j => j.name.toLowerCase() === nav.name.toLowerCase());
+      const navPosition = underlyingJoint
+        ? {
+            x: underlyingJoint.position?.x ?? underlyingJoint.local_transform.m[3][0],
+            y: underlyingJoint.position?.y ?? underlyingJoint.local_transform.m[3][1],
+            z: underlyingJoint.position?.z ?? underlyingJoint.local_transform.m[3][2],
+          }
+        : { x: 0, y: 0, z: 0 };
+
+      const updateNavLightPosition = (axis: "x" | "y" | "z", value: number) => {
+        const nextPosition = { ...navPosition, [axis]: value };
+        let foundJoint = false;
+        const newJoints = model.joints.map((joint) => {
+          if (joint.name.toLowerCase() !== nav.name.toLowerCase()) return joint;
+          foundJoint = true;
+          const m = joint.local_transform.m.map(row => [...row]);
+          m[3][0] = nextPosition.x;
+          m[3][1] = nextPosition.y;
+          m[3][2] = nextPosition.z;
+          return { ...joint, local_transform: { m }, position: nextPosition };
+        });
+
+        if (!foundJoint) {
+          newJoints.push({
+            name: nav.name,
+            parent_name: "Root",
+            position: nextPosition,
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 0, y: 0, z: 0 },
+            local_transform: {
+              m: [
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, 1, 0],
+                [nextPosition.x, nextPosition.y, nextPosition.z, 1]
+              ]
+            }
+          });
+        }
+
+        onModelChange?.({ ...model, joints: newJoints });
+      };
 
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1513,25 +1554,19 @@ export const Inspector: React.FC<InspectorProps> = ({
 
           <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
 
-          {underlyingJoint && (
-            <div>
-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Root Coordinate (Underlying Joint)</label>
+          <div>
+              <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>
+                Root Coordinate {underlyingJoint ? "(Underlying Joint)" : "(Creates Backing Joint)"}
+              </label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
                 <div>
                   <label style={{ display: "block", fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>X</label>
                   <NumericInput
                     step="0.1"
-                    value={underlyingJoint.position?.x ?? underlyingJoint.local_transform.m[3][0]}
+                    value={navPosition.x}
                     onChange={(val) => {
                       const v = parseFloat(val) || 0;
-                      const jIdx = model.joints.findIndex(j => j.name === underlyingJoint.name);
-                      if (jIdx === -1) return;
-                      const newJoints = [...model.joints];
-                      const j = { ...newJoints[jIdx] };
-                      j.position = { ...(j.position || {x:0,y:0,z:0}), x: v };
-                      j.local_transform.m[3][0] = v;
-                      newJoints[jIdx] = j;
-                      onModelChange?.({ ...model, joints: newJoints });
+                      updateNavLightPosition("x", v);
                     }}
                     style={{ fontSize: "12px" }}
                   />
@@ -1540,17 +1575,10 @@ export const Inspector: React.FC<InspectorProps> = ({
                   <label style={{ display: "block", fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>Y</label>
                   <NumericInput
                     step="0.1"
-                    value={underlyingJoint.position?.y ?? underlyingJoint.local_transform.m[3][1]}
+                    value={navPosition.y}
                     onChange={(val) => {
                       const v = parseFloat(val) || 0;
-                      const jIdx = model.joints.findIndex(j => j.name === underlyingJoint.name);
-                      if (jIdx === -1) return;
-                      const newJoints = [...model.joints];
-                      const j = { ...newJoints[jIdx] };
-                      j.position = { ...(j.position || {x:0,y:0,z:0}), y: v };
-                      j.local_transform.m[3][1] = v;
-                      newJoints[jIdx] = j;
-                      onModelChange?.({ ...model, joints: newJoints });
+                      updateNavLightPosition("y", v);
                     }}
                     style={{ fontSize: "12px" }}
                   />
@@ -1559,17 +1587,10 @@ export const Inspector: React.FC<InspectorProps> = ({
                   <label style={{ display: "block", fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>Z</label>
                   <NumericInput
                     step="0.1"
-                    value={underlyingJoint.position?.z ?? underlyingJoint.local_transform.m[3][2]}
+                    value={navPosition.z}
                     onChange={(val) => {
                       const v = parseFloat(val) || 0;
-                      const jIdx = model.joints.findIndex(j => j.name === underlyingJoint.name);
-                      if (jIdx === -1) return;
-                      const newJoints = [...model.joints];
-                      const j = { ...newJoints[jIdx] };
-                      j.position = { ...(j.position || {x:0,y:0,z:0}), z: v };
-                      j.local_transform.m[3][2] = v;
-                      newJoints[jIdx] = j;
-                      onModelChange?.({ ...model, joints: newJoints });
+                      updateNavLightPosition("z", v);
                     }}
                     style={{ fontSize: "12px" }}
                   />
@@ -1577,7 +1598,6 @@ export const Inspector: React.FC<InspectorProps> = ({
               </div>
               <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: "12px 0 0 0" }} />
             </div>
-          )}
 
           <div>
             <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Section ID</label>

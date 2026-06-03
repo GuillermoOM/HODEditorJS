@@ -82,7 +82,7 @@ pub struct HODTexture {
     pub name: String,
     pub width: u32,
     pub height: u32,
-    pub format: String,              // e.g. "DXT1", "DXT5", "RGBA"
+    pub format: String,              // e.g. "DXT1", "DXT3", "DXT5", "RGBA"
     pub png_preview: Option<String>, // Base64 encoded PNG for React UI thumbnails (max 128px)
     pub png_data: Option<String>, // Base64 encoded PNG for WebGL high-resolution rendering (max 1024px)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2400,6 +2400,47 @@ fn compress_dxt5(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
     out
 }
 
+fn compress_dxt3_block(block: &[[u8; 4]; 16]) -> [u8; 16] {
+    let mut out = [0u8; 16];
+
+    for (i, px) in block.iter().enumerate() {
+        let alpha4 = ((px[3] as u16 * 15 + 127) / 255) as u8 & 0x0F;
+        if i % 2 == 0 {
+            out[i / 2] |= alpha4;
+        } else {
+            out[i / 2] |= alpha4 << 4;
+        }
+    }
+
+    let color = compress_dxt1_block(block);
+    out[8..16].copy_from_slice(&color);
+    out
+}
+
+fn compress_dxt3(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let blocks_x = (width + 3) / 4;
+    let blocks_y = (height + 3) / 4;
+    let mut out = Vec::with_capacity(blocks_x * blocks_y * 16);
+
+    for by in 0..blocks_y {
+        for bx in 0..blocks_x {
+            let mut block = [[0u8; 4]; 16];
+            for y in 0..4 {
+                for x in 0..4 {
+                    let px = bx * 4 + x;
+                    let py = by * 4 + y;
+                    let idx = (py * width + px) * 4;
+                    if px < width && py < height && idx + 3 < rgba.len() {
+                        block[y * 4 + x] = [rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3]];
+                    }
+                }
+            }
+            out.extend_from_slice(&compress_dxt3_block(&block));
+        }
+    }
+    out
+}
+
 fn generate_mip_chain(
     rgba: &[u8],
     width: usize,
@@ -2624,6 +2665,88 @@ fn decompress_dxt5(data: &[u8], width: usize, height: usize) -> Vec<u8> {
     rgba
 }
 
+fn decompress_dxt3(data: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let mut rgba = vec![0u8; width * height * 4];
+    let blocks_x = (width + 3) / 4;
+    let blocks_y = (height + 3) / 4;
+    let mut offset = 0;
+
+    for by in 0..blocks_y {
+        for bx in 0..blocks_x {
+            if offset + 16 > data.len() {
+                break;
+            }
+
+            let alpha_offset = offset;
+            let color_offset = offset + 8;
+            offset += 16;
+
+            let color0 = u16::from_le_bytes([data[color_offset], data[color_offset + 1]]);
+            let color1 = u16::from_le_bytes([data[color_offset + 2], data[color_offset + 3]]);
+            let code = u32::from_le_bytes([
+                data[color_offset + 4],
+                data[color_offset + 5],
+                data[color_offset + 6],
+                data[color_offset + 7],
+            ]);
+
+            let mut r = [0u8; 4];
+            let mut g = [0u8; 4];
+            let mut b = [0u8; 4];
+
+            r[0] = (((color0 >> 11) & 0x1F) as u32 * 255 / 31) as u8;
+            g[0] = (((color0 >> 5) & 0x3F) as u32 * 255 / 63) as u8;
+            b[0] = ((color0 & 0x1F) as u32 * 255 / 31) as u8;
+
+            r[1] = (((color1 >> 11) & 0x1F) as u32 * 255 / 31) as u8;
+            g[1] = (((color1 >> 5) & 0x3F) as u32 * 255 / 63) as u8;
+            b[1] = ((color1 & 0x1F) as u32 * 255 / 31) as u8;
+
+            r[2] = ((r[0] as u32 * 2 + r[1] as u32) / 3) as u8;
+            g[2] = ((g[0] as u32 * 2 + g[1] as u32) / 3) as u8;
+            b[2] = ((b[0] as u32 * 2 + b[1] as u32) / 3) as u8;
+
+            r[3] = ((r[0] as u32 + r[1] as u32 * 2) / 3) as u8;
+            g[3] = ((g[0] as u32 + g[1] as u32 * 2) / 3) as u8;
+            b[3] = ((b[0] as u32 + b[1] as u32 * 2) / 3) as u8;
+
+            for y in 0..4 {
+                for x in 0..4 {
+                    let px = bx * 4 + x;
+                    let py = by * 4 + y;
+                    if px < width && py < height {
+                        let i = y * 4 + x;
+                        let alpha_byte = data[alpha_offset + i / 2];
+                        let alpha4 = if i % 2 == 0 {
+                            alpha_byte & 0x0F
+                        } else {
+                            alpha_byte >> 4
+                        };
+                        let select = ((code >> (2 * i)) & 0x03) as usize;
+
+                        let pixel_offset = (py * width + px) * 4;
+                        rgba[pixel_offset] = r[select];
+                        rgba[pixel_offset + 1] = g[select];
+                        rgba[pixel_offset + 2] = b[select];
+                        rgba[pixel_offset + 3] = alpha4 * 17;
+                    }
+                }
+            }
+        }
+    }
+    rgba
+}
+
+fn compressed_texture_mip_size(format: &str, width: usize, height: usize) -> usize {
+    let blocks_x = (width + 3) / 4;
+    let blocks_y = (height + 3) / 4;
+    match format {
+        "DXT1" => blocks_x * blocks_y * 8,
+        "DXT3" | "DXT5" => blocks_x * blocks_y * 16,
+        _ => width * height * 4,
+    }
+}
+
 fn encode_b64_png_thumbnail(rgba: &[u8], width: u32, height: u32, max_dim: u32) -> Option<String> {
     if rgba.is_empty() || width == 0 || height == 0 {
         return None;
@@ -2752,13 +2875,7 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
         );
 
         for mip_idx in 0..mip_count {
-            let mip_size = if format == "DXT1" {
-                std::cmp::max(8, (cur_w * cur_h) / 2)
-            } else if format == "DXT5" {
-                std::cmp::max(16, cur_w * cur_h)
-            } else {
-                cur_w * cur_h * 4
-            };
+            let mip_size = compressed_texture_mip_size(&format, cur_w, cur_h);
             expected_size += mip_size;
             println!(
                 "[TEX-DEBUG]   Mip {}: {}x{} = {} bytes (cumulative: {})",
@@ -2804,6 +2921,12 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
             Some(raw_pixels.clone())
         } else if format == "DXT1" {
             Some(decompress_dxt1(
+                &raw_pixels,
+                width as usize,
+                height as usize,
+            ))
+        } else if format == "DXT3" {
+            Some(decompress_dxt3(
                 &raw_pixels,
                 width as usize,
                 height as usize,
@@ -5195,6 +5318,7 @@ fn generate_lmip_texture_chunks_and_pool(
 
         let output_format = match texture.format.as_str() {
             "DXT1" => "DXT1",
+            "DXT3" => "DXT3",
             "DXT5" => "DXT5",
             _ => {
                 let has_alpha = rgba.chunks_exact(4).any(|pixel| pixel[3] < 250);
@@ -5210,7 +5334,7 @@ fn generate_lmip_texture_chunks_and_pool(
         // V2 format: string name, 4-byte format name, u32 mip_count, and then mip dimensions (width, height as u32 LittleEndian)
         write_len_string(&mut data, &texture.name)?;
 
-        let format_name = output_format; // "DXT1" or "DXT5"
+        let format_name = output_format; // "DXT1", "DXT3", or "DXT5"
         let mut format_bytes = [b' '; 4];
         let bytes = format_name.as_bytes();
         let copy_len = bytes.len().min(4);
@@ -5228,10 +5352,10 @@ fn generate_lmip_texture_chunks_and_pool(
         }
 
         for (mip_rgba, mw, mh) in &mips {
-            let dxt = if output_format == "DXT5" {
-                compress_dxt5(mip_rgba, *mw, *mh)
-            } else {
-                compress_dxt1(mip_rgba, *mw, *mh)
+            let dxt = match output_format {
+                "DXT3" => compress_dxt3(mip_rgba, *mw, *mh),
+                "DXT5" => compress_dxt5(mip_rgba, *mw, *mh),
+                _ => compress_dxt1(mip_rgba, *mw, *mh),
             };
             texture_pool.extend_from_slice(&dxt);
         }
@@ -8180,4 +8304,35 @@ pub fn serialize_mad_companion(model: &HODModel) -> Result<Vec<u8>, String> {
         .write_chunk(&mut output)
         .map_err(|e| e.to_string())?;
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decompress_dxt3_expands_explicit_alpha() {
+        let mut block = [0u8; 16];
+        for i in 0..16 {
+            let alpha = i as u8;
+            if i % 2 == 0 {
+                block[i / 2] |= alpha;
+            } else {
+                block[i / 2] |= alpha << 4;
+            }
+        }
+
+        let red565 = 0xF800u16;
+        block[8..10].copy_from_slice(&red565.to_le_bytes());
+        block[10..12].copy_from_slice(&red565.to_le_bytes());
+
+        let rgba = decompress_dxt3(&block, 4, 4);
+
+        for i in 0..16 {
+            assert_eq!(rgba[i * 4], 255);
+            assert_eq!(rgba[i * 4 + 1], 0);
+            assert_eq!(rgba[i * 4 + 2], 0);
+            assert_eq!(rgba[i * 4 + 3], i as u8 * 17);
+        }
+    }
 }

@@ -522,6 +522,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
         updatedModel.joints = [...model.joints, {
           name,
           parent_name: parent === "(None)" ? undefined : parent,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0 },
+          scale: { x: 0, y: 0, z: 0 },
           local_transform: {
             m: [
               [1, 0, 0, 0],

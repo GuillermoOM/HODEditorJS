@@ -68,8 +68,9 @@ Texture Stream
 ```
 
 **Data Format:**
-- DXT1: 4 bytes per 4x4 block (no alpha)
-- DXT5: 8 bytes per 4x4 block (with alpha)
+- DXT1 / BC1: 8 bytes per 4x4 block (optional 1-bit alpha)
+- DXT3 / BC2: 16 bytes per 4x4 block (explicit 4-bit alpha + DXT1-like color)
+- DXT5 / BC3: 16 bytes per 4x4 block (interpolated alpha + DXT1-like color)
 - Multiple textures are concatenated
 
 **Example (pebble_0):**

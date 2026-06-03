@@ -143,7 +143,7 @@ cargo run --bin verify_lossless      # Mandatory roundtrip + DAE verification
 
 1. **HOD 1.0 → 2.0 conversion** - Not fully implemented
 2. **DAE → HOD 2.0 conversion** - Not implemented
-3. **Texture compression** - Uses placeholder (not DXT)
+3. **Texture compression** - DXT1/DXT3/DXT5 supported; encoder output may differ byte-for-byte from original tools
 4. **Editor integration** - Source-asset HOD creation is still driven by test binaries
 
 ### Critical Quirks
