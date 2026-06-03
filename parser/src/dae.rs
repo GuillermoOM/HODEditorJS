@@ -79,6 +79,12 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
     if doc.descendants().any(|node| {
         (node.has_tag_name("triangles") || node.has_tag_name("polylist"))
             && node.attribute("material").is_none()
+            && !node.ancestors().any(|a| {
+                a.has_tag_name("geometry")
+                    && a.attribute("id").map_or(false, |id| {
+                        id.starts_with("COL[") || id.starts_with("ROOT_COL")
+                    })
+            })
     }) {
         material_names.push("nameplate.bmp".to_string());
         model.materials.push(HODMaterial {

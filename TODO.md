@@ -55,7 +55,9 @@
 - [x] Loading HOD 1.3 Hecate creates navlight nodes without coordinate editing
 - [x] Many nodes show up on viewport that are missing on the node tree
 - [x] DXT3 Texture compatiblity
+- [x] Remove hardcoded nameplate.bmp texture
 
+- [ ] Make the Viewport Layer toggles also toggle visibility on all nodes but also have options to toggle markers and joint nodes
 - [ ] Editor works slow on bigger ships with many nodes, it seems to be rerendering everything on changing anything in the editor (node coordinate, node dragging, etc).
 
 - [ ] Texture upscaling/smoothing/antialiasing on saving

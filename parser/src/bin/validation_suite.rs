@@ -163,6 +163,7 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
         is_v2: true,
         name: "Homeworld2 Multi Mesh File".to_string(),
         textures,
+        textures_modified: false,
         materials,
         meshes,
         joints: vec![hwr_hod_parser::hod::HODJoint {
