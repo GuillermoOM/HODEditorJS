@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
-import { parseTextureGroups, SHADER_SLOTS } from "../texture_utils";
+import { parseTextureGroups, SHADER_SLOTS, KNOWN_TYPES } from "../texture_utils";
 import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2, FlipVertical } from "lucide-react";
 
 interface InspectorProps {
@@ -2599,6 +2599,25 @@ export const Inspector: React.FC<InspectorProps> = ({
         onModelChange?.({ ...model, textures: updatedTextures, materials: updatedMaterials, textures_modified: true });
       };
 
+      
+      const handleTypeChange = (item: any, newType: string) => {
+        const newTexName = group.baseName + newType + item.compression;
+        
+        let updatedTextures = model.textures.map(t => {
+          if (t.name === item.originalName) {
+            return { ...t, name: newTexName };
+          }
+          return t;
+        });
+
+        let updatedMaterials = (model.materials || []).map(m => {
+          const newMaps = m.texture_maps.map(mapName => mapName === item.originalName ? newTexName : mapName);
+          return { ...m, texture_maps: newMaps };
+        });
+
+        onModelChange?.({ ...model, textures: updatedTextures, materials: updatedMaterials, textures_modified: true });
+      };
+
       const handleCompressionChange = (item: any, newCompression: string) => {
         const newTexName = group.baseName + item.type + newCompression;
         
@@ -2663,9 +2682,16 @@ export const Inspector: React.FC<InspectorProps> = ({
                 {group.textures.map((item, idx) => (
                   <div key={idx} style={{ background: "rgba(0,0,0,0.15)", borderRadius: "4px", padding: "10px", border: "1px solid rgba(255,255,255,0.03)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                      <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--accent-cyan)" }}>
-                        {item.type || "(Base Texture)"}
-                      </span>
+                      <select
+                        value={item.type}
+                        onChange={(e) => handleTypeChange(item, e.target.value)}
+                        style={{ fontSize: "12px", fontWeight: "600", color: "var(--accent-cyan)", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "3px", padding: "2px 4px", outline: "none", cursor: "pointer" }}
+                      >
+                        <option value="" style={{ color: "black" }}>(Base Texture)</option>
+                        {KNOWN_TYPES.map((t: string) => (
+                          <option key={t} value={t} style={{ color: "black" }}>{t}</option>
+                        ))}
+                      </select>
                       <Trash2 size={14} style={{ cursor: "pointer", color: "var(--text-muted)" }} onClick={() => handleDeleteTexture(item)} />
                     </div>
                     <div style={{ display: "flex", gap: "10px" }}>
