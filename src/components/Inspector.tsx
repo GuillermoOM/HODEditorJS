@@ -187,6 +187,57 @@ const NumericInput: React.FC<NumericInputProps> = ({
   );
 };
 
+interface TextInputProps {
+  value: string;
+  onChange: (val: string) => void;
+  style?: React.CSSProperties;
+  placeholder?: string;
+  className?: string;
+}
+
+const TextInput: React.FC<TextInputProps> = ({
+  value,
+  onChange,
+  style,
+  placeholder,
+  className
+}) => {
+  const [localValue, setLocalValue] = useState(value);
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setLocalValue(value);
+    }
+  }, [value]);
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    onChange(localValue);
+    setLocalValue(value); // Resets if parent rejected the change
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.currentTarget.blur();
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      value={localValue}
+      onFocus={() => { isFocusedRef.current = true; }}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      onChange={(e) => setLocalValue(e.target.value)}
+      style={style}
+      placeholder={placeholder}
+      className={className}
+    />
+  );
+};
+
 const SHADER_SLOTS: Record<string, string[]> = {
   ship: ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Specular Map (SPEC)"],
   badge: ["Badge Diffuse Map (DIFF)"],
@@ -1641,11 +1692,10 @@ export const Inspector: React.FC<InspectorProps> = ({
 
           <div>
             <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Style</label>
-            <input
-              type="text"
+            <TextInput
               value={nav.style}
-              onChange={(e) => handleNavLightChange("style", e.target.value)}
-              style={{ fontSize: "12px" }}
+              onChange={(val) => handleNavLightChange("style", val)}
+              style={{ fontSize: "12px", width: "100%", background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-primary)", padding: "6px 10px", borderRadius: "4px" }}
             />
           </div>
 
@@ -2613,10 +2663,9 @@ export const Inspector: React.FC<InspectorProps> = ({
               <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
                 Group Base Name
               </label>
-              <input
-                type="text"
+              <TextInput
                 value={group.baseName}
-                onChange={(e) => handleGroupNameChange(e.target.value)}
+                onChange={(val) => handleGroupNameChange(val)}
                 style={{ width: "100%", background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-primary)", padding: "6px 10px", borderRadius: "4px", fontSize: "12px", fontFamily: "var(--font-mono)" }}
               />
             </div>
@@ -2822,10 +2871,10 @@ export const Inspector: React.FC<InspectorProps> = ({
               <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
                 Material Name
               </label>
-              <input
-                type="text"
+              <TextInput
                 value={material.name}
-                onChange={(e) => handleMaterialNameChange(e.target.value)}
+                onChange={(val) => handleMaterialNameChange(val)}
+                style={{ width: "100%", background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-primary)", padding: "6px 10px", borderRadius: "4px", fontSize: "12px", fontFamily: "var(--font-mono)" }}
               />
             </div>
 
