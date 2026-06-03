@@ -2125,321 +2125,38 @@ fn find_tga_recursive(dir: &std::path::Path, filename_lower: &str) -> Option<std
     None
 }
 
-fn rgb565_to_u16(r: u8, g: u8, b: u8) -> u16 {
-    let ri = (r as u32 * 31 / 255) as u16;
-    let gi = (g as u32 * 63 / 255) as u16;
-    let bi = (b as u32 * 31 / 255) as u16;
-    (ri << 11) | (gi << 5) | bi
-}
 
-fn u16_to_rgb565(val: u16) -> (u8, u8, u8) {
-    let r = (((val >> 11) & 0x1F) as u32 * 255 / 31) as u8;
-    let g = (((val >> 5) & 0x3F) as u32 * 255 / 63) as u8;
-    let b = ((val & 0x1F) as u32 * 255 / 31) as u8;
-    (r, g, b)
-}
 
-fn color_error(r0: u8, g0: u8, b0: u8, r1: u8, g1: u8, b1: u8) -> u32 {
-    let dr = r0 as i32 - r1 as i32;
-    let dg = g0 as i32 - g1 as i32;
-    let db = b0 as i32 - b1 as i32;
-    (dr * dr + dg * dg + db * db) as u32
-}
 
-fn find_best_endpoints(block: &[[u8; 4]; 16]) -> (u16, u16) {
-    let mut min_r = 255u8;
-    let mut max_r = 0u8;
-    let mut min_g = 255u8;
-    let mut max_g = 0u8;
-    let mut min_b = 255u8;
-    let mut max_b = 0u8;
-    for px in block {
-        if px[0] < min_r {
-            min_r = px[0];
-        }
-        if px[0] > max_r {
-            max_r = px[0];
-        }
-        if px[1] < min_g {
-            min_g = px[1];
-        }
-        if px[1] > max_g {
-            max_g = px[1];
-        }
-        if px[2] < min_b {
-            min_b = px[2];
-        }
-        if px[2] > max_b {
-            max_b = px[2];
-        }
-    }
 
-    let c0 = rgb565_to_u16(min_r, min_g, min_b);
-    let c1 = rgb565_to_u16(max_r, max_g, max_b);
-    let (er, eg, eb) = u16_to_rgb565(c0);
-    let (fr, fg, fb) = u16_to_rgb565(c1);
 
-    let mut best_err = u32::MAX;
-    let mut best_c0 = c0;
-    let mut best_c1 = c1;
 
-    let candidates = [
-        (min_r, min_g, min_b),
-        (max_r, max_g, max_b),
-        (er, eg, eb),
-        (fr, fg, fb),
-    ];
-    for &(a_r, a_g, a_b) in &candidates {
-        for &(b_r, b_g, b_b) in &candidates {
-            let c_a = rgb565_to_u16(a_r, a_g, a_b);
-            let c_b = rgb565_to_u16(b_r, b_g, b_b);
-            let (ar, ag, ab) = u16_to_rgb565(c_a);
-            let (br, bg, bb) = u16_to_rgb565(c_b);
-            let palette = [
-                (ar, ag, ab),
-                (br, bg, bb),
-                (
-                    (ar as u32 * 2 + br as u32) as u8 / 3,
-                    (ag as u32 * 2 + bg as u32) as u8 / 3,
-                    (ab as u32 * 2 + bb as u32) as u8 / 3,
-                ),
-                (
-                    (ar as u32 + br as u32 * 2) as u8 / 3,
-                    (ag as u32 + bg as u32 * 2) as u8 / 3,
-                    (ab as u32 + bb as u32 * 2) as u8 / 3,
-                ),
-            ];
-            let mut total = 0u32;
-            for px in block {
-                let mut best_d = u32::MAX;
-                for &(pr, pg, pb) in &palette {
-                    let d = color_error(px[0], px[1], px[2], pr, pg, pb);
-                    if d < best_d {
-                        best_d = d;
-                    }
-                    if best_d == 0 {
-                        break;
-                    }
-                }
-                total += best_d;
-                if total >= best_err {
-                    break;
-                }
-            }
-            if total < best_err {
-                best_err = total;
-                best_c0 = c_a;
-                best_c1 = c_b;
-            }
-        }
-    }
 
-    if best_c0 <= best_c1 {
-        (best_c1, best_c0)
-    } else {
-        (best_c0, best_c1)
-    }
-}
 
-fn compress_dxt1_block(block: &[[u8; 4]; 16]) -> [u8; 8] {
-    let (c0, c1) = find_best_endpoints(block);
-    let (r0, g0, b0) = u16_to_rgb565(c0);
-    let (r1, g1, b1) = u16_to_rgb565(c1);
-    let palette = [
-        (r0, g0, b0),
-        (r1, g1, b1),
-        if c0 > c1 {
-            (
-                (r0 as u32 * 2 + r1 as u32) as u8 / 3,
-                (g0 as u32 * 2 + g1 as u32) as u8 / 3,
-                (b0 as u32 * 2 + b1 as u32) as u8 / 3,
-            )
-        } else {
-            (
-                (r0 as u32 + r1 as u32) as u8 / 2,
-                (g0 as u32 + g1 as u32) as u8 / 2,
-                (b0 as u32 + b1 as u32) as u8 / 2,
-            )
-        },
-        if c0 > c1 {
-            (
-                (r0 as u32 + r1 as u32 * 2) as u8 / 3,
-                (g0 as u32 + g1 as u32 * 2) as u8 / 3,
-                (b0 as u32 + b1 as u32 * 2) as u8 / 3,
-            )
-        } else {
-            (0, 0, 0)
-        },
-    ];
-    let mut code = 0u32;
-    for (i, px) in block.iter().enumerate() {
-        let mut best_idx = 0u32;
-        let mut best_d = u32::MAX;
-        for (j, &(pr, pg, pb)) in palette.iter().enumerate() {
-            let d = color_error(px[0], px[1], px[2], pr, pg, pb);
-            if d < best_d {
-                best_d = d;
-                best_idx = j as u32;
-            }
-            if best_d == 0 {
-                break;
-            }
-        }
-        code |= best_idx << (2 * i as u32);
-    }
-    let mut out = [0u8; 8];
-    out[0..2].copy_from_slice(&c0.to_le_bytes());
-    out[2..4].copy_from_slice(&c1.to_le_bytes());
-    out[4..8].copy_from_slice(&code.to_le_bytes());
-    out
-}
+
 
 fn compress_dxt1(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
-    let blocks_x = (width + 3) / 4;
-    let blocks_y = (height + 3) / 4;
-    let mut out = Vec::with_capacity(blocks_x * blocks_y * 8);
-
-    for by in 0..blocks_y {
-        for bx in 0..blocks_x {
-            let mut block = [[0u8; 4]; 16];
-            for y in 0..4 {
-                for x in 0..4 {
-                    let px = bx * 4 + x;
-                    let py = by * 4 + y;
-                    let idx = (py * width + px) * 4;
-                    if px < width && py < height && idx + 3 < rgba.len() {
-                        block[y * 4 + x] = [rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3]];
-                    }
-                }
-            }
-            out.extend_from_slice(&compress_dxt1_block(&block));
-        }
-    }
+    let out_size = ((width.max(1) + 3) / 4) * ((height.max(1) + 3) / 4) * 8;
+    let mut out = vec![0u8; out_size];
+    texpresso::Format::Bc1.compress(rgba, width, height, texpresso::Params::default(), &mut out);
     out
 }
 
-fn compress_dxt5_block(block: &[[u8; 4]; 16]) -> [u8; 16] {
-    let mut min_alpha = 255u8;
-    let mut max_alpha = 0u8;
-    for px in block {
-        min_alpha = min_alpha.min(px[3]);
-        max_alpha = max_alpha.max(px[3]);
-    }
 
-    let alpha0 = max_alpha;
-    let alpha1 = if max_alpha == min_alpha && max_alpha > 0 {
-        max_alpha - 1
-    } else {
-        min_alpha
-    };
-
-    let mut alpha_palette = [0u8; 8];
-    alpha_palette[0] = alpha0;
-    alpha_palette[1] = alpha1;
-    if alpha0 > alpha1 {
-        for i in 1..7 {
-            alpha_palette[i + 1] =
-                (((7 - i) as u32 * alpha0 as u32 + i as u32 * alpha1 as u32) / 7) as u8;
-        }
-    } else {
-        for i in 1..5 {
-            alpha_palette[i + 1] =
-                (((5 - i) as u32 * alpha0 as u32 + i as u32 * alpha1 as u32) / 5) as u8;
-        }
-        alpha_palette[6] = 0;
-        alpha_palette[7] = 255;
-    }
-
-    let mut alpha_code = 0u64;
-    for (i, px) in block.iter().enumerate() {
-        let mut best_idx = 0u64;
-        let mut best_d = u16::MAX;
-        for (idx, alpha) in alpha_palette.iter().enumerate() {
-            let d = px[3].abs_diff(*alpha) as u16;
-            if d < best_d {
-                best_d = d;
-                best_idx = idx as u64;
-            }
-            if best_d == 0 {
-                break;
-            }
-        }
-        alpha_code |= best_idx << (3 * i as u64);
-    }
-
-    let color = compress_dxt1_block(block);
-    let mut out = [0u8; 16];
-    out[0] = alpha0;
-    out[1] = alpha1;
-    for i in 0..6 {
-        out[2 + i] = ((alpha_code >> (8 * i)) & 0xFF) as u8;
-    }
-    out[8..16].copy_from_slice(&color);
-    out
-}
 
 fn compress_dxt5(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
-    let blocks_x = (width + 3) / 4;
-    let blocks_y = (height + 3) / 4;
-    let mut out = Vec::with_capacity(blocks_x * blocks_y * 16);
-
-    for by in 0..blocks_y {
-        for bx in 0..blocks_x {
-            let mut block = [[0u8; 4]; 16];
-            for y in 0..4 {
-                for x in 0..4 {
-                    let px = bx * 4 + x;
-                    let py = by * 4 + y;
-                    let idx = (py * width + px) * 4;
-                    if px < width && py < height && idx + 3 < rgba.len() {
-                        block[y * 4 + x] = [rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3]];
-                    }
-                }
-            }
-            out.extend_from_slice(&compress_dxt5_block(&block));
-        }
-    }
+    let out_size = ((width.max(1) + 3) / 4) * ((height.max(1) + 3) / 4) * 16;
+    let mut out = vec![0u8; out_size];
+    texpresso::Format::Bc3.compress(rgba, width, height, texpresso::Params::default(), &mut out);
     out
 }
 
-fn compress_dxt3_block(block: &[[u8; 4]; 16]) -> [u8; 16] {
-    let mut out = [0u8; 16];
 
-    for (i, px) in block.iter().enumerate() {
-        let alpha4 = ((px[3] as u16 * 15 + 127) / 255) as u8 & 0x0F;
-        if i % 2 == 0 {
-            out[i / 2] |= alpha4;
-        } else {
-            out[i / 2] |= alpha4 << 4;
-        }
-    }
-
-    let color = compress_dxt1_block(block);
-    out[8..16].copy_from_slice(&color);
-    out
-}
 
 fn compress_dxt3(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
-    let blocks_x = (width + 3) / 4;
-    let blocks_y = (height + 3) / 4;
-    let mut out = Vec::with_capacity(blocks_x * blocks_y * 16);
-
-    for by in 0..blocks_y {
-        for bx in 0..blocks_x {
-            let mut block = [[0u8; 4]; 16];
-            for y in 0..4 {
-                for x in 0..4 {
-                    let px = bx * 4 + x;
-                    let py = by * 4 + y;
-                    let idx = (py * width + px) * 4;
-                    if px < width && py < height && idx + 3 < rgba.len() {
-                        block[y * 4 + x] = [rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3]];
-                    }
-                }
-            }
-            out.extend_from_slice(&compress_dxt3_block(&block));
-        }
-    }
+    let out_size = ((width.max(1) + 3) / 4) * ((height.max(1) + 3) / 4) * 16;
+    let mut out = vec![0u8; out_size];
+    texpresso::Format::Bc2.compress(rgba, width, height, texpresso::Params::default(), &mut out);
     out
 }
 
