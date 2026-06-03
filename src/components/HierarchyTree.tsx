@@ -2,8 +2,8 @@ import React, { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, HODAnimation } from "./Viewport";
-import { parseTextureGroups, KNOWN_TYPES } from "../texture_utils";
-import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload } from "lucide-react";
+import { parseTextureGroups, KNOWN_TYPES, getExpectedTextureType } from "../texture_utils";
+import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2 } from "lucide-react";
 
 interface HierarchyTreeProps {
   model: HODModel | null;
@@ -132,6 +132,69 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   const [activeTab, setActiveTab] = useState<"hierarchy" | "materials" | "animations" | "targetboxes">("hierarchy");
   const [selectedBoxIdx, setSelectedBoxIdx] = useState<number | null>(null);
   const [showLuaCode, setShowLuaCode] = useState(false);
+
+  
+  const handleAutoFixTextures = () => {
+    if (!model) return;
+    
+    let updatedTextures = [...model.textures];
+    let updatedMaterials = (model.materials || []).map(m => ({ ...m, texture_maps: [...(m.texture_maps || [])] }));
+    let renameCount = 0;
+    
+    // Create a mapping of old texture names to their updated info
+    for (let mIdx = 0; mIdx < updatedMaterials.length; mIdx++) {
+      const mat = updatedMaterials[mIdx];
+      
+      for (let i = 0; i < mat.texture_maps.length; i++) {
+        const oldName = mat.texture_maps[i];
+        if (!oldName) continue;
+        
+        const expectedSuffix = getExpectedTextureType(mat.shader_name, i);
+        if (!expectedSuffix) continue;
+        
+        const texIdx = updatedTextures.findIndex(t => t.name === oldName);
+        if (texIdx === -1) continue;
+        
+        const tex = updatedTextures[texIdx];
+        
+        // Strip compression
+        let baseName = tex.name;
+        if (baseName.toUpperCase().endsWith(tex.format.toUpperCase())) {
+          baseName = baseName.substring(0, baseName.length - tex.format.length);
+        }
+        
+        // If it doesn't already end with the expected suffix
+        if (!baseName.toUpperCase().endsWith(expectedSuffix.toUpperCase())) {
+          const newName = baseName + expectedSuffix + tex.format;
+          
+          // Apply rename to the texture
+          updatedTextures[texIdx] = { ...tex, name: newName };
+          
+          // Apply rename to the material
+          mat.texture_maps[i] = newName;
+          
+          // Also rename in other materials using this oldName
+          for (let omIdx = 0; omIdx < updatedMaterials.length; omIdx++) {
+            const oMat = updatedMaterials[omIdx];
+            for (let j = 0; j < oMat.texture_maps.length; j++) {
+              if (oMat.texture_maps[j] === oldName) {
+                oMat.texture_maps[j] = newName;
+              }
+            }
+          }
+          
+          renameCount++;
+        }
+      }
+    }
+    
+    if (renameCount > 0) {
+      onModelChange?.({ ...model, textures: updatedTextures, materials: updatedMaterials, textures_modified: true });
+      alert(`Auto-fixed ${renameCount} texture names to match their assigned shader slots.`);
+    } else {
+      alert("All textures are already correctly named according to their slots!");
+    }
+  };
 
   const handleImportTGA = async () => {
     try {
@@ -2929,6 +2992,15 @@ const handleDeleteNode = (name: string, type: string) => {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: "8px", paddingRight: "8px" }}>
                   <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>Textures</div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      onClick={handleAutoFixTextures}
+                      className="icon-button"
+                      style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", display: "flex", alignItems: "center", gap: "4px" }}
+                      title="Auto-fix texture types (_DIFF, _GLOW, etc.) based on Material usage"
+                    >
+                      <Wand2 size={10} style={{ color: "var(--accent-cyan)" }} />
+                      <span style={{ fontSize: "9px", color: "var(--text-primary)" }}>Auto-Fix</span>
+                    </button>
                     <button
                       onClick={handleImportTGA}
                       className="icon-button"

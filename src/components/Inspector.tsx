@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
-import { parseTextureGroups } from "../texture_utils";
+import { parseTextureGroups, SHADER_SLOTS } from "../texture_utils";
 import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2, FlipVertical } from "lucide-react";
 
 interface InspectorProps {
@@ -238,22 +238,7 @@ const TextInput: React.FC<TextInputProps> = ({
   );
 };
 
-const SHADER_SLOTS: Record<string, string[]> = {
-  ship: ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Specular Map (SPEC)"],
-  badge: ["Badge Diffuse Map (DIFF)"],
-  badgeglow: ["Badge Diffuse Map (DIFF)", "Glow Map (GLOW)"],
-  thruster: ["Diffuse On (DIFF)", "Glow On (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Diffuse Off (DIFF_OFF)", "Glow Off (GLOW_OFF)"],
-  bay: ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"],
-  innatess: ["Diffuse Map (DIFF)"],
-  matte: ["Diffuse Map (DIFF)"],
-  mattealpha: ["Diffuse Map (DIFF)"],
-  mattescissor: ["Diffuse Map (DIFF)"],
-  matte2s: ["Diffuse Map (DIFF)"],
-  mattealpha2s: ["Diffuse Map (DIFF)"],
-  mattescissor2s: ["Diffuse Map (DIFF)"],
-  shipglow: ["Diffuse Map (DIFF)", "Glow Map (GLOW)"],
-  shipglow_ns: ["Diffuse Map (DIFF)", "Glow Map (GLOW)"],
-};
+
 
 interface MeshLODInspectorProps {
   model: HODModel;
