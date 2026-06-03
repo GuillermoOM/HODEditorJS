@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
-import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box } from "lucide-react";
+import { parseTextureGroups, KNOWN_TYPES } from "../texture_utils";
+import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2 } from "lucide-react";
 
 interface InspectorProps {
   model: HODModel | null;
@@ -2492,6 +2493,150 @@ export const Inspector: React.FC<InspectorProps> = ({
       );
     }
 
+
+    if (selectedNode.type === "texture_group") {
+      const groups = parseTextureGroups(model.textures || []);
+      const group = groups.find(g => g.baseName === selectedNode.name);
+      if (!group) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Texture Group not found</div>;
+
+      const handleGroupNameChange = (newName: string) => {
+        if (!newName || newName === group.baseName) return;
+        
+        let updatedTextures = [...model.textures];
+        let updatedMaterials = [...(model.materials || [])];
+
+        group.textures.forEach(item => {
+          const newTexName = newName + item.type + item.compression;
+          
+          // Update textures array
+          updatedTextures = updatedTextures.map(t => {
+            if (t.name === item.originalName) {
+              return { ...t, name: newTexName };
+            }
+            return t;
+          });
+
+          // Update materials referencing this texture
+          updatedMaterials = updatedMaterials.map(m => {
+            const newMaps = m.texture_maps.map(mapName => mapName === item.originalName ? newTexName : mapName);
+            return { ...m, texture_maps: newMaps };
+          });
+        });
+
+        onModelChange?.({ ...model, textures: updatedTextures, materials: updatedMaterials, textures_modified: true });
+        selectedNode.name = newName;
+      };
+
+      const handleCompressionChange = (item: any, newCompression: string) => {
+        const newTexName = group.baseName + item.type + newCompression;
+        
+        let updatedTextures = model.textures.map(t => {
+          if (t.name === item.originalName) {
+            return { ...t, name: newTexName, format: newCompression };
+          }
+          return t;
+        });
+
+        let updatedMaterials = (model.materials || []).map(m => {
+          const newMaps = m.texture_maps.map(mapName => mapName === item.originalName ? newTexName : mapName);
+          return { ...m, texture_maps: newMaps };
+        });
+
+        onModelChange?.({ ...model, textures: updatedTextures, materials: updatedMaterials, textures_modified: true });
+      };
+
+      const handleDeleteTexture = (item: any) => {
+        if (!window.confirm(`Are you sure you want to delete ${item.type || "this"} texture from the group?`)) return;
+        
+        let updatedTextures = model.textures.filter(t => t.name !== item.originalName);
+        let updatedMaterials = (model.materials || []).map(m => {
+          const newMaps = m.texture_maps.map(mapName => mapName === item.originalName ? "" : mapName);
+          return { ...m, texture_maps: newMaps };
+        });
+
+        onModelChange?.({ ...model, textures: updatedTextures, materials: updatedMaterials, textures_modified: true });
+      };
+
+      return (
+        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+          <div style={{ padding: "16px", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <div style={{ width: "32px", height: "32px", borderRadius: "6px", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Image size={18} style={{ color: "var(--accent-cyan)" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: 0, fontSize: "14px", fontWeight: "600", color: "var(--text-primary)" }}>Texture Group</h3>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Manage sub-textures and formats</span>
+              </div>
+            </div>
+          </div>
+          
+          <div style={{ padding: "16px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
+                Group Base Name
+              </label>
+              <input
+                type="text"
+                value={group.baseName}
+                onChange={(e) => handleGroupNameChange(e.target.value)}
+                style={{ width: "100%", background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.1)", color: "var(--text-primary)", padding: "6px 10px", borderRadius: "4px", fontSize: "12px", fontFamily: "var(--font-mono)" }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>
+                Sub-Textures
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {group.textures.map((item, idx) => (
+                  <div key={idx} style={{ background: "rgba(0,0,0,0.15)", borderRadius: "4px", padding: "10px", border: "1px solid rgba(255,255,255,0.03)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                      <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--accent-cyan)" }}>
+                        {item.type || "(Base Texture)"}
+                      </span>
+                      <Trash2 size={14} style={{ cursor: "pointer", color: "var(--text-muted)" }} onClick={() => handleDeleteTexture(item)} />
+                    </div>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      {item.texture.png_preview ? (
+                        <img
+                          src={item.texture.png_preview.startsWith("data:") ? item.texture.png_preview : `data:image/png;base64,${item.texture.png_preview}`}
+                          alt={item.originalName}
+                          style={{ width: "48px", height: "48px", objectFit: "cover", borderRadius: "4px", border: "1px solid var(--border-color)", background: "#000", flexShrink: 0 }}
+                        />
+                      ) : (
+                        <div style={{ width: "48px", height: "48px", borderRadius: "4px", background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <Image size={16} style={{ color: "var(--text-muted)" }} />
+                        </div>
+                      )}
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--text-muted)" }}>
+                          <span>Size: {item.texture.width}x{item.texture.height}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>Format:</span>
+                          <select
+                            value={item.compression}
+                            onChange={(e) => handleCompressionChange(item, e.target.value)}
+                            style={{ flex: 1, padding: "4px 8px", fontSize: "11px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-color)", color: "white", borderRadius: "3px" }}
+                          >
+                            <option value="DXT1">DXT1</option>
+                            <option value="DXT3">DXT3</option>
+                            <option value="DXT5">DXT5</option>
+                            <option value="RGBA">RGBA</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (selectedNode.type === "material") {
       const material = model.materials?.find(m => m.name === selectedNode.name);
       if (!material) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Material not found</div>;
@@ -2519,15 +2664,33 @@ export const Inspector: React.FC<InspectorProps> = ({
         onModelChange?.({ ...model, materials: updatedMaterials });
       };
 
-      const handleTextureChange = (tIdx: number, newTextureName: string) => {
+      const handleTextureGroupChange = (groupName: string) => {
+        const groups = parseTextureGroups(model.textures || []);
+        const group = groups.find(g => g.baseName === groupName);
+        
         const updatedMaterials = model.materials.map(m => {
           if (m.name === material.name) {
-            const updatedMaps = [...m.texture_maps];
-            while (updatedMaps.length <= tIdx) {
-              updatedMaps.push("");
-            }
-            updatedMaps[tIdx] = newTextureName;
-            return { ...m, texture_maps: updatedMaps };
+            const shaderLower = (m.shader_name || "").toLowerCase();
+            const expectedSlots = SHADER_SLOTS[shaderLower] || ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"];
+            
+            const newMaps = expectedSlots.map(slotLabel => {
+              if (!group) return "";
+              
+              let expectedType = "";
+              if (slotLabel.includes("DIFF")) expectedType = "_DIFF";
+              else if (slotLabel.includes("GLOW")) expectedType = "_GLOW";
+              else if (slotLabel.includes("TEAM")) expectedType = "_TEAM";
+              else if (slotLabel.includes("NORM")) expectedType = "_NORM";
+              else if (slotLabel.includes("SPEC")) expectedType = "_SPEC";
+              
+              const matchedTex = group.textures.find(t => t.type === expectedType);
+              if (matchedTex) return matchedTex.originalName;
+              
+              // Fallback to empty string if missing in group
+              return "";
+            });
+            
+            return { ...m, texture_maps: newMaps };
           }
           return m;
         });
@@ -2548,7 +2711,25 @@ export const Inspector: React.FC<InspectorProps> = ({
               }
 
               let updatedTextures = [...(model.textures || [])];
+              let importedNames = [];
               for (const importedTex of importedTexs) {
+                let nameNoFormat = importedTex.name;
+                if (nameNoFormat.toUpperCase().endsWith(importedTex.format.toUpperCase())) {
+                    nameNoFormat = nameNoFormat.substring(0, nameNoFormat.length - importedTex.format.length);
+                }
+                const hasKnownType = KNOWN_TYPES.some(t => nameNoFormat.toUpperCase().endsWith(t));
+
+                if (!hasKnownType) {
+                    let userType = window.prompt(`The imported texture "${importedTex.name}" is missing a recognized type suffix.\n\nPlease enter the texture type suffix (e.g. _DIFF, _GLOW, _NORM, _TEAM, _SPEC):`, "_DIFF");
+                    if (userType === null) {
+                        alert(`Skipping import of ${importedTex.name}`);
+                        continue;
+                    }
+                    if (!userType.startsWith("_")) userType = "_" + userType;
+                    importedTex.name = nameNoFormat + userType.toUpperCase() + importedTex.format;
+                }
+
+                importedNames.push(importedTex.name);
                 const existsIdx = updatedTextures.findIndex(t => t.name.toLowerCase() === importedTex.name.toLowerCase());
                 if (existsIdx !== -1) {
                   updatedTextures[existsIdx] = importedTex;
@@ -2557,11 +2738,12 @@ export const Inspector: React.FC<InspectorProps> = ({
                 }
               }
 
-              onModelChange?.({ ...model, textures: updatedTextures, textures_modified: true });
-              
-              const names = importedTexs.map(t => t.name).join(", ");
-              invoke("log_event", { level: "INFO", message: `Imported and bound TGA textures: ${names}` }).catch(console.error);
-              alert(`Successfully imported TGA textures "${names}"!\n\nThey are now available in the texture slots dropdown list below.`);
+              if (importedNames.length > 0) {
+                onModelChange?.({ ...model, textures: updatedTextures, textures_modified: true });
+                const names = importedNames.join(", ");
+                invoke("log_event", { level: "INFO", message: `Imported and bound TGA textures: ${names}` }).catch(console.error);
+                alert(`Successfully imported TGA textures "${names}"!\n\nThey are now available as a Texture Group.`);
+              }
             } catch (e: any) {
               console.error(e);
               alert(`Failed to import TGA texture: ${e.toString()}`);
@@ -2686,57 +2868,56 @@ export const Inspector: React.FC<InspectorProps> = ({
               </label>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(0,0,0,0.15)", padding: "10px", borderRadius: "4px" }}>
                 {(() => {
+                  const groups = parseTextureGroups(model.textures || []);
+                  
+                  // Guess the currently assigned group based on the first slot (Diffuse usually)
+                  let currentGroup = "";
+                  if (material.texture_maps && material.texture_maps[0]) {
+                    const firstTex = material.texture_maps[0];
+                    const matchedGroup = groups.find(g => g.textures.some(t => t.originalName === firstTex));
+                    if (matchedGroup) {
+                      currentGroup = matchedGroup.baseName;
+                    }
+                  }
+
                   const shaderLower = (material.shader_name || "").toLowerCase();
                   const expectedSlots = SHADER_SLOTS[shaderLower] || ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"];
-                  const slotsToRender = expectedSlots.map((slotLabel, idx) => {
-                    const mapName = material.texture_maps?.[idx] || "";
-                    return { slotLabel, mapName, idx };
-                  });
 
-                  return slotsToRender.map((slot, idx) => {
-                    const mapName = slot.mapName;
-                    const slotLabel = slot.slotLabel;
-
-                    const cleanTexName = (name: string) => name.toLowerCase().replace(/\.(tga|png|dds|bmp|jpg|jpeg)$/, "").trim();
-                    const matchedTexture = model.textures?.find(t => {
-                      const tName = cleanTexName(t.name);
-                      const mName = cleanTexName(mapName);
-                      if (!mName) return false;
-                      return tName === mName || tName.includes(mName) || mName.includes(tName);
-                    });
-
-                    return (
-                      <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "4px", borderBottom: idx < slotsToRender.length - 1 ? "1px solid rgba(255,255,255,0.03)" : "none", paddingBottom: idx < slotsToRender.length - 1 ? "8px" : "0", marginBottom: idx < slotsToRender.length - 1 ? "4px" : "0" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: "11px", color: "var(--text-muted)", fontWeight: "500" }}>{slotLabel}</span>
-                          {mapName && matchedTexture && (
-                            <span style={{ fontSize: "9px", color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
-                              {matchedTexture.width}x{matchedTexture.height} [{matchedTexture.format}]
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                          {mapName && matchedTexture && matchedTexture.png_preview && (
-                            <img
-                              src={matchedTexture.png_preview.startsWith("data:") ? matchedTexture.png_preview : `data:image/png;base64,${matchedTexture.png_preview}`}
-                              alt={mapName}
-                              style={{ width: "24px", height: "24px", objectFit: "cover", borderRadius: "3px", border: "1px solid var(--border-color)", background: "#000", flexShrink: 0 }}
-                            />
-                          )}
-                          <select
-                            value={mapName}
-                            onChange={(e) => handleTextureChange(idx, e.target.value)}
-                            style={{ flex: 1, height: "26px", padding: "2px 6px", fontSize: "11px" }}
-                          >
-                            <option value="">(None)</option>
-                            {model.textures?.map((t) => (
-                              <option key={t.name} value={t.name}>{t.name}</option>
-                            ))}
-                          </select>
-                        </div>
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)", flexShrink: 0 }}>Texture Group:</span>
+                        <select
+                          value={currentGroup}
+                          onChange={(e) => handleTextureGroupChange(e.target.value)}
+                          style={{ flex: 1, padding: "6px 8px", fontSize: "12px", background: "rgba(0,0,0,0.3)", border: "1px solid var(--border-color)", color: "white", borderRadius: "3px" }}
+                        >
+                          <option value="">(None)</option>
+                          {groups.map(g => (
+                            <option key={g.baseName} value={g.baseName}>{g.baseName}</option>
+                          ))}
+                        </select>
                       </div>
-                    );
-                  });
+                      
+                      {currentGroup && (
+                        <div style={{ padding: "8px", background: "rgba(255,255,255,0.03)", borderRadius: "4px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                          {expectedSlots.map((slotLabel, idx) => {
+                            const mapName = material.texture_maps?.[idx] || "";
+                            return (
+                              <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
+                                <span style={{ color: "var(--text-secondary)" }}>{slotLabel}</span>
+                                {mapName ? (
+                                  <span style={{ color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>{mapName}</span>
+                                ) : (
+                                  <span style={{ color: "var(--text-muted)" }}>-- Missing --</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
                 })()}
 
                 <div style={{ borderTop: "1px dashed var(--border-color)", marginTop: "8px", paddingTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>

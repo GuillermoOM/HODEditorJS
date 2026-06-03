@@ -2,7 +2,8 @@ import React, { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, HODAnimation } from "./Viewport";
-import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , Image, FlipVertical, Download, Upload } from "lucide-react";
+import { parseTextureGroups } from "../texture_utils";
+import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload } from "lucide-react";
 
 interface HierarchyTreeProps {
   model: HODModel | null;
@@ -2873,49 +2874,38 @@ const handleDeleteNode = (name: string, type: string) => {
                 {model.textures && model.textures.length > 0 ? (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4px" }}>
                     <div style={{ display: "contents" }}>
-                      {model.textures
-                        .filter(t => !searchTerm || t.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                        .map((texture, idx) => (
-                          <div
-                          key={texture.name + "_" + idx}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setContextMenu({ x: e.clientX, y: e.clientY, name: texture.name, type: "texture" });
-                          }}
-                          className="list-item"
-                          style={{
-                            padding: "6px 8px",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            background: "rgba(0,0,0,0.15)",
-                            borderRadius: "4px",
-                            border: "1px solid rgba(255,255,255,0.03)",
-                            cursor: "context-menu"
-                          }}
-                        >
-                          {texture.png_preview ? (
-                            <img
-                              src={texture.png_preview.startsWith("data:") ? texture.png_preview : `data:image/png;base64,${texture.png_preview}`}
-                              alt={texture.name}
-                              style={{ width: "24px", height: "24px", objectFit: "cover", borderRadius: "3px", border: "1px solid var(--border-color)", background: "#000", flexShrink: 0 }}
-                            />
-                          ) : (
-                            <div style={{ width: "24px", height: "24px", borderRadius: "3px", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                              <Image size={12} style={{ color: "var(--text-muted)" }} />
+                      {parseTextureGroups(model.textures)
+                        .filter(g => !searchTerm || g.baseName.toLowerCase().includes(searchTerm.toLowerCase()))
+                        .map((group, idx) => {
+                          const isSelected = selectedNode?.type === "texture_group" && selectedNode.name === group.baseName;
+                          return (
+                            <div
+                              key={group.baseName + "_" + idx}
+                              onClick={() => setSelectedNode({ type: "texture_group", name: group.baseName })}
+                              className={`list-item ${isSelected ? "active" : ""}`}
+                              style={{
+                                padding: "6px 8px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                cursor: "pointer",
+                                background: isSelected ? "var(--selection-bg)" : "transparent",
+                              }}
+                            >
+                              <div style={{ width: "20px", height: "20px", borderRadius: "3px", background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                <Folder size={12} style={{ color: "var(--text-muted)" }} />
+                              </div>
+                              <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                                <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {group.baseName}
+                                </span>
+                                <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>
+                                  {group.textures.length} textures
+                                </span>
+                              </div>
                             </div>
-                          )}
-                          <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                            <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {texture.name}
-                            </span>
-                            <span style={{ fontSize: "9px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                              {texture.width}x{texture.height} [{texture.format}] {texture.legacy_storage_y_flipped ? "(Y-Flipped)" : ""}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                          );
+                        })}
                     </div>
                   </div>
                 ) : (
