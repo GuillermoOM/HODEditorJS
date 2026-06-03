@@ -93,3 +93,44 @@ To prevent accidental feature loss (such as breaking UI loading screens or destr
 1. **Do not remove `setTimeout` blocks indiscriminately.** Tauri's IPC `invoke` API serializes payloads synchronously. Heavy operations (like passing the entire `HODModel` or parsing large JSON strings) will block the React render thread. You **MUST** ensure `setIsLoading(true)` is followed by a `setTimeout(..., 50)` before a heavy `invoke` call, allowing the browser to paint the loading screen before it freezes.
 2. **Leave Trap Comments.** If you add a hack or workaround (like the `setTimeout` trick), leave a comment explicitly forbidding future agents from "cleaning it up".
 3. **Verify the UI State.** If you modify any frontend file that triggers heavy Rust processing (saving, importing, generating meshes), verify that the loading spinner overlay actually mounts and is visible before the application locks up during testing.
+
+## 7. Publishing a New Release
+
+When preparing a new GitHub release, follow these exact steps to ensure versions align and binaries are built and uploaded correctly:
+
+1. **Bump Version Strings**:
+   Update the version number (e.g., to `1.2.1`) in the following files:
+   - `package.json`
+   - `src-tauri/tauri.conf.json`
+   - `src-tauri/Cargo.toml`
+
+2. **Commit and Tag**:
+   ```bash
+   git commit -am "chore(release): bump version to X.Y.Z"
+   git tag -a vX.Y.Z -m "Version X.Y.Z"
+   git push origin master --tags
+   ```
+
+3. **Build Binaries (Linux Host)**:
+   All official release builds **must** be performed inside the `esp-dev` distrobox to ensure cross-compilation toolchains and GTK/WebKit dependencies are present.
+   ```bash
+   distrobox enter esp-dev
+
+   # Build Linux Assets (AppImage, DEB, RPM)
+   NO_STRIP=1 npm run tauri build
+
+   # Build Windows Asset (NSIS Installer)
+   CARGO_TARGET_DIR=/tmp/cargo_target npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
+   ```
+
+4. **Create GitHub Release and Upload Assets**:
+   Use the GitHub CLI (`gh`) to create the release, paste the changelog/notes, and attach the newly compiled binaries:
+   ```bash
+   gh release create vX.Y.Z \\
+     "src-tauri/target/release/bundle/appimage/HODEditorJS_X.Y.Z_amd64.AppImage" \\
+     "src-tauri/target/release/bundle/deb/HODEditorJS_X.Y.Z_amd64.deb" \\
+     "src-tauri/target/release/bundle/rpm/HODEditorJS-X.Y.Z-1.x86_64.rpm" \\
+     "/tmp/cargo_target/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_X.Y.Z_x64-setup.exe" \\
+     --title "Version X.Y.Z" \\
+     --notes "- First bullet point of changelog\\n- Second bullet point"
+   ```
