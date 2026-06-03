@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
-import { parseTextureGroups, KNOWN_TYPES } from "../texture_utils";
+import { parseTextureGroups } from "../texture_utils";
 import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2 } from "lucide-react";
 
 interface InspectorProps {
@@ -2697,66 +2697,6 @@ export const Inspector: React.FC<InspectorProps> = ({
         onModelChange?.({ ...model, materials: updatedMaterials });
       };
 
-      const handleImportTGA = async () => {
-        try {
-          setIsLoading?.(true);
-          setStatusMsg?.("Importing TGA textures...");
-          
-          setTimeout(async () => {
-            try {
-              const importedTexs = await invoke<any[] | null>("import_tga_textures");
-              if (!importedTexs || importedTexs.length === 0) {
-                setIsLoading?.(false);
-                return;
-              }
-
-              let updatedTextures = [...(model.textures || [])];
-              let importedNames = [];
-              for (const importedTex of importedTexs) {
-                let nameNoFormat = importedTex.name;
-                if (nameNoFormat.toUpperCase().endsWith(importedTex.format.toUpperCase())) {
-                    nameNoFormat = nameNoFormat.substring(0, nameNoFormat.length - importedTex.format.length);
-                }
-                const hasKnownType = KNOWN_TYPES.some(t => nameNoFormat.toUpperCase().endsWith(t));
-
-                if (!hasKnownType) {
-                    let userType = window.prompt(`The imported texture "${importedTex.name}" is missing a recognized type suffix.\n\nPlease enter the texture type suffix (e.g. _DIFF, _GLOW, _NORM, _TEAM, _SPEC):`, "_DIFF");
-                    if (userType === null) {
-                        alert(`Skipping import of ${importedTex.name}`);
-                        continue;
-                    }
-                    if (!userType.startsWith("_")) userType = "_" + userType;
-                    importedTex.name = nameNoFormat + userType.toUpperCase() + importedTex.format;
-                }
-
-                importedNames.push(importedTex.name);
-                const existsIdx = updatedTextures.findIndex(t => t.name.toLowerCase() === importedTex.name.toLowerCase());
-                if (existsIdx !== -1) {
-                  updatedTextures[existsIdx] = importedTex;
-                } else {
-                  updatedTextures.push(importedTex);
-                }
-              }
-
-              if (importedNames.length > 0) {
-                onModelChange?.({ ...model, textures: updatedTextures, textures_modified: true });
-                const names = importedNames.join(", ");
-                invoke("log_event", { level: "INFO", message: `Imported and bound TGA textures: ${names}` }).catch(console.error);
-                alert(`Successfully imported TGA textures "${names}"!\n\nThey are now available as a Texture Group.`);
-              }
-            } catch (e: any) {
-              console.error(e);
-              alert(`Failed to import TGA texture: ${e.toString()}`);
-            } finally {
-              setIsLoading?.(false);
-            }
-          }, 50);
-        } catch (e: any) {
-          console.error(e);
-          setIsLoading?.(false);
-        }
-      };
-
       const handleRemoveMaterial = (name: string) => {
         const matIndex = model.materials.findIndex(m => m.name === name);
         const updatedMaterials = model.materials.filter(m => m.name !== name);
@@ -2920,54 +2860,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                   );
                 })()}
 
-                <div style={{ borderTop: "1px dashed var(--border-color)", marginTop: "8px", paddingTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
-                    <strong>📁 Loaded TGA Directories:</strong>{" "}
-                    {(() => {
-                      const tgaDirs = new Set<string>();
-                      model.textures?.forEach(t => {
-                        if (t.source_path) {
-                          const dir = t.source_path.substring(0, Math.max(t.source_path.lastIndexOf("/"), t.source_path.lastIndexOf("\\")));
-                          if (dir) tgaDirs.add(dir);
-                        }
-                      });
-                      const dirs = Array.from(tgaDirs);
-                      if (dirs.length > 0) {
-                        return (
-                          <div style={{ marginTop: "4px", display: "flex", flexDirection: "column", gap: "2px" }}>
-                            {dirs.map((d, i) => (
-                              <span key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
-                                {d}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      }
-                      
-                      return (
-                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--text-muted)", marginLeft: "4px" }}>
-                          No external TGAs loaded.
-                        </span>
-                      );
-                    })()}
-                  </div>
-                  <button
-                    onClick={handleImportTGA}
-                    className="secondary"
-                    style={{
-                      height: "28px",
-                      fontSize: "11px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px"
-                    }}
-                    title="Import multiple external .TGA image files directly into the editor and make them available in slots"
-                  >
-                    <Upload size={12} style={{ color: "var(--accent-cyan)" }} />
-                    <span>Import .TGA Textures...</span>
-                  </button>
-                </div>
+
               </div>
             </div>
           </div>

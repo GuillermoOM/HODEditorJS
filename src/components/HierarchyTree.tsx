@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, HODAnimation } from "./Viewport";
-import { parseTextureGroups } from "../texture_utils";
+import { parseTextureGroups, KNOWN_TYPES } from "../texture_utils";
 import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload } from "lucide-react";
 
 interface HierarchyTreeProps {
@@ -132,6 +132,66 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   const [activeTab, setActiveTab] = useState<"hierarchy" | "materials" | "animations" | "targetboxes">("hierarchy");
   const [selectedBoxIdx, setSelectedBoxIdx] = useState<number | null>(null);
   const [showLuaCode, setShowLuaCode] = useState(false);
+
+  const handleImportTGA = async () => {
+    try {
+      setIsLoading?.(true);
+      setStatusMsg?.("Importing TGA textures...");
+      
+      setTimeout(async () => {
+        try {
+          const importedTexs = await invoke<any[] | null>("import_tga_textures");
+          if (!importedTexs || importedTexs.length === 0) {
+            setIsLoading?.(false);
+            return;
+          }
+
+          let updatedTextures = [...(model?.textures || [])];
+          let importedNames = [];
+          for (const importedTex of importedTexs) {
+            let nameNoFormat = importedTex.name;
+            if (nameNoFormat.toUpperCase().endsWith(importedTex.format.toUpperCase())) {
+                nameNoFormat = nameNoFormat.substring(0, nameNoFormat.length - importedTex.format.length);
+            }
+            const hasKnownType = KNOWN_TYPES.some(t => nameNoFormat.toUpperCase().endsWith(t));
+
+            if (!hasKnownType) {
+                let userType = window.prompt(`The imported texture "${importedTex.name}" is missing a recognized type suffix.\\n\\nPlease enter the texture type suffix (e.g. _DIFF, _GLOW, _NORM, _TEAM, _SPEC):`, "_DIFF");
+                if (userType === null) {
+                    alert(`Skipping import of ${importedTex.name}`);
+                    continue;
+                }
+                if (!userType.startsWith("_")) userType = "_" + userType;
+                importedTex.name = nameNoFormat + userType.toUpperCase() + importedTex.format;
+            }
+
+            importedNames.push(importedTex.name);
+            const existsIdx = updatedTextures.findIndex(t => t.name.toLowerCase() === importedTex.name.toLowerCase());
+            if (existsIdx !== -1) {
+              updatedTextures[existsIdx] = importedTex;
+            } else {
+              updatedTextures.push(importedTex);
+            }
+          }
+
+          if (importedNames.length > 0 && model) {
+            onModelChange?.({ ...model, textures: updatedTextures, textures_modified: true });
+            const names = importedNames.join(", ");
+            invoke("log_event", { level: "INFO", message: `Imported and bound TGA textures: ${names}` }).catch(console.error);
+            alert(`Successfully imported TGA textures "${names}"!\\n\\nThey are now available as a Texture Group.`);
+          }
+        } catch (e: any) {
+          console.error(e);
+          alert(`Failed to import TGA texture: ${e.toString()}`);
+        } finally {
+          setIsLoading?.(false);
+        }
+      }, 50);
+    } catch (e: any) {
+      console.error(e);
+      setIsLoading?.(false);
+    }
+  };
 
   // Animation CRUD
   const [isCreateAnimOpen, setIsCreateAnimOpen] = useState(false);
@@ -2865,12 +2925,55 @@ const handleDeleteNode = (name: string, type: string) => {
               <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.05)", margin: "0 8px" }} />
 
               <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: "8px", paddingRight: "8px", marginBottom: "8px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "8px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: "8px", paddingRight: "8px" }}>
                   <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-muted)", textTransform: "uppercase" }}>Textures</div>
-                  <span style={{ fontSize: "9px", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px", color: "var(--text-muted)" }}>
-                    {model.textures?.length || 0}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <button
+                      onClick={handleImportTGA}
+                      className="icon-button"
+                      style={{ padding: "2px 6px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", display: "flex", alignItems: "center", gap: "4px" }}
+                      title="Import multiple external .TGA image files"
+                    >
+                      <Upload size={10} style={{ color: "var(--accent-cyan)" }} />
+                      <span style={{ fontSize: "9px", color: "var(--text-primary)" }}>Import TGA</span>
+                    </button>
+                    <span style={{ fontSize: "9px", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px", color: "var(--text-muted)" }}>
+                      {model.textures?.length || 0}
+                    </span>
+                  </div>
                 </div>
+
+                <div style={{ padding: "0 8px" }}>
+                  {(() => {
+                    const tgaDirs = new Set<string>();
+                    model.textures?.forEach(t => {
+                      if (t.source_path) {
+                        const dir = t.source_path.substring(0, Math.max(t.source_path.lastIndexOf("/"), t.source_path.lastIndexOf("\\\\")));
+                        if (dir) tgaDirs.add(dir);
+                      }
+                    });
+                    const dirs = Array.from(tgaDirs);
+                    if (dirs.length > 0) {
+                      return (
+                        <div style={{ background: "rgba(0,0,0,0.15)", padding: "6px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.03)" }}>
+                          <div style={{ fontSize: "9px", color: "var(--text-secondary)", marginBottom: "4px" }}>
+                            <strong>📁 Loaded TGA Directories:</strong>
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            {dirs.map((d, i) => (
+                              <span key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "9px", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
+                                {d}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              </div>
                 {model.textures && model.textures.length > 0 ? (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "4px" }}>
                     <div style={{ display: "contents" }}>
