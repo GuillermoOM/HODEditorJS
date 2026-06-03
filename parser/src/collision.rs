@@ -19,7 +19,7 @@ pub fn decimate_mesh(
     }
 
     let target_index_count = ((indices.len() as f32) * target_ratio) as usize;
-    
+
     // Build position buffer (x, y, z per vertex) for meshopt
     let mut positions: Vec<f32> = Vec::with_capacity(vertices.len() * 3);
     for v in vertices {
@@ -38,12 +38,12 @@ pub fn decimate_mesh(
 
     // Use simplify_sloppy for aggressive reduction
     let target_count = target_index_count.max(3);
-    
+
     let simplified = meshopt::simplify_sloppy(
         &indices_u32,
         &vertex_adapter,
         target_count,
-        0.90,      // Error tolerance (90% of mesh size - very aggressive)
+        0.90, // Error tolerance (90% of mesh size - very aggressive)
         None,
     );
 
@@ -73,15 +73,35 @@ fn sample_points_for_hull(points: &[[f32; 3]], target: usize) -> Vec<[f32; 3]> {
 
     // Always include the 6 AABB extreme points
     let extremes: [[f32; 3]; 6] = [
-        *points.iter().min_by(|a, b| a[0].partial_cmp(&b[0]).unwrap()).unwrap(),
-        *points.iter().max_by(|a, b| a[0].partial_cmp(&b[0]).unwrap()).unwrap(),
-        *points.iter().min_by(|a, b| a[1].partial_cmp(&b[1]).unwrap()).unwrap(),
-        *points.iter().max_by(|a, b| a[1].partial_cmp(&b[1]).unwrap()).unwrap(),
-        *points.iter().min_by(|a, b| a[2].partial_cmp(&b[2]).unwrap()).unwrap(),
-        *points.iter().max_by(|a, b| a[2].partial_cmp(&b[2]).unwrap()).unwrap(),
+        *points
+            .iter()
+            .min_by(|a, b| a[0].partial_cmp(&b[0]).unwrap())
+            .unwrap(),
+        *points
+            .iter()
+            .max_by(|a, b| a[0].partial_cmp(&b[0]).unwrap())
+            .unwrap(),
+        *points
+            .iter()
+            .min_by(|a, b| a[1].partial_cmp(&b[1]).unwrap())
+            .unwrap(),
+        *points
+            .iter()
+            .max_by(|a, b| a[1].partial_cmp(&b[1]).unwrap())
+            .unwrap(),
+        *points
+            .iter()
+            .min_by(|a, b| a[2].partial_cmp(&b[2]).unwrap())
+            .unwrap(),
+        *points
+            .iter()
+            .max_by(|a, b| a[2].partial_cmp(&b[2]).unwrap())
+            .unwrap(),
     ];
     for p in &extremes {
-        if !sampled.iter().any(|s| (s[0]-p[0]).abs() < eps && (s[1]-p[1]).abs() < eps && (s[2]-p[2]).abs() < eps) {
+        if !sampled.iter().any(|s| {
+            (s[0] - p[0]).abs() < eps && (s[1] - p[1]).abs() < eps && (s[2] - p[2]).abs() < eps
+        }) {
             sampled.push(*p);
         }
     }
@@ -94,7 +114,9 @@ fn sample_points_for_hull(points: &[[f32; 3]], target: usize) -> Vec<[f32; 3]> {
             let idx = ((i as f32) * step) as usize;
             let idx = idx.min(points.len() - 1);
             let p = &points[idx];
-            if !sampled.iter().any(|s| (s[0]-p[0]).abs() < eps && (s[1]-p[1]).abs() < eps && (s[2]-p[2]).abs() < eps) {
+            if !sampled.iter().any(|s| {
+                (s[0] - p[0]).abs() < eps && (s[1] - p[1]).abs() < eps && (s[2] - p[2]).abs() < eps
+            }) {
                 sampled.push(*p);
             }
         }
@@ -159,10 +181,10 @@ pub fn convex_hull_3d(points: &[[f32; 3]]) -> (Vec<[f32; 3]>, Vec<[u16; 3]>) {
         max_bound[1] = max_bound[1].max(p[1]);
         max_bound[2] = max_bound[2].max(p[2]);
     }
-    
+
     let diag = vec_len(&vec_sub(&max_bound, &min_bound));
     // Perturbation scale: small enough to not deform the collision mesh, large enough to exceed the 1e-4 threshold
-    let perturb_scale = (diag * 1e-3).max(1e-3); 
+    let perturb_scale = (diag * 1e-3).max(1e-3);
 
     let eps = 1e-3;
     let mut unique: Vec<[f32; 3]> = Vec::new();
@@ -344,26 +366,156 @@ pub fn generate_collision_from_visible_mesh(
     if hull_verts.is_empty() || hull_faces.is_empty() {
         println!("[COLLISION] Convex hull failed or too complex, falling back to AABB box");
         // Fall back to AABB box with margin
-        let inflated_min = [aabb_min[0] - margin, aabb_min[1] - margin, aabb_min[2] - margin];
-        let inflated_max = [aabb_max[0] + margin, aabb_max[1] + margin, aabb_max[2] + margin];
-        let box_verts = vec![
-            HODVertex { position: Vector3 { x: inflated_min[0], y: inflated_min[1], z: inflated_min[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
-            HODVertex { position: Vector3 { x: inflated_max[0], y: inflated_min[1], z: inflated_min[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
-            HODVertex { position: Vector3 { x: inflated_max[0], y: inflated_max[1], z: inflated_min[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
-            HODVertex { position: Vector3 { x: inflated_min[0], y: inflated_max[1], z: inflated_min[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
-            HODVertex { position: Vector3 { x: inflated_min[0], y: inflated_min[1], z: inflated_max[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
-            HODVertex { position: Vector3 { x: inflated_max[0], y: inflated_min[1], z: inflated_max[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
-            HODVertex { position: Vector3 { x: inflated_max[0], y: inflated_max[1], z: inflated_max[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
-            HODVertex { position: Vector3 { x: inflated_min[0], y: inflated_max[1], z: inflated_max[2] }, normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None },
+        let inflated_min = [
+            aabb_min[0] - margin,
+            aabb_min[1] - margin,
+            aabb_min[2] - margin,
         ];
-        let box_indices: Vec<u16> = vec![0,1,2,0,2,3, 4,6,5,4,7,6, 0,4,5,0,5,1, 2,6,7,2,7,3, 0,3,7,0,7,4, 1,5,6,1,6,2];
+        let inflated_max = [
+            aabb_max[0] + margin,
+            aabb_max[1] + margin,
+            aabb_max[2] + margin,
+        ];
+        let box_verts = vec![
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_min[0],
+                    y: inflated_min[1],
+                    z: inflated_min[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_max[0],
+                    y: inflated_min[1],
+                    z: inflated_min[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_max[0],
+                    y: inflated_max[1],
+                    z: inflated_min[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_min[0],
+                    y: inflated_max[1],
+                    z: inflated_min[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_min[0],
+                    y: inflated_min[1],
+                    z: inflated_max[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_max[0],
+                    y: inflated_min[1],
+                    z: inflated_max[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_max[0],
+                    y: inflated_max[1],
+                    z: inflated_max[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+            HODVertex {
+                position: Vector3 {
+                    x: inflated_min[0],
+                    y: inflated_max[1],
+                    z: inflated_max[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            },
+        ];
+        let box_indices: Vec<u16> = vec![
+            0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 2, 6, 7, 2, 7, 3, 0, 3, 7, 0, 7,
+            4, 1, 5, 6, 1, 6, 2,
+        ];
         return Some(HODCollisionMesh {
             name: "Root".to_string(),
-            min_extents: Vector3 { x: inflated_min[0], y: inflated_min[1], z: inflated_min[2] },
-            max_extents: Vector3 { x: inflated_max[0], y: inflated_max[1], z: inflated_max[2] },
-            center: Vector3 { x: (inflated_min[0]+inflated_max[0])/2.0, y: (inflated_min[1]+inflated_max[1])/2.0, z: (inflated_min[2]+inflated_max[2])/2.0 },
+            min_extents: Vector3 {
+                x: inflated_min[0],
+                y: inflated_min[1],
+                z: inflated_min[2],
+            },
+            max_extents: Vector3 {
+                x: inflated_max[0],
+                y: inflated_max[1],
+                z: inflated_max[2],
+            },
+            center: Vector3 {
+                x: (inflated_min[0] + inflated_max[0]) / 2.0,
+                y: (inflated_min[1] + inflated_max[1]) / 2.0,
+                z: (inflated_min[2] + inflated_max[2]) / 2.0,
+            },
             radius: diagonal / 2.0 + margin,
-            mesh: HODMesh { name: "CollisionMesh".to_string(), parent_name: String::new(), lod: 0, has_mult_tags: false, parts: vec![HODMeshPart { material_index: 0, vertex_mask: 0x01, vertices: box_verts, indices: box_indices }] },
+            mesh: HODMesh {
+                name: "CollisionMesh".to_string(),
+                parent_name: String::new(),
+                lod: 0,
+                has_mult_tags: false,
+                parts: vec![HODMeshPart {
+                    material_index: 0,
+                    vertex_mask: 0x01,
+                    vertices: box_verts,
+                    indices: box_indices,
+                }],
+            },
         });
     }
 
@@ -494,7 +646,7 @@ pub fn generate_lod_meshes(lod0_mesh: &HODMesh) -> Vec<HODMesh> {
 
             let orig_vert_count = part.vertices.len();
             let orig_idx_count = part.indices.len();
-            
+
             let (decimated_verts, decimated_indices) =
                 decimate_mesh(&part.vertices, &part.indices, target_ratio);
 
@@ -506,7 +658,7 @@ pub fn generate_lod_meshes(lod0_mesh: &HODMesh) -> Vec<HODMesh> {
                     (decimated_verts.len() as f32 / orig_vert_count as f32) * 100.0,
                     (decimated_indices.len() as f32 / orig_idx_count as f32) * 100.0
                 );
-                
+
                 lod_parts.push(HODMeshPart {
                     material_index: part.material_index,
                     vertex_mask: part.vertex_mask,
@@ -568,8 +720,17 @@ mod tests {
         for y in 0..4 {
             for x in 0..4 {
                 vertices.push(HODVertex {
-                    position: Vector3 { x: x as f32, y: y as f32, z: 0.0 },
-                    normal: None, color: None, uv: None, tangent: None, binormal: None, skinning_data: None,
+                    position: Vector3 {
+                        x: x as f32,
+                        y: y as f32,
+                        z: 0.0,
+                    },
+                    normal: None,
+                    color: None,
+                    uv: None,
+                    tangent: None,
+                    binormal: None,
+                    skinning_data: None,
                 });
             }
         }
@@ -611,7 +772,9 @@ mod tests {
         // Check that all hull vertices are corners of the original cube
         for v in &verts {
             let found = points.iter().any(|p| {
-                (v[0] - p[0]).abs() < 0.01 && (v[1] - p[1]).abs() < 0.01 && (v[2] - p[2]).abs() < 0.01
+                (v[0] - p[0]).abs() < 0.01
+                    && (v[1] - p[1]).abs() < 0.01
+                    && (v[2] - p[2]).abs() < 0.01
             });
             assert!(found, "Hull vertex {:?} is not an original cube corner", v);
         }

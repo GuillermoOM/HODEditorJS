@@ -147,13 +147,12 @@ Children:
 ```
 HIER Payload (Little-Endian)
 ├── first_val: u32
-│   └── Encoding: 0xFFFFFF00 | ((-joint_count) & 0xFF)
-├── joint_count: u32
+│   └── Encoding: full two's-complement signed negative joint count, i.e. (-joint_count as i32) reinterpreted as u32
 ├── joints: Array of Joint structures
 └── ...
 ```
 
-**Critical:** `first_val` encodes joint count as two's complement!
+**Critical:** `first_val` encodes joint count as a full signed two's-complement value. Do not mask to the low byte; files with more than 255 joints legitimately use values like `0xFFFFFED6` for `-298`.
 
 ### 2.9 INFO Chunk (File Information)
 
@@ -297,7 +296,7 @@ Common shaders:
 2. **MULT lod_count** - Must be written after parent name string
 3. **BMSH endianness** - Uses Little-Endian, not Big-Endian
 4. **TAGS chunk** - Optional in MULT, preserve if present
-5. **HIER first_val** - Encodes joint count as two's complement
+5. **HIER first_val** - Encodes the full signed negative joint count as two's complement, not just the low byte
 
 ### 8.2 Node Hierarchy
 

@@ -154,8 +154,12 @@ chunk.write_u32::<LittleEndian>(size)?;
 // WRONG
 writer.write_u32::<LittleEndian>(joint_count)?;
 
-// RIGHT
+// WRONG for files with more than 255 joints
 let first_val = 0xFFFFFF00 | ((-joint_count as i32) & 0xFF) as u32;
+writer.write_u32::<LittleEndian>(first_val)?;
+
+// RIGHT
+let first_val = (-(joint_count as i32)) as u32;
 writer.write_u32::<LittleEndian>(first_val)?;
 ```
 

@@ -50,12 +50,13 @@
 - [x] Open HOD 1.0, test how it loads and which nodes are incorrectly assigned or unknown to HOD 2.0 template (need a template for 2.0 based on all knowledge we gathered on nodes).
 - [x] Create a new HOD and save it, test it in game.
 - [x] Open files by double cliking on them
+- [x] Rotation / scaling also seems to apply to all nodes! (engine burns looking sideways)
+- [x] Loading HOD 1.0 Collosus breaks
+- [x] Loading HOD 1.0 Hecate creates navlight nodes without coordinate editing
+- [x] Many nodes show up on viewport that are missing on the node tree
 
-- [ ] Rotation / scaling also seems to apply to all nodes! (engine burns looking sideways)
-- [ ] Many nodes show up on viewport that are missing on the node tree
-- [ ] Loading HOD 1.0 Collosus breaks
-- [ ] Loading HOD 1.0 Hecate creates navlight nodes without coordinate editing
 - [ ] DXT3 Texture compatiblity
+
 - [ ] Texture upscaling/smoothing/antialiasing on saving
 - [ ] Fix auto camera distance on loading model
 - [ ] Drag based positioning / rotating in viewport (disable camera control with left click, leave it for right click)

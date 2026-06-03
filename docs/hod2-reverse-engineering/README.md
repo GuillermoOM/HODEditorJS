@@ -151,7 +151,7 @@ cargo run --bin verify_lossless      # Mandatory roundtrip + DAE verification
 1. **NAME chunk** - No trailing null byte
 2. **MULT lod_count** - Written after parent name string
 3. **BMSH endianness** - Little-Endian (not Big-Endian)
-4. **HIER first_val** - Encodes joint count as two's complement
+4. **HIER first_val** - Encodes the full signed negative joint count as two's complement
 5. **TAGS chunk** - Optional in MULT, preserve if present
 
 ## Progress Tracking

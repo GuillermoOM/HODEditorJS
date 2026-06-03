@@ -15,19 +15,47 @@ fn main() {
     println!("Original BURN count: {}", orig_model.engine_burns.len());
     println!("Saved BURN count: {}\n", saved_model.engine_burns.len());
 
-    for (i, (orig_burn, saved_burn)) in orig_model.engine_burns.iter().zip(saved_model.engine_burns.iter()).enumerate() {
+    for (i, (orig_burn, saved_burn)) in orig_model
+        .engine_burns
+        .iter()
+        .zip(saved_model.engine_burns.iter())
+        .enumerate()
+    {
         println!("--- BURN[{}] ---", i);
         println!("  Name: {} -> {}", orig_burn.name, saved_burn.name);
-        println!("  Parent: {} -> {}", orig_burn.parent_name, saved_burn.parent_name);
-        println!("  Divisions: {} -> {}", orig_burn.num_divisions, saved_burn.num_divisions);
-        println!("  Flames: {} -> {}", orig_burn.num_flames, saved_burn.num_flames);
-        println!("  Vertices: {} -> {}", orig_burn.vertices.len(), saved_burn.vertices.len());
-        
+        println!(
+            "  Parent: {} -> {}",
+            orig_burn.parent_name, saved_burn.parent_name
+        );
+        println!(
+            "  Divisions: {} -> {}",
+            orig_burn.num_divisions, saved_burn.num_divisions
+        );
+        println!(
+            "  Flames: {} -> {}",
+            orig_burn.num_flames, saved_burn.num_flames
+        );
+        println!(
+            "  Vertices: {} -> {}",
+            orig_burn.vertices.len(),
+            saved_burn.vertices.len()
+        );
+
         let mut diffs = 0;
-        for (j, (ov, sv)) in orig_burn.vertices.iter().zip(saved_burn.vertices.iter()).enumerate() {
-            if (ov.x - sv.x).abs() > 0.0001 || (ov.y - sv.y).abs() > 0.0001 || (ov.z - sv.z).abs() > 0.0001 {
-                println!("    Vertex[{}]: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6})", 
-                    j, ov.x, ov.y, ov.z, sv.x, sv.y, sv.z);
+        for (j, (ov, sv)) in orig_burn
+            .vertices
+            .iter()
+            .zip(saved_burn.vertices.iter())
+            .enumerate()
+        {
+            if (ov.x - sv.x).abs() > 0.0001
+                || (ov.y - sv.y).abs() > 0.0001
+                || (ov.z - sv.z).abs() > 0.0001
+            {
+                println!(
+                    "    Vertex[{}]: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6})",
+                    j, ov.x, ov.y, ov.z, sv.x, sv.y, sv.z
+                );
                 diffs += 1;
             }
         }
@@ -39,57 +67,78 @@ fn main() {
     }
 
     println!("\n=== JOINT COMPARISON (BURN parents) ===\n");
-    
-    let burn_parent_names: Vec<String> = orig_model.engine_burns.iter()
+
+    let burn_parent_names: Vec<String> = orig_model
+        .engine_burns
+        .iter()
         .map(|b| b.parent_name.clone())
         .collect();
-    
+
     for parent_name in &burn_parent_names {
         let orig_joint = orig_model.joints.iter().find(|j| j.name == *parent_name);
         let saved_joint = saved_model.joints.iter().find(|j| j.name == *parent_name);
-        
+
         match (orig_joint, saved_joint) {
             (Some(oj), Some(sj)) => {
                 println!("--- Joint: {} ---", parent_name);
                 println!("  Parent: {:?} -> {:?}", oj.parent_name, sj.parent_name);
-                
+
                 let op = oj.position.as_ref().unwrap();
                 let sp = sj.position.as_ref().unwrap();
                 let or = oj.rotation.as_ref().unwrap();
                 let sr = sj.rotation.as_ref().unwrap();
                 let os = oj.scale.as_ref().unwrap();
                 let ss = sj.scale.as_ref().unwrap();
-                
-                let pos_diff = (op.x - sp.x).abs() > 0.0001 || (op.y - sp.y).abs() > 0.0001 || (op.z - sp.z).abs() > 0.0001;
-                let rot_diff = (or.x - sr.x).abs() > 0.0001 || (or.y - sr.y).abs() > 0.0001 || (or.z - sr.z).abs() > 0.0001;
-                let scale_diff = (os.x - ss.x).abs() > 0.0001 || (os.y - ss.y).abs() > 0.0001 || (os.z - ss.z).abs() > 0.0001;
-                
+
+                let pos_diff = (op.x - sp.x).abs() > 0.0001
+                    || (op.y - sp.y).abs() > 0.0001
+                    || (op.z - sp.z).abs() > 0.0001;
+                let rot_diff = (or.x - sr.x).abs() > 0.0001
+                    || (or.y - sr.y).abs() > 0.0001
+                    || (or.z - sr.z).abs() > 0.0001;
+                let scale_diff = (os.x - ss.x).abs() > 0.0001
+                    || (os.y - ss.y).abs() > 0.0001
+                    || (os.z - ss.z).abs() > 0.0001;
+
                 if pos_diff {
-                    println!("  Position: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6}) DIFFERS", 
-                        op.x, op.y, op.z, sp.x, sp.y, sp.z);
+                    println!(
+                        "  Position: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6}) DIFFERS",
+                        op.x, op.y, op.z, sp.x, sp.y, sp.z
+                    );
                 } else {
-                    println!("  Position: identical ({:.6}, {:.6}, {:.6})", op.x, op.y, op.z);
+                    println!(
+                        "  Position: identical ({:.6}, {:.6}, {:.6})",
+                        op.x, op.y, op.z
+                    );
                 }
-                
+
                 if rot_diff {
-                    println!("  Rotation: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6}) DIFFERS", 
-                        or.x, or.y, or.z, sr.x, sr.y, sr.z);
+                    println!(
+                        "  Rotation: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6}) DIFFERS",
+                        or.x, or.y, or.z, sr.x, sr.y, sr.z
+                    );
                 } else {
-                    println!("  Rotation: identical ({:.6}, {:.6}, {:.6})", or.x, or.y, or.z);
+                    println!(
+                        "  Rotation: identical ({:.6}, {:.6}, {:.6})",
+                        or.x, or.y, or.z
+                    );
                 }
-                
+
                 if scale_diff {
-                    println!("  Scale: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6}) DIFFERS", 
-                        os.x, os.y, os.z, ss.x, ss.y, ss.z);
+                    println!(
+                        "  Scale: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6}) DIFFERS",
+                        os.x, os.y, os.z, ss.x, ss.y, ss.z
+                    );
                 } else {
                     println!("  Scale: identical ({:.6}, {:.6}, {:.6})", os.x, os.y, os.z);
                 }
-                
+
                 // Compare local_transform matrices
                 let mut mat_diff = false;
                 for r in 0..4 {
                     for c in 0..4 {
-                        if (oj.local_transform.m[r][c] - sj.local_transform.m[r][c]).abs() > 0.0001 {
+                        if (oj.local_transform.m[r][c] - sj.local_transform.m[r][c]).abs() > 0.0001
+                        {
                             mat_diff = true;
                         }
                     }
@@ -97,18 +146,27 @@ fn main() {
                 if mat_diff {
                     println!("  Matrix DIFFERS:");
                     for r in 0..4 {
-                        println!("    [{:.6}, {:.6}, {:.6}, {:.6}] -> [{:.6}, {:.6}, {:.6}, {:.6}]",
-                            oj.local_transform.m[r][0], oj.local_transform.m[r][1], 
-                            oj.local_transform.m[r][2], oj.local_transform.m[r][3],
-                            sj.local_transform.m[r][0], sj.local_transform.m[r][1], 
-                            sj.local_transform.m[r][2], sj.local_transform.m[r][3]);
+                        println!(
+                            "    [{:.6}, {:.6}, {:.6}, {:.6}] -> [{:.6}, {:.6}, {:.6}, {:.6}]",
+                            oj.local_transform.m[r][0],
+                            oj.local_transform.m[r][1],
+                            oj.local_transform.m[r][2],
+                            oj.local_transform.m[r][3],
+                            sj.local_transform.m[r][0],
+                            sj.local_transform.m[r][1],
+                            sj.local_transform.m[r][2],
+                            sj.local_transform.m[r][3]
+                        );
                     }
                 } else {
                     println!("  Matrix: identical");
                 }
             }
             _ => {
-                println!("--- Joint: {} --- NOT FOUND in one or both files", parent_name);
+                println!(
+                    "--- Joint: {} --- NOT FOUND in one or both files",
+                    parent_name
+                );
             }
         }
     }
@@ -122,19 +180,27 @@ fn main() {
             let sp = sj.position.as_ref().unwrap();
             let or = oj.rotation.as_ref().unwrap();
             let sr = sj.rotation.as_ref().unwrap();
-            
-            let pos_diff = (op.x - sp.x).abs() > 0.0001 || (op.y - sp.y).abs() > 0.0001 || (op.z - sp.z).abs() > 0.0001;
-            let rot_diff = (or.x - sr.x).abs() > 0.0001 || (or.y - sr.y).abs() > 0.0001 || (or.z - sr.z).abs() > 0.0001;
-            
+
+            let pos_diff = (op.x - sp.x).abs() > 0.0001
+                || (op.y - sp.y).abs() > 0.0001
+                || (op.z - sp.z).abs() > 0.0001;
+            let rot_diff = (or.x - sr.x).abs() > 0.0001
+                || (or.y - sr.y).abs() > 0.0001
+                || (or.z - sr.z).abs() > 0.0001;
+
             if pos_diff || rot_diff {
                 println!("Joint '{}' DIFFERS:", oj.name);
                 if pos_diff {
-                    println!("  Pos: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6})", 
-                        op.x, op.y, op.z, sp.x, sp.y, sp.z);
+                    println!(
+                        "  Pos: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6})",
+                        op.x, op.y, op.z, sp.x, sp.y, sp.z
+                    );
                 }
                 if rot_diff {
-                    println!("  Rot: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6})", 
-                        or.x, or.y, or.z, sr.x, sr.y, sr.z);
+                    println!(
+                        "  Rot: ({:.6}, {:.6}, {:.6}) -> ({:.6}, {:.6}, {:.6})",
+                        or.x, or.y, or.z, sr.x, sr.y, sr.z
+                    );
                 }
                 joint_diffs += 1;
             }

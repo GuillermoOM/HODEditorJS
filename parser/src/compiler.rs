@@ -376,7 +376,8 @@ fn finalize_tangent_space(vertices: &mut [HODVertex]) {
 
         // Skip vertices that were never touched by any triangle
         let tangent_len_sq = tangent.x * tangent.x + tangent.y * tangent.y + tangent.z * tangent.z;
-        let binormal_len_sq = binormal.x * binormal.x + binormal.y * binormal.y + binormal.z * binormal.z;
+        let binormal_len_sq =
+            binormal.x * binormal.x + binormal.y * binormal.y + binormal.z * binormal.z;
         if tangent_len_sq == 0.0 && binormal_len_sq == 0.0 {
             continue;
         }
@@ -438,8 +439,16 @@ pub fn compile_hodor_style_tangent_part(
 
     // 1. Zero out tangents so we can accumulate properly
     for v in &mut raw_vertices {
-        v.tangent = Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
-        v.binormal = Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
+        v.tangent = Some(Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
+        v.binormal = Some(Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
     }
 
     // 2. Accumulate tangents onto the raw unmerged vertices
@@ -492,7 +501,13 @@ pub fn compile_model_meshes(model: &mut HODModel) -> Vec<CompiledMesh> {
                         .all(|(idx, &vertex_idx)| vertex_idx as usize == idx);
 
                 let should_generate_tangents = should_generate_tangent_space(part, &part.vertices);
-                println!("[DEBUG]   Part verts={}, indices={}, is_flat={}, should_gen_tangents={}", part.vertices.len(), part.indices.len(), is_flat_triangle_list, should_generate_tangents);
+                println!(
+                    "[DEBUG]   Part verts={}, indices={}, is_flat={}, should_gen_tangents={}",
+                    part.vertices.len(),
+                    part.indices.len(),
+                    is_flat_triangle_list,
+                    should_generate_tangents
+                );
 
                 let (vertices, indices) = if is_flat_triangle_list {
                     if should_generate_tangents {

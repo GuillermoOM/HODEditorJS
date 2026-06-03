@@ -39,7 +39,7 @@ Throughout the reverse engineering process, several critical quirks regarding th
   * `Engine Burns` (`BURN`): In HOD 2.0, BURN chunks are stored individually inside DTRM as `ChunkType::Default` (100 bytes each). Do not consolidate them into a single `NRML BURN` chunk.
 * **DTRM Serialization (HOD 2.0)**:
   * The `HIER` chunk inside `DTRM` must be `ChunkType::Form` (`FORM HIER`), not `NRML`.
-  * The `first_val` in the `HIER` chunk encodes the joint count as a two's complement byte inside `0xFFFFFF00` (e.g., `0xFFFFFF00 | ((-joint_count) & 0xFF)`). Hardcoding `0xFFFFFF00` will break loading if the joint count changes.
+  * The `first_val` in the `HIER` chunk encodes the full signed negative joint count as a two's-complement `i32` reinterpreted as `u32` (e.g., 298 joints -> `-298` -> `0xFFFFFED6`). Do not mask to the low byte with `0xFFFFFF00 | ((-joint_count) & 0xFF)`; that only works for counts up to 255 and breaks large HIER chunks.
   * Preserving original DTRM sub-chunks (`MRKS`, `KDOP`, `COLD`, `SCAR`) when re-saving is fine, but you MUST exclude chunks you actively regenerate (`HIER`, `BURN`, `NAVL`, `MRKS`, `MRKR`) to avoid duplicating them in the output file, which can double marker counts and corrupt node mapping.
 * **Animation Rotation & Euler Interpolation**:
   * HODKeyframes map rotations using both Quaternions (`rotation`) and Euler angles (`rotation_euler`, usually YXZ order).

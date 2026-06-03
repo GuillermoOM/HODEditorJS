@@ -82,7 +82,14 @@ pub fn generate_kdop(mesh_vertices: &[[f32; 3]], _mesh_indices: &[u16]) -> Vec<u
     let faces = generate_faces(&unique_vertices, &planes);
 
     // Step 8: Write the KDOP binary data
-    write_kdop_binary(&aabb_min, &aabb_max, &proj_min, &proj_max, &unique_vertices, &faces)
+    write_kdop_binary(
+        &aabb_min,
+        &aabb_max,
+        &proj_min,
+        &proj_max,
+        &unique_vertices,
+        &faces,
+    )
 }
 
 fn generate_empty_kdop() -> Vec<u8> {
@@ -122,9 +129,12 @@ fn generate_candidate_vertices(
                 if let Some(v) = intersect_three_planes(&planes[i], &planes[j], &planes[k]) {
                     // Quick AABB check to reject obviously invalid points
                     let margin = 0.01;
-                    if v[0] >= aabb_min[0] - margin && v[0] <= aabb_max[0] + margin
-                        && v[1] >= aabb_min[1] - margin && v[1] <= aabb_max[1] + margin
-                        && v[2] >= aabb_min[2] - margin && v[2] <= aabb_max[2] + margin
+                    if v[0] >= aabb_min[0] - margin
+                        && v[0] <= aabb_max[0] + margin
+                        && v[1] >= aabb_min[1] - margin
+                        && v[1] <= aabb_max[1] + margin
+                        && v[2] >= aabb_min[2] - margin
+                        && v[2] <= aabb_max[2] + margin
                     {
                         candidates.push(v);
                     }
@@ -137,15 +147,20 @@ fn generate_candidate_vertices(
 
 /// Solve the 3x3 linear system: plane_i · v = d_i for i=0,1,2
 /// Returns None if the system is singular (planes are parallel or coplanar).
-fn intersect_three_planes(
-    p0: &[f32; 4],
-    p1: &[f32; 4],
-    p2: &[f32; 4],
-) -> Option<[f32; 3]> {
+fn intersect_three_planes(p0: &[f32; 4], p1: &[f32; 4], p2: &[f32; 4]) -> Option<[f32; 3]> {
     // Cramer's rule
-    let a = p0[0]; let b = p0[1]; let c = p0[2]; let d0 = p0[3];
-    let e = p1[0]; let f = p1[1]; let g = p1[2]; let d1 = p1[3];
-    let h = p2[0]; let i = p2[1]; let j = p2[2]; let d2 = p2[3];
+    let a = p0[0];
+    let b = p0[1];
+    let c = p0[2];
+    let d0 = p0[3];
+    let e = p1[0];
+    let f = p1[1];
+    let g = p1[2];
+    let d1 = p1[3];
+    let h = p2[0];
+    let i = p2[1];
+    let j = p2[2];
+    let d2 = p2[3];
 
     let det = a * (f * j - g * i) - b * (e * j - g * h) + c * (e * i - f * h);
     if det.abs() < 1e-10 {
@@ -166,9 +181,9 @@ fn filter_valid_vertices(candidates: &[[f32; 3]], planes: &[[f32; 4]]) -> Vec<[f
     candidates
         .iter()
         .filter(|v| {
-            planes.iter().all(|p| {
-                v[0] * p[0] + v[1] * p[1] + v[2] * p[2] <= p[3] + eps
-            })
+            planes
+                .iter()
+                .all(|p| v[0] * p[0] + v[1] * p[1] + v[2] * p[2] <= p[3] + eps)
         })
         .copied()
         .collect()
@@ -308,7 +323,9 @@ fn convex_hull_2d(points: &[[f32; 2]]) -> Vec<usize> {
         }
         let angle_a = (points[a][1] - pivot[1]).atan2(points[a][0] - pivot[0]);
         let angle_b = (points[b][1] - pivot[1]).atan2(points[b][0] - pivot[0]);
-        angle_a.partial_cmp(&angle_b).unwrap_or(std::cmp::Ordering::Equal)
+        angle_a
+            .partial_cmp(&angle_b)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     // Graham scan

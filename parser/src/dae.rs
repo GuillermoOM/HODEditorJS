@@ -76,7 +76,10 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
         }
     }
 
-    if doc.descendants().any(|node| (node.has_tag_name("triangles") || node.has_tag_name("polylist")) && node.attribute("material").is_none()) {
+    if doc.descendants().any(|node| {
+        (node.has_tag_name("triangles") || node.has_tag_name("polylist"))
+            && node.attribute("material").is_none()
+    }) {
         material_names.push("nameplate.bmp".to_string());
         model.materials.push(HODMaterial {
             name: "nameplate.bmp".to_string(),
@@ -189,8 +192,7 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                         // For parts without material: deduplicate by source
                         // indices (pos, norm, uv) to match HODOR's indexed
                         // vertex output.
-                        let mut vertex_dedup: HashMap<(usize, usize, usize), u16> =
-                            HashMap::new();
+                        let mut vertex_dedup: HashMap<(usize, usize, usize), u16> = HashMap::new();
 
                         let mut v_idx = 0;
                         while v_idx + stride <= indices.len() {
@@ -307,9 +309,21 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                         // when saving, matching HODOR's behavior.
                         model.collision_meshes.push(HODCollisionMesh {
                             name: "Root".to_string(),
-                            min_extents: Vector3 { x: -10.0, y: -10.0, z: -10.0 },
-                            max_extents: Vector3 { x: 10.0, y: 10.0, z: 10.0 },
-                            center: Vector3 { x: 0.0, y: 0.0, z: 0.0 },
+                            min_extents: Vector3 {
+                                x: -10.0,
+                                y: -10.0,
+                                z: -10.0,
+                            },
+                            max_extents: Vector3 {
+                                x: 10.0,
+                                y: 10.0,
+                                z: 10.0,
+                            },
+                            center: Vector3 {
+                                x: 0.0,
+                                y: 0.0,
+                                z: 0.0,
+                            },
                             radius: 17.32,
                             mesh: HODMesh {
                                 name: "CollisionMesh".to_string(),
@@ -378,21 +392,36 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
     // geometry parsing, but the scene parser skips ROOT_ wrapper nodes.
     // Without this, the HierarchyTree has no root to attach meshes under.
     if !model.joints.iter().any(|j| j.name == "Root") {
-        model.joints.insert(0, HODJoint {
-            name: "Root".to_string(),
-            parent_name: None,
-            local_transform: Matrix4 {
-                m: [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
+        model.joints.insert(
+            0,
+            HODJoint {
+                name: "Root".to_string(),
+                parent_name: None,
+                local_transform: Matrix4 {
+                    m: [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ],
+                },
+                position: Some(Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                }),
+                rotation: Some(Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                }),
+                scale: Some(Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                }),
             },
-            position: Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 }),
-            rotation: Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 }),
-            scale: Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 }),
-        });
+        );
     }
 
     // Parse animations from library_animations
@@ -469,7 +498,10 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
         for child in node.children() {
             if child.has_tag_name("translate") {
                 if let Some(text) = child.text() {
-                    let t: Vec<f32> = text.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                    let t: Vec<f32> = text
+                        .split_whitespace()
+                        .filter_map(|s| s.parse().ok())
+                        .collect();
                     if t.len() >= 3 {
                         transform.m[3][0] = t[0];
                         transform.m[3][1] = t[1];
@@ -478,20 +510,44 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
                 }
             } else if child.has_tag_name("rotate") {
                 if let Some(text) = child.text() {
-                    let r: Vec<f32> = text.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                    let r: Vec<f32> = text
+                        .split_whitespace()
+                        .filter_map(|s| s.parse().ok())
+                        .collect();
                     if r.len() >= 4 {
                         let (ax, ay, az, angle) = (r[0], r[1], r[2], r[3]);
                         let rad = angle * std::f32::consts::PI / 180.0;
                         let (s, c) = (rad.sin(), rad.cos());
                         let t = 1.0 - c;
                         let len = (ax * ax + ay * ay + az * az).sqrt();
-                        let (ax, ay, az) = if len > 0.0 { (ax / len, ay / len, az / len) } else { (0.0, 0.0, 0.0) };
-                        let rot = Matrix4 { m: [
-                            [t*ax*ax + c,     t*ax*ay - s*az, t*ax*az + s*ay, 0.0],
-                            [t*ax*ay + s*az,  t*ay*ay + c,    t*ay*az - s*ax, 0.0],
-                            [t*ax*az - s*ay,  t*ay*az + s*ax, t*az*az + c,    0.0],
-                            [0.0,             0.0,             0.0,            1.0],
-                        ]};
+                        let (ax, ay, az) = if len > 0.0 {
+                            (ax / len, ay / len, az / len)
+                        } else {
+                            (0.0, 0.0, 0.0)
+                        };
+                        let rot = Matrix4 {
+                            m: [
+                                [
+                                    t * ax * ax + c,
+                                    t * ax * ay - s * az,
+                                    t * ax * az + s * ay,
+                                    0.0,
+                                ],
+                                [
+                                    t * ax * ay + s * az,
+                                    t * ay * ay + c,
+                                    t * ay * az - s * ax,
+                                    0.0,
+                                ],
+                                [
+                                    t * ax * az - s * ay,
+                                    t * ay * az + s * ax,
+                                    t * az * az + c,
+                                    0.0,
+                                ],
+                                [0.0, 0.0, 0.0, 1.0],
+                            ],
+                        };
                         // Multiply: transform = rot * transform (rotate around origin)
                         let mut result = Matrix4 { m: [[0.0; 4]; 4] };
                         for r in 0..4 {
@@ -515,12 +571,14 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
     // Blender's Collada exporter adds an X-rotation matrix to convert Z_UP to Y_UP.
     // Homeworld modders model in Y_UP natively, so this matrix incorrectly rotates the ship.
     if p_name.is_none() {
-        transform = Matrix4 { m: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]};
+        transform = Matrix4 {
+            m: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
     }
 
     if is_joint {
@@ -531,7 +589,11 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             local_transform: transform.clone(),
             position: Some(pos),
             rotation: Some(rot),
-            scale: Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 }),
+            scale: Some(Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            }),
         });
     } else if is_mark {
         model.markers.push(HODMarker {
@@ -561,7 +623,11 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
         let (cr, cg, cb) = extract_bracket_value(full_name, "_Col[")
             .and_then(|v| {
                 let parts: Vec<f32> = v.split(',').filter_map(|s| s.parse().ok()).collect();
-                if parts.len() >= 3 { Some((parts[0], parts[1], parts[2])) } else { None }
+                if parts.len() >= 3 {
+                    Some((parts[0], parts[1], parts[2]))
+                } else {
+                    None
+                }
             })
             .unwrap_or((1.0, 1.0, 1.0));
         let distance = extract_bracket_value(full_name, "_Dist[")
@@ -578,7 +644,11 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             phase,
             frequency,
             style,
-            color: Vector3 { x: cr, y: cg, z: cb },
+            color: Vector3 {
+                x: cr,
+                y: cg,
+                z: cb,
+            },
             distance,
             sprite_visible: true,
             high_end_only: false,
@@ -593,7 +663,11 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             local_transform: transform.clone(),
             position: Some(pos),
             rotation: Some(rot),
-            scale: Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 }),
+            scale: Some(Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            }),
         });
     } else if is_burn {
         // Parse Flame children to extract burn vertices
@@ -604,7 +678,10 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
                 // Extract position from translate element
                 if let Some(t) = child.children().find(|n| n.has_tag_name("translate")) {
                     if let Some(text) = t.text() {
-                        let coords: Vec<f32> = text.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                        let coords: Vec<f32> = text
+                            .split_whitespace()
+                            .filter_map(|s| s.parse().ok())
+                            .collect();
                         if coords.len() >= 3 {
                             burn_vertices.push(Vector3 {
                                 x: coords[0],
@@ -633,7 +710,7 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             if let Some(end) = name.find("]") {
                 let mesh_name = name[5..end].to_string();
                 let new_parent = p_name.clone().unwrap_or_else(|| "Root".to_string());
-                
+
                 // Only update the mesh parent if the new parent is NOT "Root".
                 // This prevents ROOT_LOD[x] wrapper nodes from overwriting the actual joint parent (like JNT[RadarDish])
                 // which was correctly assigned when LOD[0] was parsed inside the joint hierarchy.
@@ -645,7 +722,7 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
                     }
                 }
             }
-        } else if !name.starts_with("Flame[") 
+        } else if !name.starts_with("Flame[")
             && !name.starts_with("Class[")
             && !name.starts_with("ROOT_")
             && !name.starts_with("UVSets[")
@@ -660,7 +737,11 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
                 local_transform: transform.clone(),
                 position: Some(pos),
                 rotation: Some(rot),
-                scale: Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 }),
+                scale: Some(Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                }),
             });
         }
     }
@@ -678,8 +759,21 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
 }
 
 fn parse_animations(doc: &Document, model: &mut HODModel) {
-    if let Some(lib_anims) = doc.descendants().find(|n| n.has_tag_name("library_animations")) {
-        let mut tracks_map: HashMap<String, (Vec<(f64, f64)>, Vec<(f64, f64)>, Vec<(f64, f64)>, Vec<(f64, f64)>, Vec<(f64, f64)>, Vec<(f64, f64)>)> = HashMap::new();
+    if let Some(lib_anims) = doc
+        .descendants()
+        .find(|n| n.has_tag_name("library_animations"))
+    {
+        let mut tracks_map: HashMap<
+            String,
+            (
+                Vec<(f64, f64)>,
+                Vec<(f64, f64)>,
+                Vec<(f64, f64)>,
+                Vec<(f64, f64)>,
+                Vec<(f64, f64)>,
+                Vec<(f64, f64)>,
+            ),
+        > = HashMap::new();
 
         for anim in lib_anims.children().filter(|n| n.has_tag_name("animation")) {
             if let Some(channel) = anim.children().find(|n| n.has_tag_name("channel")) {
@@ -694,16 +788,28 @@ fn parse_animations(doc: &Document, model: &mut HODModel) {
                     }
                     let prop = parts[1];
 
-                    let source_id = channel.attribute("source").unwrap_or("").trim_start_matches('#');
-                    if let Some(sampler) = anim.children().find(|n| n.has_tag_name("sampler") && n.attribute("id") == Some(source_id)) {
+                    let source_id = channel
+                        .attribute("source")
+                        .unwrap_or("")
+                        .trim_start_matches('#');
+                    if let Some(sampler) = anim
+                        .children()
+                        .find(|n| n.has_tag_name("sampler") && n.attribute("id") == Some(source_id))
+                    {
                         let mut input_id = "";
                         let mut output_id = "";
                         for input in sampler.children().filter(|n| n.has_tag_name("input")) {
                             let semantic = input.attribute("semantic").unwrap_or("");
                             if semantic == "INPUT" {
-                                input_id = input.attribute("source").unwrap_or("").trim_start_matches('#');
+                                input_id = input
+                                    .attribute("source")
+                                    .unwrap_or("")
+                                    .trim_start_matches('#');
                             } else if semantic == "OUTPUT" {
-                                output_id = input.attribute("source").unwrap_or("").trim_start_matches('#');
+                                output_id = input
+                                    .attribute("source")
+                                    .unwrap_or("")
+                                    .trim_start_matches('#');
                             }
                         }
 
@@ -713,13 +819,17 @@ fn parse_animations(doc: &Document, model: &mut HODModel) {
                         for source in anim.children().filter(|n| n.has_tag_name("source")) {
                             let id = source.attribute("id").unwrap_or("");
                             if id == input_id {
-                                if let Some(float_array) = source.children().find(|n| n.has_tag_name("float_array")) {
+                                if let Some(float_array) =
+                                    source.children().find(|n| n.has_tag_name("float_array"))
+                                {
                                     if let Ok(floats) = parse_float_array(float_array) {
                                         times = floats.into_iter().map(|f| f as f64).collect();
                                     }
                                 }
                             } else if id == output_id {
-                                if let Some(float_array) = source.children().find(|n| n.has_tag_name("float_array")) {
+                                if let Some(float_array) =
+                                    source.children().find(|n| n.has_tag_name("float_array"))
+                                {
                                     if let Ok(floats) = parse_float_array(float_array) {
                                         values = floats.into_iter().map(|f| f as f64).collect();
                                     }
@@ -728,14 +838,31 @@ fn parse_animations(doc: &Document, model: &mut HODModel) {
                         }
 
                         if times.len() == values.len() && !times.is_empty() {
-                            let curve: Vec<(f64, f64)> = times.into_iter().zip(values.into_iter()).collect();
-                            let entry = tracks_map.entry(joint_name).or_insert_with(|| (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()));
-                            if prop.starts_with("translate.X") { entry.0 = curve; }
-                            else if prop.starts_with("translate.Y") { entry.1 = curve; }
-                            else if prop.starts_with("translate.Z") { entry.2 = curve; }
-                            else if prop.starts_with("rotateX") { entry.3 = curve; }
-                            else if prop.starts_with("rotateY") { entry.4 = curve; }
-                            else if prop.starts_with("rotateZ") { entry.5 = curve; }
+                            let curve: Vec<(f64, f64)> =
+                                times.into_iter().zip(values.into_iter()).collect();
+                            let entry = tracks_map.entry(joint_name).or_insert_with(|| {
+                                (
+                                    Vec::new(),
+                                    Vec::new(),
+                                    Vec::new(),
+                                    Vec::new(),
+                                    Vec::new(),
+                                    Vec::new(),
+                                )
+                            });
+                            if prop.starts_with("translate.X") {
+                                entry.0 = curve;
+                            } else if prop.starts_with("translate.Y") {
+                                entry.1 = curve;
+                            } else if prop.starts_with("translate.Z") {
+                                entry.2 = curve;
+                            } else if prop.starts_with("rotateX") {
+                                entry.3 = curve;
+                            } else if prop.starts_with("rotateY") {
+                                entry.4 = curve;
+                            } else if prop.starts_with("rotateZ") {
+                                entry.5 = curve;
+                            }
                         }
                     }
                 }
@@ -766,24 +893,44 @@ fn parse_animations(doc: &Document, model: &mut HODModel) {
                 }
 
                 let eval = |curve: &Vec<(f64, f64)>, t: f64, default: f64| -> f64 {
-                    if curve.is_empty() { return default; }
-                    if t <= curve[0].0 { return curve[0].1; }
-                    if t >= curve.last().unwrap().0 { return curve.last().unwrap().1; }
-                    for i in 0..curve.len()-1 {
-                        if t >= curve[i].0 && t <= curve[i+1].0 {
-                            let range = curve[i+1].0 - curve[i].0;
-                            if range < 1e-5 { return curve[i].1; }
+                    if curve.is_empty() {
+                        return default;
+                    }
+                    if t <= curve[0].0 {
+                        return curve[0].1;
+                    }
+                    if t >= curve.last().unwrap().0 {
+                        return curve.last().unwrap().1;
+                    }
+                    for i in 0..curve.len() - 1 {
+                        if t >= curve[i].0 && t <= curve[i + 1].0 {
+                            let range = curve[i + 1].0 - curve[i].0;
+                            if range < 1e-5 {
+                                return curve[i].1;
+                            }
                             let f = (t - curve[i].0) / range;
-                            return curve[i].1 + f * (curve[i+1].1 - curve[i].1);
+                            return curve[i].1 + f * (curve[i + 1].1 - curve[i].1);
                         }
                     }
                     default
                 };
 
-                let mut def_pos = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
-                let def_rot = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
+                let mut def_pos = Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                };
+                let def_rot = Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                };
                 if let Some(joint) = model.joints.iter().find(|j| j.name == joint_name) {
-                    def_pos = Vector3 { x: joint.local_transform.m[3][0], y: joint.local_transform.m[3][1], z: joint.local_transform.m[3][2] };
+                    def_pos = Vector3 {
+                        x: joint.local_transform.m[3][0],
+                        y: joint.local_transform.m[3][1],
+                        z: joint.local_transform.m[3][2],
+                    };
                 }
 
                 let mut keyframes = Vec::new();
@@ -791,34 +938,42 @@ fn parse_animations(doc: &Document, model: &mut HODModel) {
                     let px = eval(&tx, time, def_pos.x as f64);
                     let py = eval(&ty, time, def_pos.y as f64);
                     let pz = eval(&tz, time, def_pos.z as f64);
-                    
+
                     let rx_deg = eval(&rx, time, def_rot.x as f64);
                     let ry_deg = eval(&ry, time, def_rot.y as f64);
                     let rz_deg = eval(&rz, time, def_rot.z as f64);
-                    
+
                     let rot_euler = Vector3 {
                         x: (rx_deg * std::f64::consts::PI / 180.0) as f32,
                         y: (ry_deg * std::f64::consts::PI / 180.0) as f32,
                         z: (rz_deg * std::f64::consts::PI / 180.0) as f32,
                     };
-                    
+
                     let rot_quat = euler_to_quaternion(&rot_euler);
-                    
+
                     keyframes.push(HODKeyframe {
                         time,
-                        position: Some(Vector3 { x: px as f32, y: py as f32, z: pz as f32 }),
+                        position: Some(Vector3 {
+                            x: px as f32,
+                            y: py as f32,
+                            z: pz as f32,
+                        }),
                         rotation: Some(rot_quat),
                         rotation_euler: Some(rot_euler),
-                        scale: Some(Vector3 { x: 1.0, y: 1.0, z: 1.0 }),
+                        scale: Some(Vector3 {
+                            x: 1.0,
+                            y: 1.0,
+                            z: 1.0,
+                        }),
                     });
                 }
-                
+
                 hod_anim.tracks.push(HODAnimationTrack {
                     joint_name,
                     keyframes,
                 });
             }
-            
+
             model.animations.push(hod_anim);
         }
     }

@@ -510,7 +510,12 @@ impl HODModel {
                         chunk.children.len()
                     );
                     for sub_chunk in &chunk.children {
-                        println!("[RUST]       HVMD child: ID='{}', type={:?}, data_len={}", sub_chunk.id, sub_chunk.chunk_type, sub_chunk.data.len());
+                        println!(
+                            "[RUST]       HVMD child: ID='{}', type={:?}, data_len={}",
+                            sub_chunk.id,
+                            sub_chunk.chunk_type,
+                            sub_chunk.data.len()
+                        );
                     }
                     // Pass 1: Parse all texture chunks first
                     for sub_chunk in &chunk.children {
@@ -518,7 +523,10 @@ impl HODModel {
                             "LMIP" => {
                                 // Extract textures from LMIP
                                 if sub_chunk.data.len() < 12 {
-                                    println!("[RUST]       Skipping tiny LMIP chunk (len={})", sub_chunk.data.len());
+                                    println!(
+                                        "[RUST]       Skipping tiny LMIP chunk (len={})",
+                                        sub_chunk.data.len()
+                                    );
                                     continue;
                                 }
                                 println!("[RUST]       Parsing LMIP texture chunk...");
@@ -853,15 +861,12 @@ impl HODModel {
                                     )
                                 })?;
                             }
-                            "DOCK" => {
-                                match parse_dock_chunk(&sub_chunk.data, context.is_v2) {
-                                    Ok(parsed_dockpaths) => dockpaths.extend(parsed_dockpaths),
-                                    Err(e) => println!(
-                                        "[RUST] WARNING: Failed to parse DOCK chunk: {}",
-                                        e
-                                    ),
+                            "DOCK" => match parse_dock_chunk(&sub_chunk.data, context.is_v2) {
+                                Ok(parsed_dockpaths) => dockpaths.extend(parsed_dockpaths),
+                                Err(e) => {
+                                    println!("[RUST] WARNING: Failed to parse DOCK chunk: {}", e)
                                 }
-                            }
+                            },
                             "GLOW" => {
                                 let mut parse_glow =
                                     |context: &mut ParsingContext| -> Result<(), String> {
@@ -979,220 +984,219 @@ impl HODModel {
                                 preserved_chunks.push(sub_chunk.clone());
                             }
                             "COLD" => {
-                                let mut parse_cold =
-                                    || -> Result<HODCollisionMesh, String> {
-                                        let mut r_prefix = Cursor::new(&sub_chunk.data);
-                                        let name = if sub_chunk.data.len() >= 4 {
-                                            read_len_string(&mut r_prefix)
-                                                .unwrap_or_else(|_| "CollisionMesh".to_string())
-                                        } else {
-                                            "CollisionMesh".to_string()
-                                        };
+                                let mut parse_cold = || -> Result<HODCollisionMesh, String> {
+                                    let mut r_prefix = Cursor::new(&sub_chunk.data);
+                                    let name = if sub_chunk.data.len() >= 4 {
+                                        read_len_string(&mut r_prefix)
+                                            .unwrap_or_else(|_| "CollisionMesh".to_string())
+                                    } else {
+                                        "CollisionMesh".to_string()
+                                    };
 
-                                        let mut min_extents = Vector3 {
-                                            x: 0.0,
-                                            y: 0.0,
-                                            z: 0.0,
-                                        };
-                                        let mut max_extents = Vector3 {
-                                            x: 0.0,
-                                            y: 0.0,
-                                            z: 0.0,
-                                        };
-                                        let mut center = Vector3 {
-                                            x: 0.0,
-                                            y: 0.0,
-                                            z: 0.0,
-                                        };
-                                        let mut radius = 0.0;
-                                        let mut vertices = Vec::new();
-                                        let mut indices = Vec::new();
+                                    let mut min_extents = Vector3 {
+                                        x: 0.0,
+                                        y: 0.0,
+                                        z: 0.0,
+                                    };
+                                    let mut max_extents = Vector3 {
+                                        x: 0.0,
+                                        y: 0.0,
+                                        z: 0.0,
+                                    };
+                                    let mut center = Vector3 {
+                                        x: 0.0,
+                                        y: 0.0,
+                                        z: 0.0,
+                                    };
+                                    let mut radius = 0.0;
+                                    let mut vertices = Vec::new();
+                                    let mut indices = Vec::new();
 
-                                        if r_prefix.position() + 40 <= sub_chunk.data.len() as u64 {
-                                            min_extents = Vector3 {
-                                                x: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                                y: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                                z: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                            };
-                                            max_extents = Vector3 {
-                                                x: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                                y: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                                z: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                            };
-                                            center = Vector3 {
-                                                x: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                                y: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                                z: r_prefix
-                                                    .read_f32::<LittleEndian>()
-                                                    .map_err(|e| e.to_string())?,
-                                            };
-                                            radius = r_prefix
+                                    if r_prefix.position() + 40 <= sub_chunk.data.len() as u64 {
+                                        min_extents = Vector3 {
+                                            x: r_prefix
                                                 .read_f32::<LittleEndian>()
-                                                .map_err(|e| e.to_string())?;
-                                        }
+                                                .map_err(|e| e.to_string())?,
+                                            y: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                            z: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                        };
+                                        max_extents = Vector3 {
+                                            x: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                            y: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                            z: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                        };
+                                        center = Vector3 {
+                                            x: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                            y: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                            z: r_prefix
+                                                .read_f32::<LittleEndian>()
+                                                .map_err(|e| e.to_string())?,
+                                        };
+                                        radius = r_prefix
+                                            .read_f32::<LittleEndian>()
+                                            .map_err(|e| e.to_string())?;
+                                    }
 
-                                        for child in &sub_chunk.children {
-                                            match child.id.as_str() {
-                                                "BBOX" => {
-                                                    let mut r_box = Cursor::new(&child.data);
-                                                    if child.data.len() >= 24 {
-                                                        let min_x = r_box
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        let min_y = r_box
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        let min_z = r_box
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        min_extents = Vector3 {
-                                                            x: min_x,
-                                                            y: min_y,
-                                                            z: min_z,
-                                                        };
+                                    for child in &sub_chunk.children {
+                                        match child.id.as_str() {
+                                            "BBOX" => {
+                                                let mut r_box = Cursor::new(&child.data);
+                                                if child.data.len() >= 24 {
+                                                    let min_x = r_box
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    let min_y = r_box
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    let min_z = r_box
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    min_extents = Vector3 {
+                                                        x: min_x,
+                                                        y: min_y,
+                                                        z: min_z,
+                                                    };
 
-                                                        let max_x = r_box
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        let max_y = r_box
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        let max_z = r_box
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        max_extents = Vector3 {
-                                                            x: max_x,
-                                                            y: max_y,
-                                                            z: max_z,
-                                                        };
-                                                    }
+                                                    let max_x = r_box
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    let max_y = r_box
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    let max_z = r_box
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    max_extents = Vector3 {
+                                                        x: max_x,
+                                                        y: max_y,
+                                                        z: max_z,
+                                                    };
                                                 }
-                                                "BSPH" => {
-                                                    let mut r_sph = Cursor::new(&child.data);
-                                                    if child.data.len() >= 16 {
-                                                        let cx = r_sph
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        let cy = r_sph
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        let cz = r_sph
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                        center = Vector3 {
-                                                            x: cx,
-                                                            y: cy,
-                                                            z: cz,
-                                                        };
-                                                        radius = r_sph
-                                                            .read_f32::<LittleEndian>()
-                                                            .map_err(|e| e.to_string())?;
-                                                    }
+                                            }
+                                            "BSPH" => {
+                                                let mut r_sph = Cursor::new(&child.data);
+                                                if child.data.len() >= 16 {
+                                                    let cx = r_sph
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    let cy = r_sph
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    let cz = r_sph
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
+                                                    center = Vector3 {
+                                                        x: cx,
+                                                        y: cy,
+                                                        z: cz,
+                                                    };
+                                                    radius = r_sph
+                                                        .read_f32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?;
                                                 }
-                                                "TRIS" => {
-                                                    let mut r_tris = Cursor::new(&child.data);
-                                                    if child.data.len() >= 4 {
-                                                        let vertex_count = r_tris
+                                            }
+                                            "TRIS" => {
+                                                let mut r_tris = Cursor::new(&child.data);
+                                                if child.data.len() >= 4 {
+                                                    let vertex_count = r_tris
+                                                        .read_i32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?
+                                                        as usize;
+                                                    for _ in 0..vertex_count {
+                                                        if r_tris.position() + 12
+                                                            > child.data.len() as u64
+                                                        {
+                                                            break;
+                                                        }
+                                                        let vx = r_tris
+                                                            .read_f32::<LittleEndian>()
+                                                            .map_err(|e| e.to_string())?;
+                                                        let vy = r_tris
+                                                            .read_f32::<LittleEndian>()
+                                                            .map_err(|e| e.to_string())?;
+                                                        let vz = r_tris
+                                                            .read_f32::<LittleEndian>()
+                                                            .map_err(|e| e.to_string())?;
+                                                        vertices.push(HODVertex {
+                                                            position: Vector3 {
+                                                                x: vx,
+                                                                y: vy,
+                                                                z: vz,
+                                                            },
+                                                            normal: None,
+                                                            color: None,
+                                                            uv: None,
+                                                            tangent: None,
+                                                            binormal: None,
+                                                            skinning_data: None,
+                                                        });
+                                                    }
+
+                                                    if r_tris.position() + 4
+                                                        <= child.data.len() as u64
+                                                    {
+                                                        let idx_count = r_tris
                                                             .read_i32::<LittleEndian>()
                                                             .map_err(|e| e.to_string())?
                                                             as usize;
-                                                        for _ in 0..vertex_count {
-                                                            if r_tris.position() + 12
+                                                        for _ in 0..idx_count {
+                                                            if r_tris.position() + 2
                                                                 > child.data.len() as u64
                                                             {
                                                                 break;
                                                             }
-                                                            let vx = r_tris
-                                                                .read_f32::<LittleEndian>()
+                                                            let idx = r_tris
+                                                                .read_u16::<LittleEndian>()
                                                                 .map_err(|e| e.to_string())?;
-                                                            let vy = r_tris
-                                                                .read_f32::<LittleEndian>()
-                                                                .map_err(|e| e.to_string())?;
-                                                            let vz = r_tris
-                                                                .read_f32::<LittleEndian>()
-                                                                .map_err(|e| e.to_string())?;
-                                                            vertices.push(HODVertex {
-                                                                position: Vector3 {
-                                                                    x: vx,
-                                                                    y: vy,
-                                                                    z: vz,
-                                                                },
-                                                                normal: None,
-                                                                color: None,
-                                                                uv: None,
-                                                                tangent: None,
-                                                                binormal: None,
-                                                                skinning_data: None,
-                                                            });
-                                                        }
-
-                                                        if r_tris.position() + 4
-                                                            <= child.data.len() as u64
-                                                        {
-                                                            let idx_count = r_tris
-                                                                .read_i32::<LittleEndian>()
-                                                                .map_err(|e| e.to_string())?
-                                                                as usize;
-                                                            for _ in 0..idx_count {
-                                                                if r_tris.position() + 2
-                                                                    > child.data.len() as u64
-                                                                {
-                                                                    break;
-                                                                }
-                                                                let idx = r_tris
-                                                                    .read_u16::<LittleEndian>()
-                                                                    .map_err(|e| e.to_string())?;
-                                                                indices.push(idx);
-                                                            }
+                                                            indices.push(idx);
                                                         }
                                                     }
                                                 }
-                                                _ => {
-                                                    preserved_chunks.push(child.clone());
-                                                }
+                                            }
+                                            _ => {
+                                                preserved_chunks.push(child.clone());
                                             }
                                         }
+                                    }
 
-                                        let parts = vec![HODMeshPart {
-                                            material_index: 0,
-                                            vertex_mask: 1, // position only
-                                            vertices,
-                                            indices,
-                                        }];
+                                    let parts = vec![HODMeshPart {
+                                        material_index: 0,
+                                        vertex_mask: 1, // position only
+                                        vertices,
+                                        indices,
+                                    }];
 
-                                        Ok(HODCollisionMesh {
-                                            name: name.clone(),
-                                            min_extents,
-                                            max_extents,
-                                            center,
-                                            radius,
-                                            mesh: HODMesh {
-                                                name: "CollisionMesh".to_string(),
-                                                parent_name: name,
-                                                lod: 0,
-                                                has_mult_tags: false,
-                                                parts,
-                                            },
-                                        })
-                                    };
-                                let cold_collision = parse_cold()
-                                    .map_err(|e| format!("Error in COLD: {}", e))?;
+                                    Ok(HODCollisionMesh {
+                                        name: name.clone(),
+                                        min_extents,
+                                        max_extents,
+                                        center,
+                                        radius,
+                                        mesh: HODMesh {
+                                            name: "CollisionMesh".to_string(),
+                                            parent_name: name,
+                                            lod: 0,
+                                            has_mult_tags: false,
+                                            parts,
+                                        },
+                                    })
+                                };
+                                let cold_collision =
+                                    parse_cold().map_err(|e| format!("Error in COLD: {}", e))?;
                                 pending_cold_collision = Some(cold_collision);
                             }
                             _ => {
@@ -1206,9 +1210,12 @@ impl HODModel {
                             kdop_collision.name = cold_collision.name.clone();
                             kdop_collision.mesh.name = "CollisionMesh".to_string();
                             kdop_collision.mesh.parent_name = cold_collision.name.clone();
-                            if cold_collision.mesh.parts.iter().any(|part| {
-                                !part.vertices.is_empty() && !part.indices.is_empty()
-                            }) {
+                            if cold_collision
+                                .mesh
+                                .parts
+                                .iter()
+                                .any(|part| !part.vertices.is_empty() && !part.indices.is_empty())
+                            {
                                 kdop_collision.mesh.parts = cold_collision.mesh.parts;
                             }
                             if cold_collision.radius > 0.0 {
@@ -1282,10 +1289,7 @@ impl HODModel {
                             model.animations = anims;
                         }
                         Err(e) => {
-                            println!(
-                                "[RUST] WARNING: Failed to parse companion MAD file: {}",
-                                e
-                            );
+                            println!("[RUST] WARNING: Failed to parse companion MAD file: {}", e);
                         }
                     }
                 }
@@ -1651,30 +1655,35 @@ impl HODModel {
         Ok(())
     }
 
-
-
     pub fn upgrade_v1_to_v2(&mut self) {
         if self.is_v2 {
             return;
         }
-        
+
         // HOD 1.0 (VERS 1000) and HOD 2.0 (VERS 1001) both use meters.
         // We do NOT need to scale positions!
         // The only incompatibility is that HOD 2.0 uses joint scale vectors as gimbal limits.
         // HW2 Classic exported (1.0, 1.0, 1.0) for scale, which HWRM interprets as a 1.0 radian gimbal limit,
         // causing severe coordinate space distortion and rotation.
-        
+
         for joint in &mut self.joints {
             // In HOD 2.0, the scale field acts as gimbal limits, not geometry scale.
             // Using (1,1,1) in HOD 2.0 causes the engine to rotate the ship sideways.
-            joint.scale = Some(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
-            
+            joint.scale = Some(Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            });
+
             // Recompose matrix with the zeroed scale
-            if let (Some(ref pos), Some(ref rot), Some(ref scale)) = (&joint.position, &joint.rotation, &joint.scale) {
-                joint.local_transform = compose_transform_matrix(pos.clone(), rot.clone(), scale.clone());
+            if let (Some(ref pos), Some(ref rot), Some(ref scale)) =
+                (&joint.position, &joint.rotation, &joint.scale)
+            {
+                joint.local_transform =
+                    compose_transform_matrix(pos.clone(), rot.clone(), scale.clone());
             }
         }
-        
+
         self.is_v2 = true;
     }
 
@@ -1790,7 +1799,10 @@ impl HODModel {
         self.joints.retain(|j| {
             let is_self_parented = j.parent_name.as_deref() == Some(&j.name);
             if is_self_parented && names_with_real_joint.contains(&j.name) {
-                println!("[RUST] clean_hierarchy: Removing duplicate self-parented joint '{}'", j.name);
+                println!(
+                    "[RUST] clean_hierarchy: Removing duplicate self-parented joint '{}'",
+                    j.name
+                );
                 return false;
             }
             true
@@ -2669,9 +2681,7 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
     reader
         .read_exact(&mut format_bytes)
         .map_err(|e| e.to_string())?;
-    let format_str = String::from_utf8_lossy(&format_bytes)
-        .trim()
-        .to_string();
+    let format_str = String::from_utf8_lossy(&format_bytes).trim().to_string();
 
     let mip_count = reader
         .read_u32::<LittleEndian>()
@@ -2690,22 +2700,43 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
             // HOD 2.0 LMIP stores dimensions for each mip. Legacy HOD 1.0 inline
             // LMIP/TEXM stores only the base dimensions, then compressed mip bytes.
             for _ in 1..mip_count {
-                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-                let _ = reader.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+                let _ = reader
+                    .read_u32::<LittleEndian>()
+                    .map_err(|e| e.to_string())?;
+                let _ = reader
+                    .read_u32::<LittleEndian>()
+                    .map_err(|e| e.to_string())?;
             }
         }
     }
 
     let name = if context.is_v2 {
-        if name_base.ends_with(&format_str) { name_base.clone() } else { format!("{}{}", name_base, format_str) }
+        if name_base.ends_with(&format_str) {
+            name_base.clone()
+        } else {
+            format!("{}{}", name_base, format_str)
+        }
     } else {
         // HOD 1.0 names are often full paths (e.g. "G:\GOG.com\centaur\support01.dds"). Extract just the stem.
         // std::path::Path::new fails on Linux for Windows paths, so split manually.
-        let file_name = name_base.split('\\').last().unwrap_or(&name_base).split('/').last().unwrap_or(&name_base);
-        let stem = file_name.rsplit_once('.').map(|(s, _)| s).unwrap_or(file_name);
-        if stem.ends_with(&format_str) { stem.to_string() } else { format!("{}{}", stem, format_str) }
+        let file_name = name_base
+            .split('\\')
+            .last()
+            .unwrap_or(&name_base)
+            .split('/')
+            .last()
+            .unwrap_or(&name_base);
+        let stem = file_name
+            .rsplit_once('.')
+            .map(|(s, _)| s)
+            .unwrap_or(file_name);
+        if stem.ends_with(&format_str) {
+            stem.to_string()
+        } else {
+            format!("{}{}", stem, format_str)
+        }
     };
-    
+
     let format = format_str;
     let _mip_levels = mip_count as u32;
 
@@ -2715,9 +2746,11 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
         let mut cur_w = width as usize;
         let mut cur_h = height as usize;
         let pool_pos_before = context.texture_pool.position();
-        println!("[TEX-DEBUG] Parsing texture '{}' ({}x{}, {} mips, format={}) at pool position {}", 
-                name, width, height, mip_count, format, pool_pos_before);
-        
+        println!(
+            "[TEX-DEBUG] Parsing texture '{}' ({}x{}, {} mips, format={}) at pool position {}",
+            name, width, height, mip_count, format, pool_pos_before
+        );
+
         for mip_idx in 0..mip_count {
             let mip_size = if format == "DXT1" {
                 std::cmp::max(8, (cur_w * cur_h) / 2)
@@ -2727,20 +2760,30 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
                 cur_w * cur_h * 4
             };
             expected_size += mip_size;
-            println!("[TEX-DEBUG]   Mip {}: {}x{} = {} bytes (cumulative: {})", 
-                    mip_idx, cur_w, cur_h, mip_size, expected_size);
-            if cur_w == 1 && cur_h == 1 { break; }
+            println!(
+                "[TEX-DEBUG]   Mip {}: {}x{} = {} bytes (cumulative: {})",
+                mip_idx, cur_w, cur_h, mip_size, expected_size
+            );
+            if cur_w == 1 && cur_h == 1 {
+                break;
+            }
             cur_w = std::cmp::max(1, cur_w / 2);
             cur_h = std::cmp::max(1, cur_h / 2);
         }
-        
+
         let mut buf = vec![0u8; expected_size.min(1024 * 1024 * 8)]; // clamp to safe limits
         if let Ok(_) = context.texture_pool.read_exact(&mut buf) {
             let pool_pos_after = context.texture_pool.position();
-            println!("[TEX-DEBUG] Read {} bytes, pool position now: {}", expected_size, pool_pos_after);
+            println!(
+                "[TEX-DEBUG] Read {} bytes, pool position now: {}",
+                expected_size, pool_pos_after
+            );
             raw_pixels = buf;
         } else {
-            println!("[TEX-DEBUG] FAILED to read {} bytes from texture pool!", expected_size);
+            println!(
+                "[TEX-DEBUG] FAILED to read {} bytes from texture pool!",
+                expected_size
+            );
         }
     } else {
         // Read raw inline mips from child chunks if present, else read inline
@@ -3283,7 +3326,10 @@ fn parse_basic_mesh(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HO
                 .read_i16::<LittleEndian>()
                 .map_err(|e| e.to_string())? as i32;
             if prim_group_count < 0 {
-                return Err(format!("Negative primitive group count in HOD 1.0 BMSH part {}", p_idx));
+                return Err(format!(
+                    "Negative primitive group count in HOD 1.0 BMSH part {}",
+                    p_idx
+                ));
             }
             let remaining_bytes = reader.get_ref().len() as u64 - reader.position();
             if prim_group_count as u64 > remaining_bytes / 10 {
@@ -3354,13 +3400,19 @@ fn parse_dock_chunk(data: &[u8], is_v2: bool) -> Result<Vec<HODDockpath>, String
     if is_v2 {
         parse_dock_extended(data).or_else(|extended_err| {
             parse_dock_legacy(data).map_err(|legacy_err| {
-                format!("extended layout failed: {}; legacy layout failed: {}", extended_err, legacy_err)
+                format!(
+                    "extended layout failed: {}; legacy layout failed: {}",
+                    extended_err, legacy_err
+                )
             })
         })
     } else {
         parse_dock_legacy(data).or_else(|legacy_err| {
             parse_dock_extended(data).map_err(|extended_err| {
-                format!("legacy layout failed: {}; extended layout failed: {}", legacy_err, extended_err)
+                format!(
+                    "legacy layout failed: {}; extended layout failed: {}",
+                    legacy_err, extended_err
+                )
             })
         })
     }
@@ -3429,12 +3481,18 @@ fn parse_dock_extended(data: &[u8]) -> Result<Vec<HODDockpath>, String> {
 fn parse_dock_legacy(data: &[u8]) -> Result<Vec<HODDockpath>, String> {
     parse_dock_legacy_with_layout(data, true).or_else(|matrix4_err| {
         parse_dock_legacy_with_layout(data, false).map_err(|matrix3_err| {
-            format!("matrix4 layout failed: {}; matrix3 layout failed: {}", matrix4_err, matrix3_err)
+            format!(
+                "matrix4 layout failed: {}; matrix3 layout failed: {}",
+                matrix4_err, matrix3_err
+            )
         })
     })
 }
 
-fn parse_dock_legacy_with_layout(data: &[u8], use_matrix4: bool) -> Result<Vec<HODDockpath>, String> {
+fn parse_dock_legacy_with_layout(
+    data: &[u8],
+    use_matrix4: bool,
+) -> Result<Vec<HODDockpath>, String> {
     let mut r = Cursor::new(data);
     let count = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
     let remaining_bytes = r.get_ref().len() as u64 - r.position();
@@ -3511,7 +3569,14 @@ fn read_dockpoint_matrix3_extra<R: Read>(r: &mut R) -> Result<HODDockpoint, Stri
     let extra1 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
     let extra2 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
 
-    Ok(HODDockpoint { position, rotation: Matrix4 { m }, tolerance, max_speed, extra1, extra2 })
+    Ok(HODDockpoint {
+        position,
+        rotation: Matrix4 { m },
+        tolerance,
+        max_speed,
+        extra1,
+        extra2,
+    })
 }
 
 fn read_dockpoint_matrix4<R: Read>(r: &mut R) -> Result<HODDockpoint, String> {
@@ -3529,7 +3594,14 @@ fn read_dockpoint_matrix4<R: Read>(r: &mut R) -> Result<HODDockpoint, String> {
     let tolerance = r.read_f32::<LittleEndian>().map_err(|e| e.to_string())?;
     let max_speed = r.read_f32::<LittleEndian>().map_err(|e| e.to_string())?;
 
-    Ok(HODDockpoint { position, rotation: Matrix4 { m }, tolerance, max_speed, extra1: 0, extra2: 0 })
+    Ok(HODDockpoint {
+        position,
+        rotation: Matrix4 { m },
+        tolerance,
+        max_speed,
+        extra1: 0,
+        extra2: 0,
+    })
 }
 
 fn parse_kdop_collision_mesh(data: &[u8], name: &str) -> Result<HODCollisionMesh, String> {
@@ -3568,7 +3640,8 @@ fn parse_kdop_collision_mesh(data: &[u8], name: &str) -> Result<HODCollisionMesh
     if r.position() as usize + vertex_bytes + 4 > data.len() {
         return Err(format!(
             "KDOP vertex buffer exceeds payload: vertices={}, bytes={}",
-            vertex_count, data.len()
+            vertex_count,
+            data.len()
         ));
     }
 
@@ -3599,7 +3672,8 @@ fn parse_kdop_collision_mesh(data: &[u8], name: &str) -> Result<HODCollisionMesh
     if r.position() as usize + index_bytes > data.len() {
         return Err(format!(
             "KDOP index buffer exceeds payload: faces={}, bytes={}",
-            face_count, data.len()
+            face_count,
+            data.len()
         ));
     }
 
@@ -3746,13 +3820,7 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
 
     // Always generate box vertices for collision meshes that have extents but no vertices
     for cm in &mut model.collision_meshes {
-        if cm.mesh.parts.is_empty()
-            || cm
-                .mesh
-                .parts
-                .iter()
-                .all(|p| p.vertices.is_empty())
-        {
+        if cm.mesh.parts.is_empty() || cm.mesh.parts.iter().all(|p| p.vertices.is_empty()) {
             let min = &cm.min_extents;
             let max = &cm.max_extents;
 
@@ -3764,7 +3832,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
             // Box vertices: 8 corners
             let vertices = vec![
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: min.x, y: min.y, z: min.z },
+                    position: crate::hod::Vector3 {
+                        x: min.x,
+                        y: min.y,
+                        z: min.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3773,7 +3845,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     skinning_data: None,
                 },
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: max.x, y: min.y, z: min.z },
+                    position: crate::hod::Vector3 {
+                        x: max.x,
+                        y: min.y,
+                        z: min.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3782,7 +3858,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     skinning_data: None,
                 },
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: max.x, y: max.y, z: min.z },
+                    position: crate::hod::Vector3 {
+                        x: max.x,
+                        y: max.y,
+                        z: min.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3791,7 +3871,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     skinning_data: None,
                 },
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: min.x, y: max.y, z: min.z },
+                    position: crate::hod::Vector3 {
+                        x: min.x,
+                        y: max.y,
+                        z: min.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3800,7 +3884,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     skinning_data: None,
                 },
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: min.x, y: min.y, z: max.z },
+                    position: crate::hod::Vector3 {
+                        x: min.x,
+                        y: min.y,
+                        z: max.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3809,7 +3897,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     skinning_data: None,
                 },
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: max.x, y: min.y, z: max.z },
+                    position: crate::hod::Vector3 {
+                        x: max.x,
+                        y: min.y,
+                        z: max.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3818,7 +3910,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     skinning_data: None,
                 },
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: max.x, y: max.y, z: max.z },
+                    position: crate::hod::Vector3 {
+                        x: max.x,
+                        y: max.y,
+                        z: max.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3827,7 +3923,11 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     skinning_data: None,
                 },
                 crate::hod::HODVertex {
-                    position: crate::hod::Vector3 { x: min.x, y: max.y, z: max.z },
+                    position: crate::hod::Vector3 {
+                        x: min.x,
+                        y: max.y,
+                        z: max.z,
+                    },
                     normal: None,
                     color: None,
                     uv: None,
@@ -3994,7 +4094,10 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
         .map_err(|e| e.to_string())?;
     println!("[RUST] HIER chunk first_val: 0x{:08X}", first_val);
 
-    if (first_val & 0xFFFFFF00) == 0xFFFFFF00 {
+    // HOD 2.0 stores the joint count as a full signed negative value.
+    // Large hierarchies can exceed 255 joints (e.g. -298 = 0xFFFFFED6),
+    // so this must not be detected via a 0xFFFFFF00 byte mask.
+    if (first_val as i32) < 0 {
         // HOD 2.0 joints hierarchy
         while reader.position() + 4 <= chunk.data.len() as u64 {
             let remaining = chunk.data.len() as u64 - reader.position();
@@ -5057,17 +5160,19 @@ fn generate_lmip_texture_chunks_and_pool(
                 let h = 4;
                 let mut fallback = vec![0u8; w * h * 4];
                 for i in 0..(w * h) {
-                    fallback[i * 4] = 255;     // R
-                    fallback[i * 4 + 1] = 0;   // G
+                    fallback[i * 4] = 255; // R
+                    fallback[i * 4 + 1] = 0; // G
                     fallback[i * 4 + 2] = 255; // B
                     fallback[i * 4 + 3] = 255; // A
                 }
                 (fallback, w as u32, h as u32)
             }
         };
-        println!("[TEX-DEBUG-SAVE] Writing texture '{}' ({}x{}, format={})", 
-                texture.name, width, height, texture.format);
-        
+        println!(
+            "[TEX-DEBUG-SAVE] Writing texture '{}' ({}x{}, format={})",
+            texture.name, width, height, texture.format
+        );
+
         // HOD 2.0 POOL chunks store textures bottom-up (DirectX convention).
         // Our internal format (from TGA/PNG or extracted) is always top-down.
         // So we ALWAYS flip it before compression.
@@ -5085,7 +5190,7 @@ fn generate_lmip_texture_chunks_and_pool(
             mip_count = 1;
         }
         println!("[TEX-DEBUG-SAVE] Generated {} mip levels", mip_count);
-        
+
         let mips = generate_mip_chain(&rgba, width as usize, height as usize, mip_count as usize);
 
         let output_format = match texture.format.as_str() {
@@ -5104,7 +5209,7 @@ fn generate_lmip_texture_chunks_and_pool(
         let mut data = Vec::new();
         // V2 format: string name, 4-byte format name, u32 mip_count, and then mip dimensions (width, height as u32 LittleEndian)
         write_len_string(&mut data, &texture.name)?;
-        
+
         let format_name = output_format; // "DXT1" or "DXT5"
         let mut format_bytes = [b' '; 4];
         let bytes = format_name.as_bytes();
@@ -5237,7 +5342,9 @@ fn write_stat_texture_params<W: Write>(
     }
 
     if !mat.parameters.is_empty() {
-        writer.write_all(&mat.parameters).map_err(|e| e.to_string())?;
+        writer
+            .write_all(&mat.parameters)
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -5435,19 +5542,33 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         // Collision mesh vertices go into the mesh stream, indices into the face stream.
         // We need to re-generate the pool with collision mesh data appended.
         let mut pool_cursor = Cursor::new(&mut pool_data);
-        let _pool_type = pool_cursor.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+        let _pool_type = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())?;
 
         // Read existing texture stream
-        let comp_tex_len = pool_cursor.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
-        let decomp_tex_len = pool_cursor.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+        let comp_tex_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let decomp_tex_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
         let mut comp_tex = vec![0u8; comp_tex_len];
-        pool_cursor.read_exact(&mut comp_tex).map_err(|e| e.to_string())?;
+        pool_cursor
+            .read_exact(&mut comp_tex)
+            .map_err(|e| e.to_string())?;
 
         // Read existing mesh stream
-        let comp_mesh_len = pool_cursor.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
-        let decomp_mesh_len = pool_cursor.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+        let comp_mesh_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let decomp_mesh_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
         let mut comp_mesh = vec![0u8; comp_mesh_len];
-        pool_cursor.read_exact(&mut comp_mesh).map_err(|e| e.to_string())?;
+        pool_cursor
+            .read_exact(&mut comp_mesh)
+            .map_err(|e| e.to_string())?;
         let mut decomp_mesh = if comp_mesh_len == decomp_mesh_len {
             comp_mesh.clone()
         } else {
@@ -5455,10 +5576,16 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         };
 
         // Read existing face stream
-        let comp_face_len = pool_cursor.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
-        let decomp_face_len = pool_cursor.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+        let comp_face_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let decomp_face_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
         let mut comp_face = vec![0u8; comp_face_len];
-        pool_cursor.read_exact(&mut comp_face).map_err(|e| e.to_string())?;
+        pool_cursor
+            .read_exact(&mut comp_face)
+            .map_err(|e| e.to_string())?;
         let mut decomp_face = if comp_face_len == decomp_face_len {
             comp_face.clone()
         } else {
@@ -5470,15 +5597,34 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         // Append collision mesh vertices to mesh stream
         for cm in &model.collision_meshes {
             for part in &cm.mesh.parts {
-                println!("[RUST]   Collision part: {} vertices, {} indices, mask=0x{:x}", part.vertices.len(), part.indices.len(), part.vertex_mask);
+                println!(
+                    "[RUST]   Collision part: {} vertices, {} indices, mask=0x{:x}",
+                    part.vertices.len(),
+                    part.indices.len(),
+                    part.vertex_mask
+                );
                 let mut vertex_stride = 0u32;
-                if (part.vertex_mask & 0x01) != 0 { vertex_stride += 16; }
-                if (part.vertex_mask & 0x02) != 0 { vertex_stride += 16; }
-                if (part.vertex_mask & 0x04) != 0 { vertex_stride += 4; }
-                if (part.vertex_mask & 0x08) != 0 { vertex_stride += 8; }
-                if (part.vertex_mask & 0x2000) != 0 { vertex_stride += 12; }
-                if (part.vertex_mask & 0x4000) != 0 { vertex_stride += 12; }
-                if vertex_stride == 0 { vertex_stride = 1; }
+                if (part.vertex_mask & 0x01) != 0 {
+                    vertex_stride += 16;
+                }
+                if (part.vertex_mask & 0x02) != 0 {
+                    vertex_stride += 16;
+                }
+                if (part.vertex_mask & 0x04) != 0 {
+                    vertex_stride += 4;
+                }
+                if (part.vertex_mask & 0x08) != 0 {
+                    vertex_stride += 8;
+                }
+                if (part.vertex_mask & 0x2000) != 0 {
+                    vertex_stride += 12;
+                }
+                if (part.vertex_mask & 0x4000) != 0 {
+                    vertex_stride += 12;
+                }
+                if vertex_stride == 0 {
+                    vertex_stride = 1;
+                }
 
                 for v in &part.vertices {
                     let _ = crate::hod::write_vertex(
@@ -5506,15 +5652,29 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         println!("[RUST] After collision append: decomp_mesh={} bytes, decomp_face={} bytes, new_comp_mesh={} bytes, new_comp_face={} bytes", decomp_mesh.len(), decomp_face.len(), new_comp_mesh.len(), new_comp_face.len());
 
         let mut new_pool = Vec::new();
-        new_pool.write_u32::<LittleEndian>(_pool_type).map_err(|e| e.to_string())?;
-        new_pool.write_u32::<LittleEndian>(comp_tex.len() as u32).map_err(|e| e.to_string())?;
-        new_pool.write_u32::<LittleEndian>(decomp_tex_len as u32).map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(_pool_type)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(comp_tex.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(decomp_tex_len as u32)
+            .map_err(|e| e.to_string())?;
         new_pool.extend_from_slice(&comp_tex);
-        new_pool.write_u32::<LittleEndian>(new_comp_mesh.len() as u32).map_err(|e| e.to_string())?;
-        new_pool.write_u32::<LittleEndian>(decomp_mesh.len() as u32).map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(new_comp_mesh.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(decomp_mesh.len() as u32)
+            .map_err(|e| e.to_string())?;
         new_pool.extend_from_slice(&new_comp_mesh);
-        new_pool.write_u32::<LittleEndian>(new_comp_face.len() as u32).map_err(|e| e.to_string())?;
-        new_pool.write_u32::<LittleEndian>(decomp_face.len() as u32).map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(new_comp_face.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(decomp_face.len() as u32)
+            .map_err(|e| e.to_string())?;
         new_pool.extend_from_slice(&new_comp_face);
 
         pool_data = new_pool;
@@ -5635,7 +5795,9 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     };
     {
         let joint_count = joints_to_write.len() as i32;
-        let first_val = (0xFFFFFF00u32 | ((-joint_count) as u32 & 0xFF)) as u32;
+        // HOD 2.0 HIER uses a full two's-complement negative joint count.
+        // Do not mask to the low byte; files can legitimately exceed 255 joints.
+        let first_val = (-joint_count) as u32;
         hier_buf
             .write_u32::<LittleEndian>(first_val)
             .map_err(|e| e.to_string())?;
@@ -5886,7 +6048,10 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         });
     }
 
-    let dtrm_sub_chunk_ids = ["HIER", "MRKR", "BURN", "NAVL", "MRKS", "DOCK", "COLD", "KDOP", "SCAR", "BNDV", "ETSH", "BSRM", "PATH", "PNTS", "MAD"];
+    let dtrm_sub_chunk_ids = [
+        "HIER", "MRKR", "BURN", "NAVL", "MRKS", "DOCK", "COLD", "KDOP", "SCAR", "BNDV", "ETSH",
+        "BSRM", "PATH", "PNTS", "MAD",
+    ];
     if let Some(dtrm) = model.preserved_chunks.iter().find(|c| c.id == "DTRM") {
         for child in &dtrm.children {
             if dtrm_sub_chunk_ids.contains(&child.id.as_str()) {
@@ -5913,12 +6078,24 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
 
             // BBOX
             let mut bbox_data = Vec::new();
-            bbox_data.write_f32::<LittleEndian>(cm.min_extents.x).map_err(|e| e.to_string())?;
-            bbox_data.write_f32::<LittleEndian>(cm.min_extents.y).map_err(|e| e.to_string())?;
-            bbox_data.write_f32::<LittleEndian>(cm.min_extents.z).map_err(|e| e.to_string())?;
-            bbox_data.write_f32::<LittleEndian>(cm.max_extents.x).map_err(|e| e.to_string())?;
-            bbox_data.write_f32::<LittleEndian>(cm.max_extents.y).map_err(|e| e.to_string())?;
-            bbox_data.write_f32::<LittleEndian>(cm.max_extents.z).map_err(|e| e.to_string())?;
+            bbox_data
+                .write_f32::<LittleEndian>(cm.min_extents.x)
+                .map_err(|e| e.to_string())?;
+            bbox_data
+                .write_f32::<LittleEndian>(cm.min_extents.y)
+                .map_err(|e| e.to_string())?;
+            bbox_data
+                .write_f32::<LittleEndian>(cm.min_extents.z)
+                .map_err(|e| e.to_string())?;
+            bbox_data
+                .write_f32::<LittleEndian>(cm.max_extents.x)
+                .map_err(|e| e.to_string())?;
+            bbox_data
+                .write_f32::<LittleEndian>(cm.max_extents.y)
+                .map_err(|e| e.to_string())?;
+            bbox_data
+                .write_f32::<LittleEndian>(cm.max_extents.z)
+                .map_err(|e| e.to_string())?;
             cold_children.push(IffChunk {
                 id: "BBOX".to_string(),
                 chunk_type: ChunkType::Default,
@@ -5929,10 +6106,18 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
 
             // BSPH
             let mut bsph_data = Vec::new();
-            bsph_data.write_f32::<LittleEndian>(cm.center.x).map_err(|e| e.to_string())?;
-            bsph_data.write_f32::<LittleEndian>(cm.center.y).map_err(|e| e.to_string())?;
-            bsph_data.write_f32::<LittleEndian>(cm.center.z).map_err(|e| e.to_string())?;
-            bsph_data.write_f32::<LittleEndian>(cm.radius).map_err(|e| e.to_string())?;
+            bsph_data
+                .write_f32::<LittleEndian>(cm.center.x)
+                .map_err(|e| e.to_string())?;
+            bsph_data
+                .write_f32::<LittleEndian>(cm.center.y)
+                .map_err(|e| e.to_string())?;
+            bsph_data
+                .write_f32::<LittleEndian>(cm.center.z)
+                .map_err(|e| e.to_string())?;
+            bsph_data
+                .write_f32::<LittleEndian>(cm.radius)
+                .map_err(|e| e.to_string())?;
             cold_children.push(IffChunk {
                 id: "BSPH".to_string(),
                 chunk_type: ChunkType::Default,
@@ -5944,15 +6129,27 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
             // TRIS (vertex data is in mesh pool, just write vertex/index counts)
             if let Some(part) = cm.mesh.parts.first() {
                 let mut tris_data = Vec::new();
-                tris_data.write_i32::<LittleEndian>(part.vertices.len() as i32).map_err(|e| e.to_string())?;
+                tris_data
+                    .write_i32::<LittleEndian>(part.vertices.len() as i32)
+                    .map_err(|e| e.to_string())?;
                 for v in &part.vertices {
-                    tris_data.write_f32::<LittleEndian>(v.position.x).map_err(|e| e.to_string())?;
-                    tris_data.write_f32::<LittleEndian>(v.position.y).map_err(|e| e.to_string())?;
-                    tris_data.write_f32::<LittleEndian>(v.position.z).map_err(|e| e.to_string())?;
+                    tris_data
+                        .write_f32::<LittleEndian>(v.position.x)
+                        .map_err(|e| e.to_string())?;
+                    tris_data
+                        .write_f32::<LittleEndian>(v.position.y)
+                        .map_err(|e| e.to_string())?;
+                    tris_data
+                        .write_f32::<LittleEndian>(v.position.z)
+                        .map_err(|e| e.to_string())?;
                 }
-                tris_data.write_i32::<LittleEndian>(part.indices.len() as i32).map_err(|e| e.to_string())?;
+                tris_data
+                    .write_i32::<LittleEndian>(part.indices.len() as i32)
+                    .map_err(|e| e.to_string())?;
                 for &idx in &part.indices {
-                    tris_data.write_u16::<LittleEndian>(idx).map_err(|e| e.to_string())?;
+                    tris_data
+                        .write_u16::<LittleEndian>(idx)
+                        .map_err(|e| e.to_string())?;
                 }
                 cold_children.push(IffChunk {
                     id: "FORM".to_string(),
@@ -5971,16 +6168,36 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
 
             let mut cold_data = Vec::new();
             write_len_string(&mut cold_data, &cm.name).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.min_extents.x).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.min_extents.y).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.min_extents.z).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.max_extents.x).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.max_extents.y).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.max_extents.z).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.center.x).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.center.y).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.center.z).map_err(|e| e.to_string())?;
-            cold_data.write_f32::<LittleEndian>(cm.radius).map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.min_extents.x)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.min_extents.y)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.min_extents.z)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.max_extents.x)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.max_extents.y)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.max_extents.z)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.center.x)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.center.y)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.center.z)
+                .map_err(|e| e.to_string())?;
+            cold_data
+                .write_f32::<LittleEndian>(cm.radius)
+                .map_err(|e| e.to_string())?;
 
             dtrm_children.push(IffChunk {
                 id: "COLD".to_string(),
@@ -6348,17 +6565,18 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                     &mut new_face_pool,
                     "",
                 )?;
-                
+
                 chunk.children.retain(|c| c.id != "STAT" && c.id != "MATT");
-                
+
                 for mat in &updated_model.materials {
                     let mut stat_buf = Vec::new();
                     let mut stat_cursor = Cursor::new(&mut stat_buf);
-                    
+
                     write_len_string(&mut stat_cursor, &mat.name).unwrap();
                     write_len_string(&mut stat_cursor, &mat.shader_name).unwrap();
-                    write_stat_texture_params(&mut stat_cursor, mat, &updated_model.textures).unwrap();
-                    
+                    write_stat_texture_params(&mut stat_cursor, mat, &updated_model.textures)
+                        .unwrap();
+
                     chunk.children.push(IffChunk {
                         id: "STAT".to_string(),
                         chunk_type: ChunkType::Normal,
@@ -6379,11 +6597,25 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
                         v,
                         part.vertex_mask,
                         1400,
-                        if (part.vertex_mask & 0x01) != 0 { 16 } else { 0 }
-                            + if (part.vertex_mask & 0x02) != 0 { 16 } else { 0 }
-                            + if (part.vertex_mask & 0x08) != 0 { 8 } else { 0 }
-                            + if (part.vertex_mask & 0x2000) != 0 { 12 } else { 0 }
-                            + if (part.vertex_mask & 0x4000) != 0 { 12 } else { 0 },
+                        if (part.vertex_mask & 0x01) != 0 {
+                            16
+                        } else {
+                            0
+                        } + if (part.vertex_mask & 0x02) != 0 {
+                            16
+                        } else {
+                            0
+                        } + if (part.vertex_mask & 0x08) != 0 { 8 } else { 0 }
+                            + if (part.vertex_mask & 0x2000) != 0 {
+                                12
+                            } else {
+                                0
+                            }
+                            + if (part.vertex_mask & 0x4000) != 0 {
+                                12
+                            } else {
+                                0
+                            },
                     );
                 }
                 for &idx in &part.indices {
@@ -6486,7 +6718,9 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
     let mut hier_data = Vec::new();
     if is_v2 {
         let joint_count = joints_to_write.len() as i32;
-        let first_val = (0xFFFFFF00u32 | ((-joint_count) as u32 & 0xFF)) as u32;
+        // HOD 2.0 HIER uses a full two's-complement negative joint count.
+        // Do not mask to the low byte; files can legitimately exceed 255 joints.
+        let first_val = (-joint_count) as u32;
         hier_data
             .write_u32::<LittleEndian>(first_val)
             .map_err(|e| e.to_string())?;
