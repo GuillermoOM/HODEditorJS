@@ -81,14 +81,24 @@ export function getExpectedTextureType(shaderName: string, mapIndex: number): st
 }
 
 
+const PARAM_TO_SUFFIX: Record<string, string> = {
+  diffuse: "DIFF",
+  normal: "NORM",
+  specular: "SPEC",
+  glow: "GLOW",
+  team: "TEAM",
+  diffuseoff: "DIFF_OFF",
+  glowoff: "GLOW_OFF"
+};
+
 export function updateDynamicShaderSlots(dynamicShaders: {name: string, slots: string[]}[]) {
   const newTypes = new Set(KNOWN_TYPES);
   for (const shader of dynamicShaders) {
     const formattedSlots = shader.slots.map(slot => {
-      // e.g. "diffuse" -> "Diffuse (DIFFUSE)", "glow" -> "Glow (GLOW)"
-      const suffix = "_" + slot.toUpperCase();
+      const mappedSuffix = PARAM_TO_SUFFIX[slot.toLowerCase()] || slot.toUpperCase();
+      const suffix = "_" + mappedSuffix;
       newTypes.add(suffix);
-      return `${slot.charAt(0).toUpperCase() + slot.slice(1)} Map (${slot.toUpperCase()})`;
+      return `${slot.charAt(0).toUpperCase() + slot.slice(1)} Map (${mappedSuffix})`;
     });
     // Merge or replace
     SHADER_SLOTS[shader.name.toLowerCase()] = formattedSlots;
