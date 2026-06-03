@@ -56,7 +56,7 @@
 - [x] Many nodes show up on viewport that are missing on the node tree
 - [x] DXT3 Texture compatiblity
 
-- [ ] Editor works slow on bigger ships with many nodes
+- [ ] Editor works slow on bigger ships with many nodes, it seems to be rerendering everything on changing anything in the editor (node coordinate, node dragging, etc).
 
 - [ ] Texture upscaling/smoothing/antialiasing on saving
 - [ ] Fix auto camera distance on loading model
