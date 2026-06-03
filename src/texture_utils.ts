@@ -56,7 +56,7 @@ export let SHADER_SLOTS: Record<string, string[]> = {
   ship: ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Specular Map (SPEC)"],
   badge: ["Badge Diffuse Map (DIFF)"],
   badgeglow: ["Badge Diffuse Map (DIFF)", "Glow Map (GLOW)"],
-  thruster: ["Diffuse On (DIFF)", "Glow On (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Diffuse Off (DIFX)", "Glow Off (GLOWX)"],
+  thruster: ["Diffuse On (DIFF)", "Glow On (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)", "Diffuse Off (DIFX)", "Glow Off (GLOX)"],
   bay: ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"],
   innatess: ["Diffuse Map (DIFF)"],
   matte: ["Diffuse Map (DIFF)"],
@@ -90,7 +90,7 @@ const PARAM_TO_SUFFIX: Record<string, string> = {
   glow: "GLOW",
   team: "TEAM",
   diffoff: "DIFX",
-  glowoff: "GLOWX"
+  glowoff: "GLOX"
 };
 
 export function updateDynamicShaderSlots(dynamicShaders: {name: string, slots: string[]}[]) {
