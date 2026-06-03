@@ -58,14 +58,16 @@
 - [x] Remove hardcoded nameplate.bmp texture
 - [x] Make the Viewport Layer toggles also toggle visibility on all nodes but also have options to toggle markers and joint nodes
 - [x] Need to make sure all texture names have their proper _TYPE suffix both in editor and on saved/loaded HODs and exported materials/textures
-- [ ] Textures lose their "smoothness" when saving, in game they render blocky
+- [x] Textures lose their "smoothness" when saving, in game they render blocky
 
+- [ ] reintroduce Badges
+
+- [ ] Fix DAE parsing
 - [ ] Editor works slow on bigger ships with many nodes, it seems to be rerendering everything on changing anything in the editor (node coordinate, node dragging, etc).
 
 
 - [ ] Fix auto camera distance on loading model
 - [ ] Drag based positioning / rotating in viewport (disable camera control with left click, leave it for right click)
-- [ ] reintroduce Badges
 - [ ] Proper GLOW and SPEC texture generation
 - [ ] LOD mesh generation
 
