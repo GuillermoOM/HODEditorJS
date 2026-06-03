@@ -1764,7 +1764,13 @@ const handleDeleteNode = (name: string, type: string) => {
     const children = model.joints.filter((j) => j.parent_name === jointName);
     const standardChildJoints = children.filter(c => {
       const isNavLight = model.nav_lights?.some(n => n.name.toLowerCase() === c.name.toLowerCase());
-      if (isNavLight) return false;
+      if (isNavLight) {
+        const isEngineParent =
+          model.engine_burns?.some(b => b.parent_name === c.name) ||
+          model.engine_glows?.some(g => g.parent_name === c.name) ||
+          model.engine_shapes?.some(s => s.parent_name === c.name);
+        if (!isEngineParent) return false;
+      }
 
       const weaponInfo = getWeaponGroupInfo(c.name);
       if (weaponInfo) {
@@ -2342,7 +2348,13 @@ const handleDeleteNode = (name: string, type: string) => {
   // Find root joints (joints with no parent joint, or whose parent joint doesn't exist in the joints list)
   const rootJoints = model.joints.filter((j) => {
     if (getWeaponGroupInfo(j.name) !== null) return false; // Filter out weapon joints from general joints
-    if (model.nav_lights?.some(n => n.name.toLowerCase() === j.name.toLowerCase())) return false; // Filter out navlight joints from general joints
+    if (model.nav_lights?.some(n => n.name.toLowerCase() === j.name.toLowerCase())) {
+      const isEngineParent =
+        model.engine_burns?.some(b => b.parent_name === j.name) ||
+        model.engine_glows?.some(g => g.parent_name === j.name) ||
+        model.engine_shapes?.some(s => s.parent_name === j.name);
+      if (!isEngineParent) return false;
+    }
     if (!j.parent_name || j.parent_name === j.name) return true;
     return !model.joints.some((other) => other.name === j.parent_name && other.name !== j.name);
   });

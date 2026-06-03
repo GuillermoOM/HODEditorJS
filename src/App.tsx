@@ -203,105 +203,7 @@ function App() {
           dockpaths: parsedModel.dockpaths || [],
         };
 
-        const sanitizeNavLightChildren = (loadedModel: HODModel): HODModel => {
-          let m = { ...loadedModel };
-          const navlightNames = new Set(m.nav_lights.map(n => n.name));
-          if (navlightNames.size === 0) return m;
-
-          const getNavlightInfo = (navName: string) => {
-            const joint = m.joints.find(j => j.name === navName);
-            return {
-              joint,
-              parentName: joint?.parent_name || "Root",
-              transform: joint?.local_transform || { m: [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]] }
-            };
-          };
-
-          m.joints = m.joints.map(j => {
-            if (j.parent_name && navlightNames.has(j.parent_name)) {
-              const info = getNavlightInfo(j.parent_name);
-              const parentMat = info.transform.m;
-              const childMat = j.local_transform.m;
-              const newMat = [
-                [0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]
-              ];
-              for (let r = 0; r < 4; r++) {
-                for (let c = 0; c < 4; c++) {
-                  newMat[r][c] = parentMat[r][0]*childMat[0][c] + parentMat[r][1]*childMat[1][c] + parentMat[r][2]*childMat[2][c] + parentMat[r][3]*childMat[3][c];
-                }
-              }
-              return {
-                ...j,
-                parent_name: info.parentName,
-                local_transform: { m: newMat }
-              };
-            }
-            return j;
-          });
-
-          const createProxyJoint = (childName: string, navName: string, prefix: string) => {
-            const info = getNavlightInfo(navName);
-            let newJointName = `${prefix}_${childName}_from_${navName}`;
-            
-            if (prefix.includes("BurnProxy") || prefix.includes("GlowProxy") || prefix.includes("ShapeProxy")) {
-                let idx = 0;
-                while (m.joints.some(j => j.name === `EngineNozzle${idx}`)) idx++;
-                newJointName = `EngineNozzle${idx}`;
-            }
-
-            if (!m.joints.some(j => j.name === newJointName)) {
-              m.joints.push({
-                name: newJointName,
-                parent_name: info.parentName,
-                local_transform: JSON.parse(JSON.stringify(info.transform))
-              });
-              invoke("log_event", { level: "INFO", message: `Sanitized: Created proxy joint ${newJointName} to decouple ${childName} from navlight ${navName}` }).catch(console.error);
-            }
-            return newJointName;
-          };
-
-          m.engine_burns = m.engine_burns.map(b => {
-            if (navlightNames.has(b.parent_name)) return { ...b, parent_name: createProxyJoint(b.name, b.parent_name, "BurnProxy") };
-            return b;
-          });
-
-          m.engine_glows = m.engine_glows.map(g => {
-            if (navlightNames.has(g.parent_name)) return { ...g, parent_name: createProxyJoint(g.name, g.parent_name, "GlowProxy") };
-            return g;
-          });
-
-          m.engine_shapes = m.engine_shapes.map(s => {
-            if (navlightNames.has(s.parent_name)) return { ...s, parent_name: createProxyJoint(s.name, s.parent_name, "ShapeProxy") };
-            return s;
-          });
-
-          m.meshes = m.meshes.map(mesh => {
-            if (navlightNames.has(mesh.parent_name)) return { ...mesh, parent_name: createProxyJoint(mesh.name, mesh.parent_name, "MeshProxy") };
-            return mesh;
-          });
-
-          m.markers = m.markers.map(mrk => {
-            if (navlightNames.has(mrk.parent_joint)) return { ...mrk, parent_joint: createProxyJoint(mrk.name, mrk.parent_joint, "MarkerProxy") };
-            return mrk;
-          });
-          
-          m.dockpaths = m.dockpaths.map(dp => {
-            if (navlightNames.has(dp.parent_name)) return { ...dp, parent_name: createProxyJoint(dp.name, dp.parent_name, "DockpathProxy") };
-            return dp;
-          });
-
-          m.collision_meshes = m.collision_meshes.map(col => {
-            if (col.mesh && navlightNames.has(col.mesh.parent_name)) {
-              return { ...col, mesh: { ...col.mesh, parent_name: createProxyJoint(col.name, col.mesh.parent_name, "CollisionProxy") } };
-            }
-            return col;
-          });
-
-          return m;
-        };
-
-        const sanitizedModel = sanitizeNavLightChildren(processedModel);
-        setModel(sanitizedModel);
+        setModel(processedModel);
         setIsDirty(false);
         setSelectedNode(null);
         setSelectedAnimIdx(0);
@@ -309,11 +211,11 @@ function App() {
         
         // Initialize only LOD 0 as visible by default, hiding lower-poly LOD 1, 2, 3 overlays
         const initialVisibility: Record<string, boolean> = {};
-        sanitizedModel.meshes.forEach((m) => {
+        processedModel.meshes.forEach((m) => {
           initialVisibility[`${m.name}_lod_${m.lod}`] = m.lod === 0;
         });
-        const glowGroups = new Map<string, typeof sanitizedModel.engine_glows>();
-        sanitizedModel.engine_glows.forEach((g) => {
+        const glowGroups = new Map<string, typeof processedModel.engine_glows>();
+        processedModel.engine_glows.forEach((g) => {
           const baseName = g.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
           if (!glowGroups.has(baseName)) glowGroups.set(baseName, []);
           glowGroups.get(baseName)!.push(g);
@@ -326,7 +228,7 @@ function App() {
         });
         setVisibleMeshes(initialVisibility);
 
-        setStatusMsg(`HOD ${sanitizedModel.name} loaded successfully | Meshes: ${sanitizedModel.meshes.length} | Joints: ${sanitizedModel.joints.length} | Markers: ${sanitizedModel.markers.length}`);
+        setStatusMsg(`HOD ${processedModel.name} loaded successfully | Meshes: ${processedModel.meshes.length} | Joints: ${processedModel.joints.length} | Markers: ${processedModel.markers.length}`);
       } catch (e: any) {
         const err = `Frontend failed to load HOD from path ${path}: ${e.toString()}`;
         invoke("log_event", { level: "ERROR", message: err }).catch(console.error);

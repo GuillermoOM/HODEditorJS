@@ -1522,7 +1522,13 @@ export const Viewport: React.FC<ViewportProps> = ({
 
       model.joints.forEach((joint) => {
         const isNavLight = model.nav_lights?.some(n => n.name.toLowerCase() === joint.name.toLowerCase());
-        if (isNavLight) return;
+        if (isNavLight) {
+          const isEngineParent =
+            model.engine_burns?.some(b => b.parent_name === joint.name) ||
+            model.engine_glows?.some(g => g.parent_name === joint.name) ||
+            model.engine_shapes?.some(s => s.parent_name === joint.name);
+          if (!isEngineParent) return;
+        }
 
         const isJointVisible = visibleMeshes[`joint:${joint.name}`] !== false;
         if (!isJointVisible) return;

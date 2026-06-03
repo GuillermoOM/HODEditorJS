@@ -12,3 +12,7 @@ image = { version = "0.24", default-features = false, features = ["png", "tga", 
 base64 = "0.22.1"
 roxmltree = "0.21.1"
 meshopt = "0.6.2"
+
+[[bin]]
+name = "compare_burns"
+path = "src/bin/compare_burns.rs"

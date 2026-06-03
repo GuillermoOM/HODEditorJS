@@ -1777,6 +1777,24 @@ impl HODModel {
                 check_and_update(&mut marker.parent_joint);
             }
         }
+
+        // Remove self-parented identity joints that duplicate a real joint name.
+        // These are NavLight endpoint artifacts in some HOD 2.0 files (e.g., EngineNozzle1-4).
+        let mut names_with_real_joint = std::collections::HashSet::new();
+        for joint in &self.joints {
+            let is_self_parented = joint.parent_name.as_deref() == Some(&joint.name);
+            if !is_self_parented {
+                names_with_real_joint.insert(joint.name.clone());
+            }
+        }
+        self.joints.retain(|j| {
+            let is_self_parented = j.parent_name.as_deref() == Some(&j.name);
+            if is_self_parented && names_with_real_joint.contains(&j.name) {
+                println!("[RUST] clean_hierarchy: Removing duplicate self-parented joint '{}'", j.name);
+                return false;
+            }
+            true
+        });
     }
 
     pub fn deduplicate_names(&mut self) {
