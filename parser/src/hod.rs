@@ -2461,38 +2461,17 @@ fn generate_mip_chain(
         }
         let next_w = std::cmp::max(1, cur_w / 2);
         let next_h = std::cmp::max(1, cur_h / 2);
-        let mut next = vec![0u8; next_w * next_h * 4];
-        for ny in 0..next_h {
-            for nx in 0..next_w {
-                let sx = nx * 2;
-                let sy = ny * 2;
-                let mut r = 0u32;
-                let mut g = 0u32;
-                let mut b = 0u32;
-                let mut a = 0u32;
-                let mut cnt = 0u32;
-                for dy in 0..2 {
-                    for dx in 0..2 {
-                        let px = sx + dx;
-                        let py = sy + dy;
-                        if px < cur_w && py < cur_h {
-                            let i = (py * cur_w + px) * 4;
-                            r += cur_rgba[i] as u32;
-                            g += cur_rgba[i + 1] as u32;
-                            b += cur_rgba[i + 2] as u32;
-                            a += cur_rgba[i + 3] as u32;
-                            cnt += 1;
-                        }
-                    }
-                }
-                let ni = (ny * next_w + nx) * 4;
-                next[ni] = (r / cnt) as u8;
-                next[ni + 1] = (g / cnt) as u8;
-                next[ni + 2] = (b / cnt) as u8;
-                next[ni + 3] = (a / cnt) as u8;
-            }
+        
+        if let Some(img) = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(cur_w as u32, cur_h as u32, cur_rgba.clone()) {
+            let resized = image::imageops::resize(
+                &img,
+                next_w as u32,
+                next_h as u32,
+                image::imageops::FilterType::Lanczos3,
+            );
+            cur_rgba = resized.into_raw();
         }
-        cur_rgba = next;
+        
         cur_w = next_w;
         cur_h = next_h;
     }
@@ -2772,7 +2751,7 @@ fn encode_b64_png_thumbnail(rgba: &[u8], width: u32, height: u32, max_dim: u32) 
                 &img,
                 target_w,
                 target_h,
-                image::imageops::FilterType::Nearest,
+                image::imageops::FilterType::Lanczos3,
             );
             resized.into_raw()
         } else {
@@ -2952,7 +2931,7 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
         // Un-flip them here so the editor UI preview shows them correctly.
         flip_rgba_vertical_in_place(&mut rgba, width, height);
         png_preview = encode_b64_png_thumbnail(&rgba, width, height, 128);
-        png_data = encode_b64_png_thumbnail(&rgba, width, height, 1024);
+        png_data = encode_b64_png_thumbnail(&rgba, width, height, 8192);
     }
 
     // If png_preview is None, we attempt to load from disk (.TGA files) inside the uncompressed folder or HOD directory!
