@@ -1701,6 +1701,18 @@ const handleDeleteNode = (name: string, type: string) => {
           message: `${requirement.label} "${baseName}" is missing required joints: ${missing.join(", ")}.`
         });
       }
+
+      if (groupInfo.type === "weapon_group") {
+        const hasLatitude = model.joints.some(j => j.name.toLowerCase() === `${baseName}_Latitude`.toLowerCase());
+        const hasMuzzle = model.joints.some(j => j.name.toLowerCase().startsWith(`${baseName}_Muzzle`.toLowerCase()));
+        
+        if (hasLatitude && !hasMuzzle) {
+          warnings.push({
+            type: "warning",
+            message: `Weapon group "${baseName}" has a Latitude node, so it must also have a Muzzle node.`
+          });
+        }
+      }
     });
 
     if (model.engine_burns && model.engine_burns.length > 9) {
