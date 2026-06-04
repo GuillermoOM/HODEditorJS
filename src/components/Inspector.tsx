@@ -2518,7 +2518,7 @@ export const Inspector: React.FC<InspectorProps> = ({
           
           // Update textures array
           updatedTextures = updatedTextures.map(t => {
-            if (t.name === item.originalName) {
+            if (t === item.texture) {
               return { ...t, name: newTexName };
             }
             return t;
@@ -2542,9 +2542,9 @@ export const Inspector: React.FC<InspectorProps> = ({
         onSelectedNodeChange?.({ type: "texture_group", name: newName });
       };
 
-      const handleToggleTextureFlip = (originalName: string) => {
+      const handleToggleTextureFlip = (item: any) => {
         const updatedTextures = model.textures.map(t => {
-          if (t.name === originalName) {
+          if (t === item.texture) {
             return { ...t, legacy_storage_y_flipped: !t.legacy_storage_y_flipped };
           }
           return t;
@@ -2552,16 +2552,16 @@ export const Inspector: React.FC<InspectorProps> = ({
         onModelChange?.({ ...model, textures: updatedTextures, textures_modified: true });
       };
 
-      const handleRemoveTexture = (originalName: string) => {
-        if (!window.confirm(`Are you sure you want to remove the texture "${originalName}"?`)) return;
-        const updatedTextures = model.textures.filter(t => t.name !== originalName);
+      const handleRemoveTexture = (item: any) => {
+        if (!window.confirm(`Are you sure you want to remove the texture "${item.originalName}"?`)) return;
+        const updatedTextures = model.textures.filter(t => t !== item.texture);
         
         // Remove from materials
         const updatedMaterials = model.materials?.map(m => {
            let maps = [...(m.texture_maps || [])];
            let changed = false;
            maps.forEach((name, idx) => {
-              if (name === originalName) {
+              if (name === item.originalName) {
                  maps[idx] = "";
                  changed = true;
               }
@@ -2577,7 +2577,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         const newTexName = group.baseName + newType + item.compression;
         
         let updatedTextures = model.textures.map(t => {
-          if (t.name === item.originalName) {
+          if (t === item.texture) {
             return { ...t, name: newTexName };
           }
           return t;
@@ -2595,7 +2595,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         const newTexName = group.baseName + item.type + newCompression;
         
         let updatedTextures = model.textures.map(t => {
-          if (t.name === item.originalName) {
+          if (t === item.texture) {
             return { ...t, name: newTexName, format: newCompression };
           }
           return t;
@@ -2612,7 +2612,7 @@ export const Inspector: React.FC<InspectorProps> = ({
       const handleDeleteTexture = (item: any) => {
         if (!window.confirm(`Are you sure you want to delete ${item.type || "this"} texture from the group?`)) return;
         
-        let updatedTextures = model.textures.filter(t => t.name !== item.originalName);
+        let updatedTextures = model.textures.filter(t => t !== item.texture);
         let updatedMaterials = (model.materials || []).map(m => {
           const newMaps = m.texture_maps.map(mapName => mapName === item.originalName ? "" : mapName);
           return { ...m, texture_maps: newMaps };
@@ -2685,7 +2685,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                           <div style={{ display: "flex", gap: "4px" }}>
                             <button
                               className="icon-button"
-                              onClick={() => handleToggleTextureFlip(item.originalName)}
+                              onClick={() => handleToggleTextureFlip(item)}
                               title="Toggle Y-Flip (legacy storage)"
                               style={{ 
                                 padding: "2px 4px", 
@@ -2699,7 +2699,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                             </button>
                             <button
                               className="icon-button"
-                              onClick={() => handleRemoveTexture(item.originalName)}
+                              onClick={() => handleRemoveTexture(item)}
                               title="Remove Texture"
                               style={{ padding: "2px 4px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "3px", color: "#ff1744" }}
                             >
