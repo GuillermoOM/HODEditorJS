@@ -60,14 +60,14 @@
 - [x] Need to make sure all texture names have their proper _TYPE suffix both in editor and on saved/loaded HODs and exported materials/textures
 - [x] Textures lose their "smoothness" when saving, in game they render blocky
 - [x] Recreate Weapon Assembly
+- [x] Check vgr_planetkiller HOD parsing
 
-- [ ] Proper GLOW and SPEC texture generation
 - [ ] Drag based positioning / rotating in viewport (disable camera control with left click, leave it for right click)
 - [ ] Fix DAE parsing
 
+- [ ] Proper shader rendering in editor
 - [ ] Fix auto camera distance on loading model
 - [ ] LOD mesh generation
-- [ ] Render shaders same as in game
 - [ ] Saving as HW2 Classic HOD (Actual HOD 1.0)
 - [ ] Saving as HOD 1.3 (correct name, not HOD 1.0)
 - [ ] Colorscheme manager, like a dropdown list that changes the collection of color samples to house the colorscheme per game (HW1, HW2, HWCata, HWMobile, Personal set, etc);

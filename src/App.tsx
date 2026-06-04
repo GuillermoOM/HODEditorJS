@@ -634,16 +634,18 @@ function App() {
   };
 
   // Update selected joint/marker/navlight/dockpoint/collision position in model state
-  const handleNodeTransform = (name: string, type: string, pos: Vector3D) => {
+  const handleNodeTransform = (name: string, type: string, pos: Vector3D, localMatrix?: { m: number[][] }) => {
     if (!model) return;
 
     if (type === "joint" || type === "engine_nozzle") {
       const updatedJoints = model.joints.map((joint) => {
         if (joint.name === name) {
-          const m = joint.local_transform.m.map(row => [...row]);
-          m[3][0] = pos.x;
-          m[3][1] = pos.y;
-          m[3][2] = pos.z;
+          const m = localMatrix ? localMatrix.m : joint.local_transform.m.map(row => [...row]);
+          if (!localMatrix) {
+            m[3][0] = pos.x;
+            m[3][1] = pos.y;
+            m[3][2] = pos.z;
+          }
           return { ...joint, local_transform: { m }, position: pos };
         }
         return joint;
@@ -652,7 +654,7 @@ function App() {
     } else if (type === "marker") {
       const updatedMarkers = model.markers.map((marker) => {
         if (marker.name === name) {
-          return { ...marker, position: pos };
+          return { ...marker, position: pos, rotation: localMatrix || marker.rotation };
         }
         return marker;
       });
@@ -663,10 +665,12 @@ function App() {
       const updatedJoints = model.joints.map((joint) => {
         if (joint.name.toLowerCase() === name.toLowerCase()) {
           foundJoint = true;
-          const m = joint.local_transform.m.map(row => [...row]);
-          m[3][0] = pos.x;
-          m[3][1] = pos.y;
-          m[3][2] = pos.z;
+          const m = localMatrix ? localMatrix.m : joint.local_transform.m.map(row => [...row]);
+          if (!localMatrix) {
+            m[3][0] = pos.x;
+            m[3][1] = pos.y;
+            m[3][2] = pos.z;
+          }
           return { ...joint, local_transform: { m }, position: pos };
         }
         return joint;
@@ -692,10 +696,12 @@ function App() {
     } else if (type.endsWith("_group")) {
       const updatedJoints = model.joints.map((joint) => {
         if (joint.name.toLowerCase() === `${name}_Position`.toLowerCase()) {
-          const m = joint.local_transform.m.map(row => [...row]);
-          m[3][0] = pos.x;
-          m[3][1] = pos.y;
-          m[3][2] = pos.z;
+          const m = localMatrix ? localMatrix.m : joint.local_transform.m.map(row => [...row]);
+          if (!localMatrix) {
+            m[3][0] = pos.x;
+            m[3][1] = pos.y;
+            m[3][2] = pos.z;
+          }
           return { ...joint, local_transform: { m }, position: pos };
         }
         return joint;
@@ -898,6 +904,8 @@ function App() {
         onNewClick={handleCreateNewHOD}
         onImportDAEClick={selectAndImportDAE}
         onSettingsClick={() => setIsSettingsModalOpen(true)}
+        transformMode={transformMode}
+        setTransformMode={setTransformMode}
       />
 
 {/* Main Workspace Panels */}

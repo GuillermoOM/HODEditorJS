@@ -181,7 +181,7 @@ interface ViewportProps {
   setSelectedNode: (node: { type: string; name: string } | null) => void;
   transformMode: "translate" | "rotate" | "scale";
   setTransformMode: (mode: "translate" | "rotate" | "scale") => void;
-  onNodeTransform: (name: string, type: string, position: Vector3D) => void;
+  onNodeTransform: (name: string, type: string, position: Vector3D, localMatrix?: Matrix4D) => void;
   visibleMeshes: Record<string, boolean>;
   showBoneLines: boolean;
   renderMode: "untextured" | "textured" | "shaded" | "wireframe" | "shaded_team" | "textured_team";
@@ -727,10 +727,9 @@ export const Viewport: React.FC<ViewportProps> = ({
       const orbitControls = new OrbitControls(camera, renderer.domElement);
       orbitControls.enableDamping = false;
       orbitControls.mouseButtons = {
-        LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,
         RIGHT: THREE.MOUSE.ROTATE, // Allow right click to rotate camera around the origin!
-      };
+      } as any;
       orbitControlsRef.current = orbitControls;
 
       // 5. Set up Transform Controls for Visually Moving Joints/Markers
@@ -748,9 +747,49 @@ export const Viewport: React.FC<ViewportProps> = ({
         const activeNode = selectedNodeRef.current;
         if (transformControls.object && activeNode) {
           const obj = transformControls.object;
+          obj.updateMatrix();
+          
           const localPos = getLocalPosition(obj, activeNode.type, activeNode.name);
+          
+          // Compute local matrix for rotation/scale
+          const currentModel = modelRef.current;
+          let parentName = "";
+          if (activeNode.type === "marker") {
+            const marker = currentModel?.markers.find(m => m.name.toLowerCase() === activeNode.name.toLowerCase());
+            parentName = marker?.parent_joint || "";
+          } else if (activeNode.type === "joint" || activeNode.type === "navlight") {
+            const joint = currentModel?.joints.find(j => j.name.toLowerCase() === activeNode.name.toLowerCase());
+            parentName = joint?.parent_name || "";
+          } else if (activeNode.type === "weapon_group") {
+            const joint = currentModel?.joints.find(j => j.name.toLowerCase() === `${activeNode.name}_Position`.toLowerCase());
+            parentName = joint?.parent_name || "";
+          } else if (activeNode.type === "dockpoint") {
+            const [pathName] = activeNode.name.split(":");
+            const path = currentModel?.dockpaths.find(p => p.name.toLowerCase() === pathName.toLowerCase());
+            parentName = path?.parent_name || "";
+          } else if (activeNode.type === "engine_burn") {
+            const burn = currentModel?.engine_burns.find(b => b.name.toLowerCase() === activeNode.name.toLowerCase());
+            parentName = burn?.parent_name || "";
+          }
+          
+          let localMat = obj.matrix.clone();
+          if (parentName && parentName.toLowerCase() !== "root") {
+            const parentMatrix = getJointGlobalMatrix(parentName);
+            const invParent = parentMatrix.clone().invert();
+            localMat = invParent.multiply(obj.matrix);
+          }
+          
+          const localMatrix: Matrix4D = {
+            m: [
+              [localMat.elements[0], localMat.elements[4], localMat.elements[8], localMat.elements[12]],
+              [localMat.elements[1], localMat.elements[5], localMat.elements[9], localMat.elements[13]],
+              [localMat.elements[2], localMat.elements[6], localMat.elements[10], localMat.elements[14]],
+              [localMat.elements[3], localMat.elements[7], localMat.elements[11], localMat.elements[15]],
+            ]
+          };
+
           if (onNodeTransformRef.current) {
-            onNodeTransformRef.current(activeNode.name, activeNode.type, localPos);
+            onNodeTransformRef.current(activeNode.name, activeNode.type, localPos, localMatrix);
           }
         }
       });
@@ -1461,15 +1500,17 @@ export const Viewport: React.FC<ViewportProps> = ({
 
           meshesGroup.add(threeMesh);
 
-          // Stunning wireframe overlay overlay for an advanced sci-tech engineering blueprint aesthetic!
-          const wireframeGeo = new THREE.WireframeGeometry(geometry);
-          const wireframeMat = new THREE.LineBasicMaterial({
-            color: new THREE.Color("#16a0ff"),
-            transparent: true,
-            opacity: 0.15,
-          });
-          const wireframe = new THREE.LineSegments(wireframeGeo, wireframeMat);
-          threeMesh.add(wireframe);
+          // Stunning wireframe overlay for an advanced sci-tech engineering blueprint aesthetic!
+          if (renderMode === "untextured") {
+            const wireframeGeo = new THREE.WireframeGeometry(geometry);
+            const wireframeMat = new THREE.LineBasicMaterial({
+              color: new THREE.Color("#16a0ff"),
+              transparent: true,
+              opacity: 0.15,
+            });
+            const wireframe = new THREE.LineSegments(wireframeGeo, wireframeMat);
+            threeMesh.add(wireframe);
+          }
         });
       });
 
