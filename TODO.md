@@ -61,7 +61,8 @@
 - [x] Textures lose their "smoothness" when saving, in game they render blocky
 - [x] Recreate Weapon Assembly
 - [x] Check vgr_planetkiller HOD parsing
-- [ ] Drag based positioning / rotating in viewport (disable camera control with left click, leave it for right click)
+- [x] Drag based positioning / rotating in viewport (disable camera control with left click, leave it for right click)
+
 - [ ] Fix DAE parsing
 
 - [ ] Proper shader rendering in editor

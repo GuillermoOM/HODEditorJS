@@ -591,7 +591,7 @@ export const Viewport: React.FC<ViewportProps> = ({
     if (selectedType === "marker") {
       const marker = currentModel?.markers.find(m => m.name.toLowerCase() === selectedName.toLowerCase());
       parentName = marker?.parent_joint || "";
-    } else if (selectedType === "joint") {
+    } else if (selectedType === "joint" || selectedType === "engine_nozzle") {
       const joint = currentModel?.joints.find(j => j.name.toLowerCase() === selectedName.toLowerCase());
       parentName = joint?.parent_name || "";
     } else if (selectedType === "navlight") {
@@ -764,7 +764,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           if (activeNode.type === "marker") {
             const marker = currentModel?.markers.find(m => m.name.toLowerCase() === activeNode.name.toLowerCase());
             parentName = marker?.parent_joint || "";
-          } else if (activeNode.type === "joint" || activeNode.type === "navlight") {
+          } else if (activeNode.type === "joint" || activeNode.type === "navlight" || activeNode.type === "engine_nozzle") {
             const joint = currentModel?.joints.find(j => j.name.toLowerCase() === activeNode.name.toLowerCase());
             parentName = joint?.parent_name || "";
           } else if (activeNode.type === "weapon_group") {
@@ -2293,7 +2293,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         message: `jointsGroup children count: ${jointsGroup.children.length}, names: ${jointsGroup.children.map(c => c.name).join(", ")}`
       }).catch(console.error);
 
-      if (selectedNode.type === "joint") {
+      if (selectedNode.type === "joint" || selectedNode.type === "engine_nozzle") {
         targetObj = jointsGroup.children.find(c => c.name.toLowerCase() === `joint:${selectedNode.name}`.toLowerCase());
       } else if (selectedNode.type === "weapon_group") {
         targetObj = jointsGroup.children.find(c => c.name.toLowerCase() === `joint:${selectedNode.name}_position`.toLowerCase());
