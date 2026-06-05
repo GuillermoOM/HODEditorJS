@@ -242,6 +242,7 @@ pub struct ParsingContext {
 fn companion_mad_candidates(hod_path: &Path) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     candidates.push(hod_path.with_extension("mad"));
+    candidates.push(hod_path.with_extension("MAD"));
 
     let parent = match hod_path.parent() {
         Some(parent) => parent,
@@ -270,9 +271,14 @@ fn companion_mad_candidates(hod_path: &Path) -> Vec<PathBuf> {
     }
 
     for normalized_stem in normalized_stems {
-        let candidate = parent.join(format!("{}.mad", normalized_stem));
-        if !candidates.iter().any(|existing| existing == &candidate) {
-            candidates.push(candidate);
+        let candidate_lower = parent.join(format!("{}.mad", normalized_stem));
+        let candidate_upper = parent.join(format!("{}.MAD", normalized_stem));
+        
+        if !candidates.iter().any(|existing| existing == &candidate_lower) {
+            candidates.push(candidate_lower);
+        }
+        if !candidates.iter().any(|existing| existing == &candidate_upper) {
+            candidates.push(candidate_upper);
         }
     }
 
