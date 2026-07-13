@@ -2387,7 +2387,7 @@ export const Inspector: React.FC<InspectorProps> = ({
       if (!path) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Dockpath not found</div>;
 
       const handleAddPoint = () => {
-        const newPt = {
+        const newPt: HODDockpoint = {
           position: { x: 0, y: 0, z: 0 },
           rotation: {
             m: [
@@ -2398,7 +2398,9 @@ export const Inspector: React.FC<InspectorProps> = ({
             ]
           },
           tolerance: 10.0,
-          max_speed: 150.0
+          max_speed: 150.0,
+          extra1: 0,
+          extra2: 0
         };
 
         const updatedPaths = model.dockpaths.map((dp) => {

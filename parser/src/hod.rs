@@ -8,14 +8,19 @@ use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Vector3 {
+    #[serde(default)]
     pub x: f32,
+    #[serde(default)]
     pub y: f32,
+    #[serde(default)]
     pub z: f32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Vector2 {
+    #[serde(default)]
     pub u: f32,
+    #[serde(default)]
     pub v: f32,
 }
 
@@ -102,11 +107,15 @@ pub struct HODMaterial {
 pub struct HODNavLight {
     pub name: String,
     pub section: u32,
+    #[serde(default)]
     pub size: f32,
+    #[serde(default)]
     pub phase: f32,
+    #[serde(default)]
     pub frequency: f32,
     pub style: String,
     pub color: Vector3,
+    #[serde(default)]
     pub distance: f32,
     pub sprite_visible: bool,
     pub high_end_only: bool,
@@ -142,6 +151,7 @@ pub struct HODCollisionMesh {
     pub min_extents: Vector3,
     pub max_extents: Vector3,
     pub center: Vector3,
+    #[serde(default)]
     pub radius: f32,
     pub mesh: HODMesh,
 }
@@ -150,9 +160,13 @@ pub struct HODCollisionMesh {
 pub struct HODDockpoint {
     pub position: Vector3,
     pub rotation: Matrix4,
+    #[serde(default)]
     pub tolerance: f32,
+    #[serde(default)]
     pub max_speed: f32,
+    #[serde(default)]
     pub extra1: u32,
+    #[serde(default)]
     pub extra2: u32,
 }
 
@@ -161,21 +175,33 @@ pub struct HODDockpath {
     pub name: String,
     pub parent_name: String,
     pub points: Vec<HODDockpoint>,
+    #[serde(default)]
     pub val1: u32,
+    #[serde(default)]
     pub val2: u32,
+    #[serde(default)]
     pub val3: u32,
+    #[serde(default)]
     pub val4: u32,
+    #[serde(default)]
     pub val5: u32,
+    #[serde(default)]
     pub compatible_ships: String,
+    #[serde(default)]
     pub padding1: u32,
+    #[serde(default)]
     pub padding2: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HODQuaternion {
+    #[serde(default)]
     pub x: f32,
+    #[serde(default)]
     pub y: f32,
+    #[serde(default)]
     pub z: f32,
+    #[serde(default)]
     pub w: f32,
 }
 

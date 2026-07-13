@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { HODModel, HODAnimation } from "./Viewport";
+import { HODModel, HODAnimation, HODDockpath } from "./Viewport";
 import { parseTextureGroups, KNOWN_TYPES, getExpectedTextureType } from "../texture_utils";
 import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2 } from "lucide-react";
 
@@ -653,7 +653,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       }
       invoke("log_event", { level: "INFO", message: `Added new navlight: ${name} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "dockpath") {
-      const newPath = {
+      const newPath: HODDockpath = {
         name,
         parent_name: parent,
         points: [
@@ -668,9 +668,19 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
               ]
             },
             tolerance: 10.0,
-            max_speed: 150.0
+            max_speed: 150.0,
+            extra1: 0,
+            extra2: 0
           }
-        ]
+        ],
+        val1: 0,
+        val2: 0,
+        val3: 0,
+        val4: 0,
+        val5: 0,
+        compatible_ships: "",
+        padding1: 0,
+        padding2: ""
       };
       updatedModel.dockpaths = [...model.dockpaths, newPath];
       invoke("log_event", { level: "INFO", message: `Added new dockpath: ${name} parented under ${parent}` }).catch(console.error);

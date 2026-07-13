@@ -103,12 +103,22 @@ export interface HODDockpoint {
   rotation: Matrix4D;
   tolerance: number;
   max_speed: number;
+  extra1?: number;
+  extra2?: number;
 }
 
 export interface HODDockpath {
   name: string;
   parent_name: string;
   points: HODDockpoint[];
+  val1?: number;
+  val2?: number;
+  val3?: number;
+  val4?: number;
+  val5?: number;
+  compatible_ships?: string;
+  padding1?: number;
+  padding2?: string;
 }
 
 export interface HODTexture {

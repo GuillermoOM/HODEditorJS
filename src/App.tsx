@@ -11,6 +11,33 @@ import { updateDynamicShaderSlots } from "./texture_utils";
 import { Info, AlertTriangle, FolderOpen, FilePlus } from "lucide-react";
 import "./App.css";
 
+/** Recursively sanitize all numeric values in the model:
+ *  - NaN/Infinity → 0 (JSON.stringify converts NaN to null, crashing Rust serde)
+ *  - null/undefined properties → DELETED (omitted from JSON, Rust reads as Option::None)
+ *  Do NOT convert null→0 for object-typed fields — that breaks Option<Vector3> etc. */
+function sanitizeModel<T>(obj: T): T {
+  if (typeof obj === "number") {
+    return (Number.isFinite(obj) ? obj : 0) as T;
+  }
+  if (obj === null || obj === undefined) {
+    return undefined as T; // Omit from parent object → JSON missing → Rust Option::None
+  }
+  if (typeof obj !== "object") {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeModel).filter(v => v !== undefined) as T;
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const sv = sanitizeModel(v);
+    if (sv !== undefined) {
+      cleaned[k] = sv;
+    }
+  }
+  return cleaned as T;
+}
+
 function App() {
   const [model, setModel] = useState<HODModel | null>(null);
   const [filePath, setFilePath] = useState("");
@@ -789,7 +816,7 @@ function App() {
     setTimeout(async () => {
       try {
         // Phase 4: Trigger native Rust HOD v2 compression and writer
-        await invoke("save_hod", { filePath, model });
+        await invoke("save_hod", { filePath, model: sanitizeModel(model) });
         setIsDirty(false);
         invoke("log_event", { level: "INFO", message: `Successfully compiled and saved HOD 2.0 to path: ${filePath}` }).catch(console.error);
         setStatusMsg("HOD 2.0 file compiled successfully");
@@ -821,7 +848,7 @@ function App() {
 
       setTimeout(async () => {
         try {
-          await invoke("save_hod_as", { sourcePath: filePath || "", targetPath: selectedPath, model });
+          await invoke("save_hod_as", { sourcePath: filePath || "", targetPath: selectedPath, model: sanitizeModel(model) });
           
           setFilePath(selectedPath);
           setIsDirty(false);
