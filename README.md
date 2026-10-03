@@ -365,8 +365,9 @@ npm install
 ```
 
 ### Run in Development Mode
+The dev server must run **inside** the `mesa-dev` distrobox — the host has no GTK/WebKit and will fail with missing libraries. Note the `--` separator: a pipe (`|`) would run `npm` on the host instead.
 ```bash
-distrobox-enter mesa-dev | npm run tauri dev
+distrobox enter mesa-dev -- npm run tauri dev
 ```
 
 ### Build Linux Binaries (.deb, .rpm, .AppImage)
