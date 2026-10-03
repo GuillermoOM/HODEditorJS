@@ -150,11 +150,17 @@ export interface HODAnimation {
   duration: number; // in seconds
   tracks: HODAnimationTrack[];
 }
+export interface HODMaterialParam {
+  param_type: number;
+  value: number[];
+  name: string;
+}
 export interface HODMaterial {
   name: string;
   shader_name: string;
   texture_maps: string[];
   parameters: number[];
+  params?: HODMaterialParam[];
 }
 
 export interface HODModel {

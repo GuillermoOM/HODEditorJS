@@ -26,6 +26,7 @@ pub fn parse_obj(obj_path: &Path) -> Result<HODModel, String> {
                 shader_name: "ship".to_string(),
                 texture_maps,
                 parameters: Vec::new(),
+                params: Vec::new(),
             });
             mat_names.push(m.name);
         }
@@ -37,6 +38,7 @@ pub fn parse_obj(obj_path: &Path) -> Result<HODModel, String> {
             shader_name: "ship".to_string(),
             texture_maps: vec![],
             parameters: Vec::new(),
+            params: Vec::new(),
         });
         mat_names.push("default".to_string());
     }

@@ -942,3 +942,37 @@ Manual COL Context Menu Retest:
     - Rename is still hidden for COL: [x] PASS
     - Delete option is visible for COL: [x] PASS
     - Delete removes the COL node: [x] PASS
+
+---
+
+SHA: `(working tree - STAT generic param fix)`
+Timestamp: `03/10/2026 14:20`
+Test hod: `testing/hgn_hft_hw2.hod`, `uncompressed_bigs` classic HW2 set
+
+**Goal**: Verify `testing/hgn_hft_hw2.hod` contains (or does not contain) a hidden DIFF texture, and fix loading of all textures for classic HW2 / HOD 1.0 STAT materials.
+
+File audit (no code change required):
+
+1. IFF walk of `testing/hgn_hft_hw2.hod` (234988 B) covers the file exactly, no hidden chunks:
+    - HVMD holds exactly 2 LMIP + 3 STAT + 1 MULT: [x] PASS
+    - POOL texture stream (354944 B) equals exactly the 2 DXT5 mip chains: [x] PASS
+    - Each STAT consumes its chunk exactly with `param_count=1`: [x] PASS
+2. Texture content check (decoded + independent ImageMagick DDS decode):
+    - `fth_exportDXT5`: R=0.00 / G=1.66 / B=201.55 -> glow-map look, bound as `$diffuse`: [x] CONFIRMED
+    - `badge_exportDXT5`: R=0 / G=0 / B=181 flat blue: [x] CONFIRMED
+    - Conclusion: the file has NO DIFF and no extra textures on `hw2Shader`. `INFO/OWNR` is `HODEditorJS` (both `hgn_hft.hod` and `hgn_hft_hw2.hod`, identical texture pools) -> already an editor export with the missing DIFF baked in.
+
+Parser fix verification (generic STAT param records):
+
+1. Parser/build verification:
+    - `cargo check --lib`: [x] PASS - pre-existing warnings only.
+    - `npx tsc --noEmit`: [x] PASS (note: `npm run build` fails on a pre-existing `dist/assets` EACCES permission issue, unrelated).
+    - `cargo run --bin verify_lossless`: [x] PASS - all structural re-parse counts match. Size diffs vs original identical to stashed baseline (except `asteroid_3` -4 bytes: original `$glow` slot name is now preserved instead of being regenerated as `$specular`).
+2. Previously crashing / misparsed files (`parser/src/bin/roundtrip_test.rs`, new diagnostic bin):
+    - `FSFCv3/art/fx/bullet_splash/bullet_splash.hod` (nameless STAT): [x] PASS - used to die with `Failed to read param name: failed to fill whole buffer`; now loads `hw2Shader` -> `Bullet_splash3DXT5` and round-trips.
+    - `FSFCv3/art/fx/ship_chunk01.hod` (nameless, type 5/5/4/4 mix): [x] PASS - both texture bindings and both 16-byte colour params parse.
+    - `HWRM/resource/nebula/m05_dustcloud_nebula/m05_dustcloud_nebula.hod` (named, `Colour2`/`Colour3`): [x] PASS - type 4 colour params survive load -> save -> load byte-sized correctly.
+    - `HWRM/resource/asteroid/asteroid4/asteroid4.hod` (11 params, mixed): [x] PASS - all 5 texture maps now load (`$diffuse`, `$glow`, `$spec`, `$progress`, `$normal`) instead of a truncated set.
+    - `FSFCv3/ship/ter_loki/ter_loki.hod`, `FSFCv3/ship/shi_demon/shi_demon.hod`, `freespace_remastered/art/fx/debris_meshes/aeolus1.hod`, `freespace_remastered/resource/asteroid/asteroid_3/asteroid_3.hod`: [x] PASS - multi-param materials round-trip with original slot names (`$mask`, `$glow`, `$normal`) preserved.
+3. Regression on the reported file:
+    - `testing/hgn_hft_hw2.hod` still loads 2 textures / 3 materials / 1 map each: [x] PASS (unchanged, as expected - the file really has no more data).

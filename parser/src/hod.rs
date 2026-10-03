@@ -94,6 +94,19 @@ pub struct HODTexture {
     pub source_path: Option<String>, // Original path if imported from TGA
 }
 
+/// One generic STAT shader parameter record.
+/// Layout on disk: `u32 param_type`, `u32 value_size`, `value[value_size]`, then
+/// (in the common named variant) a length-prefixed name string.
+/// `param_type == 5` holds a texture pool index in the first 4 value bytes;
+/// `param_type == 4` holds a 4 x f32 (16 byte) colour/vector.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct HODMaterialParam {
+    pub param_type: u32,
+    pub value: Vec<u8>,
+    #[serde(default)]
+    pub name: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HODMaterial {
     pub name: String,
@@ -101,6 +114,9 @@ pub struct HODMaterial {
     pub texture_maps: Vec<String>,
     #[serde(default)]
     pub parameters: Vec<u8>,
+    /// Full generic shader parameter list, preserved verbatim for lossless saves.
+    #[serde(default)]
+    pub params: Vec<HODMaterialParam>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -2784,6 +2800,72 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
     })
 }
 
+/// Walk the generic STAT parameter list starting at `start`.
+///
+/// Each record is `u32 param_type, u32 value_size, value[value_size]` and, when
+/// `with_names` is set, a length-prefixed name string. Returns the parsed
+/// records and the offset just past the last one, or `None` if the data does
+/// not fit this layout (so the caller can try the other variant).
+fn parse_stat_params(
+    data: &[u8],
+    start: usize,
+    param_count: usize,
+    with_names: bool,
+) -> Option<(Vec<HODMaterialParam>, usize)> {
+    let mut pos = start;
+    let mut params = Vec::with_capacity(param_count);
+
+    for _ in 0..param_count {
+        if pos + 8 > data.len() {
+            return None;
+        }
+        let param_type = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?);
+        let value_size = u32::from_le_bytes(data[pos + 4..pos + 8].try_into().ok()?) as usize;
+        pos += 8;
+        if pos + value_size > data.len() {
+            return None;
+        }
+        let value = data[pos..pos + value_size].to_vec();
+        pos += value_size;
+
+        let mut name = String::new();
+        if with_names {
+            if pos + 4 > data.len() {
+                return None;
+            }
+            let name_len = u32::from_le_bytes(data[pos..pos + 4].try_into().ok()?) as usize;
+            pos += 4;
+            if pos + name_len > data.len() {
+                return None;
+            }
+            name = String::from_utf8_lossy(&data[pos..pos + name_len]).into_owned();
+            pos += name_len;
+        }
+
+        params.push(HODMaterialParam {
+            param_type,
+            value,
+            name,
+        });
+    }
+
+    Some((params, pos))
+}
+
+/// Parse a STAT material chunk.
+///
+/// The shader parameter list is generic: every parameter carries its own
+/// `param_type`, `value_size` and value payload, with an optional trailing name.
+/// Two on-disk variants exist in real game files:
+///   * named   (`NRML` framed, version 1001) - every parameter has a name
+///     string such as `$diffuse`, `$glow`, `$mask`, `Colour2`;
+///   * nameless (`Default` framed, version 0) - no name strings at all, seen in
+///     classic HW2 effect/ship chunks (e.g. `bullet_splash.hod`).
+/// `param_type` 5 stores a texture pool index in its value, param_type 4 stores
+/// a 4 x f32 colour. Older code assumed every parameter was a 4 byte texture
+/// reference followed by a mandatory name, which crashed on nameless chunks
+/// ("Failed to read param name: failed to fill whole buffer") and desynchronised
+/// on any colour parameter, silently dropping the remaining texture bindings.
 fn parse_stat_material(chunk: &IffChunk, textures: &[HODTexture]) -> Result<HODMaterial, String> {
     let mut r = Cursor::new(&chunk.data);
 
@@ -2793,40 +2875,43 @@ fn parse_stat_material(chunk: &IffChunk, textures: &[HODTexture]) -> Result<HODM
         read_len_string(&mut r).map_err(|e| format!("Failed to read shader name: {}", e))?;
 
     let param_count = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+    let params_start = r.position() as usize;
 
+    // Try the named variant first (the overwhelmingly common case), then the
+    // nameless variant. Accept whichever consumes the chunk exactly; if neither
+    // does, fall back to the furthest successful walk and keep the trailing
+    // bytes in `parameters` so nothing is thrown away.
+    let named = parse_stat_params(&chunk.data, params_start, param_count, true)
+        .filter(|(_, end)| *end == chunk.data.len());
+    let nameless = parse_stat_params(&chunk.data, params_start, param_count, false)
+        .filter(|(_, end)| *end == chunk.data.len());
+
+    let (params, consumed) = named
+        .or(nameless)
+        .or_else(|| parse_stat_params(&chunk.data, params_start, param_count, true))
+        .or_else(|| parse_stat_params(&chunk.data, params_start, param_count, false))
+        .unwrap_or((Vec::new(), params_start));
+
+    // Texture bindings are the type-5 parameters; they appear in slot order.
     let mut texture_maps = Vec::new();
-
-    if param_count > 0 {
-        let _extra1 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-        let _extra2 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-
-        for i in 0..param_count {
-            let texture_index = if i == 0 {
-                r.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize
-            } else {
-                let _extra3 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-                let _extra4 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-                r.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize
-            };
-
-            let _param_name =
-                read_len_string(&mut r).map_err(|e| format!("Failed to read param name: {}", e))?;
-
+    for param in &params {
+        if param.param_type == 5 && param.value.len() >= 4 {
+            let texture_index =
+                u32::from_le_bytes(param.value[0..4].try_into().unwrap()) as usize;
             if texture_index < textures.len() {
                 texture_maps.push(textures[texture_index].name.clone());
             }
         }
     }
 
-    let pos = r.position() as usize;
-    let remaining = &chunk.data[pos..];
-    let parameters = remaining.to_vec();
+    let parameters = chunk.data[consumed.min(chunk.data.len())..].to_vec();
 
     Ok(HODMaterial {
         name: material_name,
         shader_name,
         texture_maps,
         parameters,
+        params,
     })
 }
 
@@ -5155,6 +5240,7 @@ fn write_stat_texture_params<W: Write>(
     mat: &HODMaterial,
     textures: &[HODTexture],
 ) -> Result<(), String> {
+    // Resolve the current texture bindings (slot order) to pool indices.
     let mut texture_indices = Vec::new();
     for (slot_index, tex_name) in mat.texture_maps.iter().enumerate() {
         let tex_key = texture_name_key(tex_name);
@@ -5167,32 +5253,64 @@ fn write_stat_texture_params<W: Write>(
         }
     }
 
-    writer
-        .write_u32::<LittleEndian>(texture_indices.len() as u32)
-        .map_err(|e| e.to_string())?;
-    if texture_indices.is_empty() {
-        return Ok(());
+    // Rebuild the generic parameter list: keep every non-texture parameter
+    // (colours, scalars, ...) verbatim so classic HW2 materials survive a
+    // load/save round-trip, and refresh the texture parameters from the
+    // current bindings while preserving their original slot names ($mask, ...).
+    let mut records: Vec<HODMaterialParam> = Vec::new();
+    let mut pending_textures = texture_indices.iter();
+
+    if mat.params.is_empty() {
+        for (texture_index, param_name) in texture_indices.iter() {
+            records.push(HODMaterialParam {
+                param_type: 5,
+                value: texture_index.to_le_bytes().to_vec(),
+                name: param_name.clone(),
+            });
+        }
+    } else {
+        for param in &mat.params {
+            if param.param_type == 5 {
+                let Some((texture_index, fallback_name)) = pending_textures.next() else {
+                    // Slot was cleared in the editor: drop the stale binding.
+                    continue;
+                };
+                let name = if param.name.is_empty() {
+                    fallback_name.clone()
+                } else {
+                    param.name.clone()
+                };
+                records.push(HODMaterialParam {
+                    param_type: 5,
+                    value: texture_index.to_le_bytes().to_vec(),
+                    name,
+                });
+            } else {
+                records.push(param.clone());
+            }
+        }
+        // Textures added in the editor beyond the original texture slots.
+        for (texture_index, param_name) in pending_textures {
+            records.push(HODMaterialParam {
+                param_type: 5,
+                value: texture_index.to_le_bytes().to_vec(),
+                name: param_name.clone(),
+            });
+        }
     }
 
     writer
-        .write_u32::<LittleEndian>(5)
+        .write_u32::<LittleEndian>(records.len() as u32)
         .map_err(|e| e.to_string())?;
-    writer
-        .write_u32::<LittleEndian>(4)
-        .map_err(|e| e.to_string())?;
-    for (idx, (texture_index, param_name)) in texture_indices.iter().enumerate() {
-        if idx > 0 {
-            writer
-                .write_u32::<LittleEndian>(5)
-                .map_err(|e| e.to_string())?;
-            writer
-                .write_u32::<LittleEndian>(4)
-                .map_err(|e| e.to_string())?;
-        }
+    for record in &records {
         writer
-            .write_u32::<LittleEndian>(*texture_index)
+            .write_u32::<LittleEndian>(record.param_type)
             .map_err(|e| e.to_string())?;
-        write_len_string(writer, param_name)?;
+        writer
+            .write_u32::<LittleEndian>(record.value.len() as u32)
+            .map_err(|e| e.to_string())?;
+        writer.write_all(&record.value).map_err(|e| e.to_string())?;
+        write_len_string(writer, &record.name)?;
     }
 
     if !mat.parameters.is_empty() {
@@ -5569,6 +5687,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
                 shader_name: "ship".to_string(),
                 texture_maps,
                 parameters: Vec::new(),
+                params: Vec::new(),
             }
         } else {
             HODMaterial {
@@ -5576,6 +5695,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
                 shader_name: "default_shader".to_string(),
                 texture_maps: Vec::new(),
                 parameters: Vec::new(),
+                params: Vec::new(),
             }
         };
         let mut stat_buf = Vec::new();

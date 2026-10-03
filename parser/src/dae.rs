@@ -71,6 +71,7 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                     shader_name,
                     texture_maps: Vec::new(),
                     parameters: Vec::new(),
+                    params: Vec::new(),
                 });
             }
         }
@@ -92,6 +93,7 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
             shader_name: "default".to_string(),
             texture_maps: Vec::new(),
             parameters: Vec::new(),
+            params: Vec::new(),
         });
     }
 
