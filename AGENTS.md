@@ -18,10 +18,10 @@ This handbook will explain:
 
 ## Build & Packaging
 
-**All release builds (`tauri build`) must be performed inside the `esp-dev` distrobox.** Native host builds fail due to missing GTK/WebKit dependencies and AppImage FUSE issues. The Windows cross-compile also requires `esp-dev` for `mingw-w64` and `makensis`.
+**All release builds (`tauri build`) must be performed inside the `mesa-dev` distrobox.** Native host builds fail due to missing GTK/WebKit dependencies and AppImage FUSE issues. The Windows cross-compile also requires `mesa-dev` for `mingw-w64` and `makensis`.
 
 ```bash
-distrobox enter esp-dev
+distrobox enter mesa-dev
 
 # Linux
 NO_STRIP=1 npm run tauri build

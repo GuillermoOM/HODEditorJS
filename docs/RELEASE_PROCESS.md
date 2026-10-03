@@ -1,7 +1,7 @@
 # Release Process
 
 This document describes the exact process for building and publishing a new release of HODEditorJS. 
-Because the application uses Tauri, native system dependencies (GTK, WebKit) and specific cross-compilation toolchains (MinGW) are required. All builds must be performed inside the isolated `esp-dev` distrobox container.
+Because the application uses Tauri, native system dependencies (GTK, WebKit) and specific cross-compilation toolchains (MinGW) are required. All builds must be performed inside the isolated `mesa-dev` distrobox container.
 
 ## Prerequisites
 
@@ -11,12 +11,12 @@ Because the application uses Tauri, native system dependencies (GTK, WebKit) and
    * `src-tauri/tauri.conf.json`
 3. Ensure the distrobox container is available:
    ```bash
-   distrobox enter esp-dev
+   distrobox enter mesa-dev
    ```
 
 ## 1. Building the Linux Release Bundles
 
-Run the following command *inside* the `esp-dev` distrobox:
+Run the following command *inside* the `mesa-dev` distrobox:
 
 ```bash
 cd /path/to/HODEditorJS
@@ -32,7 +32,7 @@ This will generate the following artifacts:
 
 ## 2. Building the Windows Installer
 
-Run the following command *inside* the `esp-dev` distrobox:
+Run the following command *inside* the `mesa-dev` distrobox:
 
 ```bash
 cd /path/to/HODEditorJS

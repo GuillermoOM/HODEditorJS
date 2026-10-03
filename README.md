@@ -366,16 +366,16 @@ npm install
 
 ### Run in Development Mode
 ```bash
-npm run tauri dev
+distrobox-enter mesa-dev | npm run tauri dev
 ```
 
 ### Build Linux Binaries (.deb, .rpm, .AppImage)
 
-**All builds must be performed inside the `esp-dev` distrobox.** Native host builds fail due to missing GTK/WebKit dependencies and AppImage FUSE issues.
+**All builds must be performed inside the `mesa-dev` distrobox.** Native host builds fail due to missing GTK/WebKit dependencies and AppImage FUSE issues.
 
 ```bash
 # Enter the distrobox
-distrobox enter esp-dev
+distrobox enter mesa-dev
 
 # Build Linux bundles (NO_STRIP=1 required on Fedora 41+ to bypass outdated linuxdeploy strip)
 NO_STRIP=1 npm run tauri build
@@ -388,10 +388,10 @@ NO_STRIP=1 npm run tauri build
 
 ### Cross-Compile Windows Installer (.exe) from Linux
 
-Windows cross-compilation uses `mingw-w64` inside the same `esp-dev` distrobox. The `dlltool` path-with-spaces bug requires `CARGO_TARGET_DIR=/tmp/cargo_target`.
+Windows cross-compilation uses `mingw-w64` inside the same `mesa-dev` distrobox. The `dlltool` path-with-spaces bug requires `CARGO_TARGET_DIR=/tmp/cargo_target`.
 
 ```bash
-distrobox enter esp-dev
+distrobox enter mesa-dev
 
 # Add the Rust target (only needed once)
 rustup target add x86_64-pc-windows-gnu

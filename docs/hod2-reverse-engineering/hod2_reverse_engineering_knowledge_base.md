@@ -99,10 +99,10 @@ When making changes, ensure `verify_lossless` successfully evaluates the followi
 
 ## 5. Build & Compilation Reference
 
-**All release builds must run inside the `esp-dev` distrobox.** Native host builds fail due to missing GTK/WebKit libraries and AppImage FUSE issues.
+**All release builds must run inside the `mesa-dev` distrobox.** Native host builds fail due to missing GTK/WebKit libraries and AppImage FUSE issues. Note: older docs and historical logs refer to this box as `esp-dev`; it was renamed/replaced and **only `mesa-dev` exists now** (Fedora 44, `quay.io/fedora/fedora:44`). Historical `PROGRESS.md`/`archive_logs` entries mentioning `esp-dev` describe what was true at that time and are intentionally left unedited. `mesa-dev` is provisioned with: `webkit2gtk4.1-devel gtk3-devel openssl-devel glib2-devel pango-devel gdk-pixbuf2-devel cairo-devel atk-devel at-spi2-atk-devel libsoup3-devel libappindicator-gtk3-devel librsvg2-devel pkgconf-pkg-config gcc gcc-c++ make file nodejs22 nodejs22-npm`, plus the Windows cross-compile tools `mingw64-gcc-c++ mingw64-winpthreads-static mingw-nsis-base mingw64-nsis` (provides `x86_64-w64-mingw32-g++` and `makensis`).
 
 ```bash
-distrobox enter esp-dev
+distrobox enter mesa-dev
 
 # Linux (.deb, .rpm, .AppImage)
 NO_STRIP=1 npm run tauri build

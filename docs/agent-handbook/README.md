@@ -112,9 +112,9 @@ When preparing a new GitHub release, follow these exact steps to ensure versions
    ```
 
 3. **Build Binaries (Linux Host)**:
-   All official release builds **must** be performed inside the `esp-dev` distrobox to ensure cross-compilation toolchains and GTK/WebKit dependencies are present.
+   All official release builds **must** be performed inside the `mesa-dev` distrobox to ensure cross-compilation toolchains and GTK/WebKit dependencies are present.
    ```bash
-   distrobox enter esp-dev
+   distrobox enter mesa-dev
 
    # Build Linux Assets (AppImage, DEB, RPM)
    NO_STRIP=1 npm run tauri build
