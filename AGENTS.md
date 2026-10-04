@@ -45,6 +45,7 @@ See `README.md` for full artifact paths and details.
 
 1. **`docs/hod2-reverse-engineering/PROGRESS.md`** — Update the "Current Status" section, "Current Issues" list, and "Planned Tasks" with what was fixed, what broke, and what's next. This is the **ONLY** file you must update for tracking daily progress!
 2. **`docs/README.md` (Knowledge Graph)** — If you create any *new* permanent specification document or directory, you MUST add a link to it in this file so other agents can find it. Do not link temporary or stale logs here.
+   The mandated manual test snapshots are recorded in `docs/manual-test-log.md`.
 
 3. **`docs/hod2-reverse-engineering/hod2_reverse_engineering_knowledge_base.md`** — If you discover a new binary format quirk, endianness trap, or undocumented engine constraint, you MUST add it here as a permanent caveat.
 

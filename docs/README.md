@@ -27,6 +27,7 @@ This directory contains the **current**, active specifications for the `.HOD` fo
 ### 4. Progress Tracking 📈
 This single file is the source of truth for current project status, blockers, and completed milestones.
 - [**PROGRESS.md**](hod2-reverse-engineering/PROGRESS.md)
+- [Manual Test Log](manual-test-log.md) - Dated manual verification snapshots.
 
 ### 5. Historical Archive 🗄️ (Stale/Logs)
 During the reverse engineering of HODOR's MS-XCA LZ77 compression and Homeworld's tangents, agents produced dozens of analysis documents, phase summaries, and fix plans. 
