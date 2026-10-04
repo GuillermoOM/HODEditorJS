@@ -67,10 +67,9 @@ If `verify_lossless` fails to cleanly round-trip the mesh, joint, or marker coun
 
 ## 4. UI Scripts and Automated Refactoring
 
-You may notice files like `src/components/inject.py` or `fix_tree.py`.
 The `HierarchyTree.tsx` is an extremely massive component (~3000 lines). When adding cross-cutting concerns (like dragging-and-dropping to all 10+ node types, or adding a right-click context menu to every single node), manual text replacement often fails.
 
-It is an established pattern in this repo for agents to write temporary, throwaway Python scripts utilizing `re` (Regex) to safely inject code blocks or `onClick` handlers into the massive TSX files, verify the build (`npm run build`), and then commit. Do not be afraid to write Python AST/Regex scripts to modify the TSX files safely if AST-Grep is insufficient.
+It is an established pattern in this repo for agents to write temporary, throwaway Python scripts utilizing `re` (Regex) to safely inject code blocks or `onClick` handlers into the massive TSX files, verify the build (`npm run build`), and then commit. Do not be afraid to write Python AST/Regex scripts to modify the TSX files safely if AST-Grep is insufficient. These scripts are transient scaffolding, not project source: create them outside the tracked tree (for example, under `/tmp`) or delete them before the commit that lands their patch. Earlier injection scripts were historical one-off examples and are no longer part of the repository.
 
 ## 5. Typical Workflow for an Agent
 
