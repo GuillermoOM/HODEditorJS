@@ -1,3 +1,8 @@
+> **SUPERSEDED.** The proposed module layout below (`obj.rs`, `texture_packer.rs`, `dds_encode.rs`) was abandoned: those files were never wired into `lib.rs` and have been removed.
+> The current layout is the 8-module split of `hod.rs` (`types`, `math`, `texture_codec`, `animation`, `model_methods`, `engine_nozzles`, `parse`, `serialize`), tracked in `docs/README.md`.
+> References to `parser/src/obj.rs` in `PROGRESS.md` remain unchanged as historical entries.
+> This document is retained as historical context only; its body is not rewritten.
+
 # HODEditorJS Gap Fix Implementation Plan
 
 This document outlines the actionable, step-by-step project plan to fix the critical and medium gaps preventing HODEditorJS from fully substituting the `DAEnerys` -> `HODOR` pipeline. 
