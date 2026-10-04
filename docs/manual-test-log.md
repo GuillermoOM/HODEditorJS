@@ -836,7 +836,7 @@ Test hod: `ter_fenris`
     - Animations Loading: [ ]
 
 Additional findings on HOD 1.0 loading regarding textures:
-For HOD 1.0 files loaded onto editor from `testing/freespace_remastered/ship/`
+For HOD 1.0 files loaded onto editor from the `freespace_remastered/ship` directory of the game install (see `docs/testing-fixtures.md`)
 Something we need to take a look at, strictly for fixing loading of textures in HOD 1.0 files
 
 - ter_centaur: DXT1 textures loaded correctly, DXT5 texture is broken
