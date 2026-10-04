@@ -21,8 +21,8 @@
 - [x] Engine Shape draggable to a joint node (also editable coordinates and rotation)
 - [x] Errors and warnings (missing basic data like a Root node, broken or incomplete weapon nodes/joints)
 - [x] make navlight nodes also draggable in the skeleton tree
-- [x] Fix HOD 1.0 Material Loading (testing with `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/shi_cain/shi_cain.hod` which the ui isn't showing any materials. Material loading is working well when loading HOD 2.0)
-- [x] tested ter_elysium.hod (2.0) loading and saving with the editor, the output file loads in game, but the ship is turned 90 degrees left and tilting a bit to the left about 30 degrees, maybe something to check out on (ter_elysium.hod (original) vs ter_elysium2.hod (created by editor, both located at `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`).
+- [x] Fix HOD 1.0 Material Loading (testing with `testing/freespace_remastered/ship/shi_cain/shi_cain.hod` which the ui isn't showing any materials. Material loading is working well when loading HOD 2.0)
+- [x] tested ter_elysium.hod (2.0) loading and saving with the editor, the output file loads in game, but the ship is turned 90 degrees left and tilting a bit to the left about 30 degrees, maybe something to check out on (ter_elysium.hod (original) vs ter_elysium2.hod (created by editor, both located at `testing/HWRM_FSFC/source/ship/ter_elysium/`).
 - [x] Make the node spheres slightly bigger for improve visuals, same with axis helpers. It is hard to see in bigger ships. Should increase in size more if highlighted
 - [x] Target Boxing editor (for adding to .ship files, DAEnerys had this, it is a separate tool that adds a viewable box that outputs the piece of code it represents, this isn't related to modifying the HOD at all)
 - [x] Fix shaders for HOD 2.0 materials. I notice now that we load materials for HOD 1.0 properly, the shaders work correctly, so the shaders might be setup for those old material setups and not for HOD 2.0 materials? Something to investigate deeper here.
@@ -37,13 +37,13 @@
 - [x] Since Weapon and Turret assemblies are similar, we should be able to have an option to convert Weapon into Turret assembly in the inspector, which would add any missing nodes (must be repaired first).
 - [x] Creation and Loading of Animations and proper inspector / editor (ter_orion and hgn_mothership are examples that use this) - Added Create Animation, Add Track, and Add Keyframe controls.
 - [x] Make Hardpoint nodes assemblies
-- [x] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`
+- [x] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `testing/HWRM_FSFC/source/ship/ter_elysium/`
 - [x] Renaming an Assembly should only be done via the Assembly node (not position node), and make sure the assembly isn't broken when renamed (i.e. I renamed a Repair assembly node and it disbanded into normal joint nodes with the assembly gone!)
 - [x] Some HOD 2.0 files (HWRM Vanilla) show their textures broken in the viewport
 - [x] fix loading of HOD 1.0 files into the editor.
 - [x] Fix the following HOD 1.0 loading issues:
-    - Animations not being loaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
-    - Docking Paths not being loeaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
+    - Animations not being loaded properly (not shown in editor for `testing/freespace_remastered/ship/ter_orion/ter_orion.hod`)
+    - Docking Paths not being loeaded properly (not shown in editor for `testing/freespace_remastered/ship/ter_orion/ter_orion.hod`)
 - [x] Saving a HOD file (which creates a HOD 2.0) renders wrong in game, showing the whole mesh being turned some degrees to the left and down.
 - [x] Loading HOD 1.3 file still needs y flipping on all textures, it happened only on the first one
 - [x] Open HOD 2.0, "save it", compare with original HOD 2.0 file loaded to see if it similar

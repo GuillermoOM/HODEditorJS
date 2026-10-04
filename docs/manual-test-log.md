@@ -10,7 +10,7 @@ Agent would create this file in the testing subdirectory for a HOD, adding test 
 
 All test resources (original files being edited and output files resulting from editing) are located here:
 
-`/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/`
+`testing/`
 
 The files to look for contain the following naming conventions:
 
@@ -836,7 +836,7 @@ Test hod: `ter_fenris`
     - Animations Loading: [ ]
 
 Additional findings on HOD 1.0 loading regarding textures:
-For HOD 1.0 files loaded onto editor from `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
+For HOD 1.0 files loaded onto editor from `testing/freespace_remastered/ship/`
 Something we need to take a look at, strictly for fixing loading of textures in HOD 1.0 files
 
 - ter_centaur: DXT1 textures loaded correctly, DXT5 texture is broken

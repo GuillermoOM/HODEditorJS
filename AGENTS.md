@@ -35,6 +35,21 @@ For frontend-only verification: `npm run build`.
 
 See `README.md` for full artifact paths and details.
 
+## Parser Verification
+
+**CRITICAL PARSER RULE:** If you change any serialization logic in `parser/src/hod.rs` or `parser/src/compiler.rs`, you **MUST** run `verify_lossless` to prove you did not break the game engine format.
+
+If the game installation required by `verify_lossless` is absent, run `cargo test --manifest-path parser/Cargo.toml` instead and state in the session record that `verify_lossless` was **not run**. Do not claim a lossless pass when its external inputs are unavailable.
+
+### Useful Paths for Testing
+
+These are maintainer-local paths. Equivalent files live in the reader's own game install; `docs/testing-fixtures.md` explains how to locate equivalents.
+- **HOD 1.3 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
+- **HOD 2.0 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
+- **DAE files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
+- **HOD 2.0 files (Vanilla game):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
+- **HOD 2.0 files (pebbles):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
+
 ---
 
 ## Documentation Update Rule
