@@ -5,4 +5,5 @@ pub mod hod;
 pub mod iff;
 pub mod kdop;
 pub mod shader_map;
+pub mod types;
 pub mod xpress;
