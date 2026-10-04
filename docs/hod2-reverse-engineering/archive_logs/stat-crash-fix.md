@@ -1,3 +1,5 @@
+> **ARCHIVED.** Historical record; not active guidance. See docs/README.md.
+
 # STAT Count Mismatch Crash Fix
 
 ## Root Cause

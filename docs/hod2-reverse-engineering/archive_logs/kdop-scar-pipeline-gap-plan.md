@@ -1,3 +1,5 @@
+> **ARCHIVED.** Historical record; not active guidance. See docs/README.md.
+
 # KDOP & SCAR Pipeline Gap — Implementation Plan
 
 ## Executive Summary

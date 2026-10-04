@@ -1,3 +1,5 @@
+> **ARCHIVED.** Historical record; not active guidance. See docs/README.md.
+
 # Collision Pipeline Investigation & Implementation Plan
 
 ## Executive Summary

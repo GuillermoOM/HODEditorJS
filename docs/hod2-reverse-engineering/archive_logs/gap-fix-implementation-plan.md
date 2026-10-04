@@ -1,3 +1,5 @@
+> **ARCHIVED.** Historical record; not active guidance. See docs/README.md.
+
 > **SUPERSEDED.** The proposed module layout below (`obj.rs`, `texture_packer.rs`, `dds_encode.rs`) was abandoned: those files were never wired into `lib.rs` and have been removed.
 > The current layout is the 8-module split of `hod.rs` (`types`, `math`, `texture_codec`, `animation`, `model_methods`, `engine_nozzles`, `parse`, `serialize`), tracked in `docs/README.md`.
 > References to `parser/src/obj.rs` in `PROGRESS.md` remain unchanged as historical entries.

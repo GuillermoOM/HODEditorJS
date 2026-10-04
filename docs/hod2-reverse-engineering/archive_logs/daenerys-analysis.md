@@ -1,3 +1,5 @@
+> **ARCHIVED.** Historical record; not active guidance. See docs/README.md.
+
 # DAEnerys Analysis: OBJ to DAE Ingress Pipeline
 
 ## Overview

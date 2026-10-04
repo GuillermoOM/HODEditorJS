@@ -1,3 +1,5 @@
+> **ARCHIVED.** Historical record; not active guidance. See docs/README.md.
+
 # Collision Pipeline Fixes — Implementation Plan
 
 ## Executive Summary
