@@ -31,7 +31,10 @@ parser/target/
 .sisyphus/
 .opencode/
 opencode.json
-agents.md
 
-# Testing artifacts (not tracked)
+# Local tool state (.omo/ and .obsidian/)
+.omo/
+.obsidian/
+
+# External fixture corpus (game/mod assets). Untracked in this plan; see docs/testing-fixtures.md for how to obtain it.
 testing/
