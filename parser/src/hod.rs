@@ -2595,12 +2595,23 @@ fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HODTe
             .split('/')
             .last()
             .unwrap_or(&name_base);
-        let stem = file_name
+        // Split a trailing "[N]" selector off BEFORE stripping the extension:
+        // "fth_export.psd[1]" / "fth_export.psd[2]" are DIFF/GLOW layers of one
+        // PSD, and a plain rsplit_once('.') discards the selector, colliding
+        // both layers onto one name (save then loses the binding, because
+        // textures are re-resolved by name). "Capital04-01[1].dds" needs no
+        // handling: its selector is already inside the stem.
+        let (base_name, selector) = match file_name.rfind('[') {
+            Some(i) if i > 0 && file_name.ends_with(']') => (&file_name[..i], &file_name[i..]),
+            _ => (file_name, ""),
+        };
+        let stem = base_name
             .rsplit_once('.')
             .map(|(s, _)| s)
-            .unwrap_or(file_name);
+            .unwrap_or(base_name);
+        let stem = format!("{}{}", stem, selector);
         if stem.ends_with(&format_str) {
-            stem.to_string()
+            stem
         } else {
             format!("{}{}", stem, format_str)
         }

@@ -976,3 +976,35 @@ Parser fix verification (generic STAT param records):
     - `FSFCv3/ship/ter_loki/ter_loki.hod`, `FSFCv3/ship/shi_demon/shi_demon.hod`, `freespace_remastered/art/fx/debris_meshes/aeolus1.hod`, `freespace_remastered/resource/asteroid/asteroid_3/asteroid_3.hod`: [x] PASS - multi-param materials round-trip with original slot names (`$mask`, `$glow`, `$normal`) preserved.
 3. Regression on the reported file:
     - `testing/hgn_hft_hw2.hod` still loads 2 textures / 3 materials / 1 map each: [x] PASS (unchanged, as expected - the file really has no more data).
+
+---
+
+SHA: `(working tree - HOD 1.0 texture name collision fix)`
+Timestamp: `03/10/2026 16:40`
+Test hod: `testing/hgn_hft.hod` (genuine HW2 classic original)
+
+**Goal**: Analyze the genuine HW2 classic original `testing/hgn_hft.hod` (913,637 B, `OWNR` = "James O'Donnell", no POOL, 5 inline LMIP textures) and fix why the editor showed a GLOW texture as DIFF ("model looks blue").
+
+File audit:
+
+1. Genuine original confirmed: `OWNR` = "James O'Donnell" (Default-framed), no POOL, inline LMIP pixel data, `NAME` = "Homeworld2 Multi Mesh File": [x] PASS
+2. Original contents (byte-exact):
+    - `hw2Shader` [ship] `param_count=2`: `$diffuse`→idx0, `$glow`→idx1: [x] PASS
+    - `BADGE1_MAT`/`BADGE0_MAT` [badge] `param_count=3`: `$mask`→idx2, `$diffuse`→idx3, `$glow`→idx4: [x] PASS
+    - LMIP raw names are Photoshop layer exports: `fth_export.psd[1]`/`[2]`, `badge_export.psd[1]`/`[2]`/`[3]`: [x] PASS
+3. Root cause identified in `parse_texture` name derivation: `rsplit_once('.')` on `fth_export.psd[1]` discards the trailing `[1]`, so DIFF and GLOW both became `fth_exportDXT5`; saves re-resolve bindings by name and dropped the DIFF (`fth_export.psd[1]`, R138/G110/B94) while keeping the GLOW (`fth_export.psd[2]`, R0/G2/B202) as `$diffuse`: [x] CONFIRMED (matches the reported symptom exactly)
+
+Parser fix verification:
+
+1. Parser/build verification:
+    - `cargo check --lib`: [x] PASS - pre-existing warnings only.
+    - `cargo run --bin verify_lossless`: [x] PASS - all structural re-parse counts match; size diffs identical to pre-existing baseline.
+2. `testing/hgn_hft.hod` after fix (`parser/src/bin/dump_model.rs`, `roundtrip_test.rs`):
+    - 5 uniquely named textures (`fth_export[1]DXT5`, `fth_export[2]DXT5`, `badge_export[1..3]DXT5`): [x] PASS
+    - `hw2Shader` = `$diffuse`→`fth_export[1]DXT5` + `$glow`→`fth_export[2]DXT5`: [x] PASS
+    - Badges = `$mask`→`badge_export[2]DXT5`, `$diffuse`→`badge_export[1]DXT5`, `$glow`→`badge_export[3]DXT5`: [x] PASS
+    - Load → save → load keeps all 5 textures and all 8 param records: [x] PASS
+    - Texture content now correct: DIFF is warm hull colour (R138/G110/B94), GLOW is blue (R0/G2/B202): [x] PASS
+3. Regressions:
+    - `shi_demon.hod` / `ter_zephyrus_1.3_original.hod` (`name[1].ext` convention): [x] PASS - texture names byte-identical to before the fix.
+    - `testing/hgn_hft_hw2.hod` (HODEditorJS export with baked-in damage): [x] PASS - unchanged, still 2 textures (nothing more is recoverable from that file).
