@@ -1,106 +1,89 @@
 # HOD 2.0 Testing Guide
 
-## Directory Structure
+This guide documents the three parser tools that exist in `parser/src/bin/`.
+Run the commands from the repository root with Rust and Cargo installed.
 
-```
-testing/
-  pebble_0/
-    pebble_0_vanilla.hod        # Original vanilla HOD 2.0
-    pebble_0_roundtrip.hod      # Vanilla → parse → generate
-    pebble_0_from_assets.hod    # OBJ + TGA + JSON + vanilla KDOP → generate
-    Root_mesh_lod_0.obj
-    Root_mesh_lod_1.obj
-    Pebble_DIFF.tga
-    Pebble_GLOW.tga
-    Pebble_NORM.tga
-    Homeworld2 Multi Mesh File_materials.json
-  pebble_1/
-    ...same structure...
-  pebble_2/
-    ...same structure...
-```
+## Prerequisites
 
-## Test Commands
+- Rust and Cargo must be available on `PATH`.
+- The validation suite needs the external `testing/pebble_0/`,
+  `testing/pebble_1/`, and `testing/pebble_2/` fixture directories. See
+  `docs/testing-fixtures.md` for how to obtain the corpus.
+- `verify_lossless` needs the maintainer's game installation at the absolute
+  paths listed below. Those paths are machine-specific and are not included
+  in this repository.
 
-### Regenerate from-assets HODs
+## `verify_lossless`
 
-Builds from OBJ + TGA + JSON, copies KDOP/COLD/INFO from vanilla:
+Purpose: run the AGENTS.md-mandated lossless round-trip gate against the
+maintainer's HOD and DAE samples. It parses each input, generates a HOD, and
+checks the reparsed structure.
+
+Invocation:
 
 ```bash
-cd parser && cargo run --bin replicate_testing
+cargo run --bin verify_lossless --manifest-path parser/Cargo.toml
 ```
 
-### Compare vanilla, roundtrip, and from_assets
+Inputs: the game installation must provide all six paths hard-coded in
+`parser/src/bin/verify_lossless.rs:6-11`:
 
-Shows chunk structure, POOL sizes, Xpress indicator/literal/match counts, KDOP hashes:
+```text
+/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/pebble_0/pebble_0.hod
+/run/media/system/Data/SteamLibrary/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/ter_elysium.hod
+/run/media/system/Data/SteamLibrary/common/Homeworld/HWRM_FSFC/source/ship/ter_fenris/ter_fenris.hod
+/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/resource/asteroid/asteroid_3/asteroid_3.hod
+/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/effect/galaxymap/hodsunpacked/mapgalaxy/galaxymapgalaxy.dae
+/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/hgn_mothership/hgn_mothership.hod
+```
+
+## `validation_suite`
+
+Purpose: validate the source-asset HOD 2.0 pipeline for `pebble_0`, `pebble_1`,
+and `pebble_2`. Each case reads its vanilla HOD and OBJ, TGA, and material
+inputs, generates a validation HOD, reparses it, compares structures, and
+removes the generated file.
+
+Invocation:
 
 ```bash
-cd parser && cargo run --bin testing_diff
+cargo run --bin validation_suite --manifest-path parser/Cargo.toml
 ```
 
-### Mandatory verification suite
+Inputs: the external `testing/pebble_0/`, `testing/pebble_1/`, and
+`testing/pebble_2/` directories, with the assets expected by the harness.
+The acquisition instructions will live at `docs/testing-fixtures.md`.
 
-Runs roundtrip, DAE fallback, and structural preservation checks:
+## `dump_pool`
+
+Purpose: inspect a HOD's top-level chunks, POOL header sizes, and related
+material and texture chunks. This is an inspector, not a pass/fail gate.
+
+Invocation:
 
 ```bash
-cd parser && cargo run --bin verify_lossless
+cargo run --bin dump_pool --manifest-path parser/Cargo.toml -- /path/to/file.hod
 ```
 
-### HODOR Source-Asset Replication Suite
+Inputs: one HOD path argument. It needs no game installation or external
+fixture corpus.
 
-The true test of the compiler is whether it natively generates byte-accurate outputs identical to HODOR when parsing raw `.dae` files.
+## Missing Game Installation
+
+If the game installation required by `verify_lossless` is absent, run the
+parser tests instead:
 
 ```bash
-# Validates DAE complex materials, Xpress compression, and tangent calculation vs HODOR.exe
-cd parser && cargo run --bin test_hodor_replication
-
-# Validates empty-original save paths
-cd parser && cargo run --bin test_fenris
+cargo test --manifest-path parser/Cargo.toml
 ```
 
-### Other diagnostic binaries
+State in the session record that `verify_lossless` was not run. Do not claim
+that the lossless gate passed when its external inputs were unavailable.
 
-```bash
-# Dump recursive chunk tree for any HOD file
-cd parser && cargo run --bin dump_mult -- <path_to_hod>
+## What the Gates Mean
 
-# Compare two HOD files byte-by-byte at chunk level
-cd parser && cargo run --bin compare_hods -- <file1> <file2>
-
-# Dump KDOP chunk contents
-cd parser && cargo run --bin dump_kdop -- <path_to_hod>
-
-# Dump POOL stream sizes
-cd parser && cargo run --bin dump_pool -- <path_to_hod>
-
-# Decompressed face pool comparison
-cd parser && cargo run --bin face_pool_compare -- <vanilla_hod> <generated_hod>
-```
-
-## What the Tests Verify
-
-| Test | What it checks |
-|------|---------------|
-| `replicate_testing` | Model building from OBJ/TGA/JSON, KDOP/COLD/INFO preservation from vanilla |
-| `testing_diff` | Chunk layout matches vanilla, POOL stream sizes, Xpress compression stats |
-| `verify_lossless` | Roundtrip fidelity (parse → generate → reparse), DAE generation |
-| `test_hodor_replication` | Source-asset generation parity against HODOR.exe (Xpress logic, Tangents, Dedup) |
-| `test_fenris` | Validates `.dae` generation fallback behavior when no original payload exists |
-| `face_pool_compare` | Byte-identical decompressed face pool between vanilla and generated |
-| `dump_mult` | Recursive chunk tree structure (HVMD → MULT → NRML BMSH) |
-
-## Key Metrics to Watch
-
-- **POOL chunk data size**: Must match between vanilla and roundtrip
-- **KDOP hash**: Must be identical if preserved from vanilla
-- **Face pool compressed/decompressed sizes**: `decomp_face == decomp_face` between vanilla and from_assets
-- **LMIP chunk data size**: 87 bytes each for pebble textures (3 textures)
-- **DTRM children**: Should be 2 (HIER + KDOP) for pebble HODs
-- **INFO chunk data size**: 50 bytes for pebble HODs
-- **First byte of POOL**: Should be `0x06` (pool_type 3518 = 0x0DB6, LE → first byte 0x06)
-
-## Known Issues
-
-- `cargo fmt` is unavailable: `error: 'cargo-fmt' is not installed for the toolchain 'stable-x86_64-unknown-linux-gnu'`
-- Run `cargo check --lib` before committing to catch compilation errors
-- The `testing_diff` binary generates roundtrip HODs as a side effect (writes `*_roundtrip.hod` files)
+The gates establish **no divergence from the known baseline**. A baseline may
+contain pre-existing warnings or recompression size-difference output; those
+lines are not automatically failures. Passing the commands means the current
+result did not get worse than the recorded baseline, never that everything is
+perfect.
