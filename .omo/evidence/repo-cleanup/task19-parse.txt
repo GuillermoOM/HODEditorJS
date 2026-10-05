@@ -35,3 +35,19 @@ Visibility changes:
 - find_tga_recursive promoted to pub(crate) for the unchanged parse_texture implementation in hod.rs.
 - parse_texture promoted to pub(crate) so parse.rs can call it without moving it.
 - write_len_string and base64_encode were not moved or changed.
+
+T19 follow-up: move parse_texture into parse.rs
+- parse_texture moved byte-identically from hod.rs into parse.rs.
+- Removed the stale `use crate::hod::parse_texture` import.
+- Added explicit imports for texture_codec helpers and `hod::base64_encode`.
+- `wc -l parser/src/hod.rs parser/src/parse.rs`: 2928 and 2739 lines respectively; hod.rs dropped 269 lines from the committed T19 state.
+- LSP diagnostics for parser/src/parse.rs and parser/src/hod.rs: no diagnostics
+- cargo check --manifest-path parser/Cargo.toml: exit 0
+- cargo check --manifest-path src-tauri/Cargo.toml: exit 0
+- cargo test --manifest-path parser/Cargo.toml: 27 passed, 0 failed
+- verify_lossless: exit 0; markers unchanged:
+  - Diff: 1316; Original/Reparsed Meshes=2, Joints=1, NavLights=0, Markers=0, EngineBurns=0
+  - Diff: -73438; Original/Reparsed Meshes=3, Joints=30, NavLights=16, Markers=5, EngineBurns=8
+  - Diff: -759998; Original/Reparsed Meshes=7, Joints=51, NavLights=4, Markers=11, EngineBurns=4
+  - Diff: -4817608; Original/Reparsed Meshes=3, Joints=4, NavLights=0, Markers=0, EngineBurns=0
+- Follow-up commit: 6c19edf refactor(parser): move parse_texture into parse.rs
