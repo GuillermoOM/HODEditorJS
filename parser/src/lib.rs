@@ -4,6 +4,7 @@ pub mod dae;
 pub mod hod;
 pub mod iff;
 pub mod kdop;
+pub mod math;
 pub mod shader_map;
 pub mod types;
 pub mod xpress;
