@@ -10,4 +10,5 @@ pub mod types;
 pub mod texture_codec;
 pub mod animation;
 pub mod model_methods;
+pub mod engine_nozzles;
 pub mod xpress;
