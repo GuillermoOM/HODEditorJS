@@ -59,11 +59,13 @@ cargo run --bin verify_lossless
 If `verify_lossless` fails to cleanly round-trip the mesh, joint, or marker counts on the test files (`pebble_0.hod`, `ter_elysium.hod`, `ter_zephyrus.hod`), your changes are destructive and must be reverted/fixed immediately.
 
 ### Useful Paths for Testing
-- **HOD 1.3 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
-- **HOD 2.0 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/`
-- **DAE files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/`
-- **HOD 2.0 files (Vanilla game):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/`
-- **HOD 2.0 files (pebbles):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/`
+- **HOD 1.3 files (FS mod, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
+- **HOD 2.0 files (FS mod, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/`
+- **DAE files (FS mod, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/`
+- **HOD 2.0 files (Vanilla game, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/`
+- **HOD 2.0 files (pebbles, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/`
+
+These are maintainer-local examples; use equivalent files from your own installation as described in [`docs/testing-fixtures.md`](../testing-fixtures.md).
 
 ## 4. UI Scripts and Automated Refactoring
 
@@ -83,7 +85,7 @@ It is an established pattern in this repo for agents to write temporary, throwaw
 4. **Verification**:
    - If UI: Update `docs/ui-source-of-truth/` if behavior fundamentally changed.
    - If Parser: Run `cd parser && cargo run --bin verify_lossless`.
-   - **MANDATORY FOR MANUAL TESTS**: If you modify the binary parser, HOD generation logic, or any feature requiring the user to load/save in the editor and test in-game, you **MUST** document the test snapshot in `testing/manual_tests.md`. Add a new entry to the "Test Runs" section of that file specifying the SHA, Timestamp, the HOD tested, and the expected results (pass/fail for loading, meshes, textures, etc.). This ensures a persistent history of manual verifications to prevent regressions.
+   - **MANDATORY FOR MANUAL TESTS**: If you modify the binary parser, HOD generation logic, or any feature requiring the user to load/save in the editor and test in-game, you **MUST** document the test snapshot in `docs/manual-test-log.md`. Add a new entry to the "Test Runs" section of that file specifying the SHA, Timestamp, the HOD tested, and the expected results (pass/fail for loading, meshes, textures, etc.). This ensures a persistent history of manual verifications to prevent regressions.
 
 ## 6. Pre-Flight Checklist (Preventing Regressions)
 

@@ -375,12 +375,12 @@ When creating or modifying POOL chunks:
 - `parser/src/hod.rs` - POOL chunk parsing
 
 ### Test Data
-- `testing/pebble_0/pebble_0_vanilla.hod` - Reference POOL chunk
-- `testing/pebble_0/pebble_0_roundtrip.hod` - Generated POOL chunk
+- External `<HODEditorJS>/testing/pebble_0/pebble_0_vanilla.hod` - Reference POOL chunk
+- External `<HODEditorJS>/testing/pebble_0/pebble_0_roundtrip.hod` - Generated POOL chunk
+- See [`docs/testing-fixtures.md`](../testing-fixtures.md) for fixture acquisition and layout.
 
 ### Tools
 - `cargo run --bin dump_pool` - Dump POOL stream sizes
-- `cargo run --bin testing_diff` - Compare POOL chunks
 
 ---
 

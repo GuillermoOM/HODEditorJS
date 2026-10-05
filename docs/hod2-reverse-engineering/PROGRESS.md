@@ -631,7 +631,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 2. ~~**Fix HOD 1.0 texture orientation on HOD 2.0 save**~~ ✅ DONE — Fixed by inverting the `legacy_storage_y_flipped` condition in `generate_lmip_texture_chunks_and_pool`.
 3. **Fix Zephyrus HOD 1.0 BMSH parsing** by adding a bounded HOD 1.0 BMSH parser path that handles variant primitive-group/index layouts instead of assuming one fixed per-part layout.
 4. **Implement HOD 1.0 DOCK parsing** using the legacy count/name/parent/point layout and verify dockpaths appear in the editor.
-5. **Load companion `.mad` animations for HOD 1.0** before falling back to embedded `MRKR/KEYF`, using `testing/ter_fenris/ter_fenris_1.0.mad` as the fixture.
+5. **Load companion `.mad` animations for HOD 1.0** before falling back to embedded `MRKR/KEYF`, using the external `testing/ter_fenris/ter_fenris_1.0.mad` fixture described in [`docs/testing-fixtures.md`](../testing-fixtures.md).
 6. **Constrain HOD 1.0 NAVL-to-engine-burn compatibility synthesis** so real NAVL entries are not reclassified as engine burns when explicit BURN chunks already exist.
 7. **Implement mesh decimation** for auto-generating collision meshes from visible mesh (HIGH)
 8. **Fix COLD duplication risk** — deduplicate preserved chunks
@@ -680,10 +680,11 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 
 ### Test Data
 
-- `testing/ter_centaur/` — Multi-material test (centaur + glass), DAE available
-- `testing/ter_pharos/` — Single material test, DAE available
-- `testing/ter_fenris/` — DAE-only test (OBJ files removed), TGA textures available
-- `testing/ter_centaur/rtl_test/` — Decompressed and HODOR-compressed pool binaries
+- External `testing/ter_centaur/` — Multi-material test (centaur + glass), DAE available
+- External `testing/ter_pharos/` — Single material test, DAE available
+- External `testing/ter_fenris/` — DAE-only test (OBJ files removed), TGA textures available
+- External `testing/ter_centaur/rtl_test/` — Decompressed and HODOR-compressed pool binaries
+- See [`docs/testing-fixtures.md`](../testing-fixtures.md) for fixture acquisition and layout.
 
 ---
 

@@ -414,7 +414,7 @@ fn is_uncompressed_lmip(chunk: &IffChunk) -> bool {
 - `parser/src/iff.rs` - IFF chunk handling
 
 ### Test Data
-- `testing/pebble_0/` - HOD 2.0 test cases
+- External `<HODEditorJS>/testing/pebble_0/` - HOD 2.0 test cases. See [`docs/testing-fixtures.md`](../testing-fixtures.md) for fixture acquisition.
 - `uncompressed_bigs/freespace_remastered/` - HOD 1.0 files
 
 ### Documentation

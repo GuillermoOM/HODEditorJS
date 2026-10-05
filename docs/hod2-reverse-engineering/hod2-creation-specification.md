@@ -259,7 +259,7 @@ Common shaders:
 
 ### 7.1 Available Test Cases
 
-**Directory:** `testing/pebble_0/`
+**External directory:** `<HODEditorJS>/testing/pebble_0/`. See [`docs/testing-fixtures.md`](../testing-fixtures.md) for fixture acquisition.
 
 **Files:**
 - `pebble_0_vanilla.hod` - Original HOD 2.0

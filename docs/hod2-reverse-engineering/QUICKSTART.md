@@ -40,7 +40,9 @@ This document explains:
 
 ### Step 4: Examine Test Data
 
-**Look at `testing/pebble_0/` directory.**
+**Look at the external `testing/pebble_0/` fixture directory.** See
+[`docs/testing-fixtures.md`](../testing-fixtures.md) for acquisition and layout
+guidance.
 
 This contains:
 - `pebble_0_vanilla.hod` - Original HOD 2.0
@@ -195,7 +197,7 @@ cargo run --bin verify_lossless
 
 ```bash
 cd parser
-cargo run --bin test_pebble
+cargo run --bin validation_suite
 ```
 
 ### Check Test Results
@@ -225,7 +227,7 @@ docs/hod2-reverse-engineering/
 
 1. **Read PROGRESS.md** - Check current status
 2. **Read hod2-creation-specification.md** - Understand the format
-3. **Examine test data** - Study `testing/pebble_0/`
+3. **Examine external test data** - Study `<HODEditorJS>/testing/pebble_0/`; see [`docs/testing-fixtures.md`](../testing-fixtures.md)
 4. **Review source code** - Check `parser/src/`
 5. **Run tests** - Execute `verify_lossless`
 
@@ -234,7 +236,7 @@ docs/hod2-reverse-engineering/
 - **Specification:** `hod2-creation-specification.md`
 - **Progress:** `PROGRESS.md`
 - **Source:** `parser/src/hod.rs`
-- **Tests:** `testing/pebble_0/`
+- **Tests:** external `<HODEditorJS>/testing/pebble_0/` fixtures; see [`docs/testing-fixtures.md`](../testing-fixtures.md)
 
 ---
 

@@ -34,9 +34,10 @@ docs/hod2-reverse-engineering/
 - `parser/src/xpress.rs` - Microsoft Xpress compression
 
 ### Test Data
-- `testing/pebble_0/` - Simple test case (2 LODs, 1 material)
-- `testing/pebble_1/` - Test case with 3 LODs
-- `testing/pebble_2/` - Additional test case
+- External `<HODEditorJS>/testing/pebble_0/` - Simple test case (2 LODs, 1 material)
+- External `<HODEditorJS>/testing/pebble_1/` - Test case with 3 LODs
+- External `<HODEditorJS>/testing/pebble_2/` - Additional test case
+- See [`docs/testing-fixtures.md`](../testing-fixtures.md) for acquisition and layout guidance.
 
 ### Reference Documentation
 - `hod2_reverse_engineering_knowledge_base.md` - Core knowledge base (Migrated from `agents_info`)
@@ -78,7 +79,7 @@ docs/hod2-reverse-engineering/
 ### For Developers
 
 1. **Review specification** - Understand HOD 2.0 structure
-2. **Examine test cases** - Study `testing/pebble_0/`
+2. **Examine external test cases** - Study `<HODEditorJS>/testing/pebble_0/`; see [`docs/testing-fixtures.md`](../testing-fixtures.md)
 3. **Run verify_lossless** - Test round-trip preservation
 4. **Check compiler.rs** - Understand serialization logic
 
@@ -132,9 +133,8 @@ Quick start:
 
 ```bash
 cd parser
-cargo run --bin replicate_testing   # Regenerate from-assets HODs
-cargo run --bin testing_diff         # Compare vanilla vs roundtrip vs from_assets
 cargo run --bin verify_lossless      # Mandatory roundtrip + DAE verification
+cargo run --bin validation_suite     # Validate external pebble fixtures
 ```
 
 ## Known Issues
@@ -196,9 +196,10 @@ cargo run --bin verify_lossless      # Mandatory roundtrip + DAE verification
 
 ### Test Data
 
-- [Pebble 0](../../testing/pebble_0/)
-- [Pebble 1](../../testing/pebble_1/)
-- [Pebble 2](../../testing/pebble_2/)
+- External Pebble 0: `<HODEditorJS>/testing/pebble_0/`
+- External Pebble 1: `<HODEditorJS>/testing/pebble_1/`
+- External Pebble 2: `<HODEditorJS>/testing/pebble_2/`
+- See [`docs/testing-fixtures.md`](../testing-fixtures.md) for fixture acquisition.
 
 ---
 
