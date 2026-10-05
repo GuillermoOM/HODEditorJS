@@ -18,37 +18,46 @@ This handbook will explain:
 
 ## Build & Packaging
 
-**All release builds (`tauri build`) must be performed inside the `mesa-dev` distrobox.** Native host builds fail due to missing GTK/WebKit dependencies and AppImage FUSE issues. The Windows cross-compile also requires `mesa-dev` for `mingw-w64` and `makensis`.
+This section describes this machine's local development environment; `README.md` contains the generic instructions for any developer.
+
+**All release builds (`tauri build`) must be performed inside the `mesa-dev` distrobox.** Native host builds fail here because the host lacks the GTK/WebKit build dependencies and AppImage FUSE support. The Windows cross-compile also requires `mesa-dev`, which provides `mingw-w64` and `makensis`.
 
 ```bash
+# Development mode (the `--` separator matters; a pipe would run `npm` on the host)
+distrobox enter mesa-dev -- npm run tauri dev
+
+# Release build environment
 distrobox enter mesa-dev
 
 # Linux
+# `linuxdeploy` can fail while stripping the AppImage on this distro.
 NO_STRIP=1 npm run tauri build
 
 # Windows NSIS
+# This checkout path contains spaces (`Homeworld 347380`), and binutils `dlltool` fails
+# to link when the target directory has spaces, so use a space-free target directory.
 CARGO_TARGET_DIR=/tmp/cargo_target npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
 ```
 
 For parser-only verification: `cargo check --lib --manifest-path parser/Cargo.toml` (or `--lib` to skip unrelated `validation_suite.rs`).
 For frontend-only verification: `npm run build`.
 
-See `README.md` for full artifact paths and details.
+See `README.md` for the generic equivalents, full artifact paths, and details.
 
 ## Parser Verification
 
-**CRITICAL PARSER RULE:** If you change any serialization logic in `parser/src/hod.rs` or `parser/src/compiler.rs`, you **MUST** run `verify_lossless` to prove you did not break the game engine format.
+**CRITICAL PARSER RULE:** If you change any serialization logic in `parser/src/serialize.rs`, parsing logic in `parser/src/parse.rs`, DXT/texture codec logic in `parser/src/texture_codec.rs`, or logic in `parser/src/compiler.rs`, you **MUST** run `verify_lossless` to prove you did not break the game engine format.
 
 If the game installation required by `verify_lossless` is absent, run `cargo test --manifest-path parser/Cargo.toml` instead and state in the session record that `verify_lossless` was **not run**. Do not claim a lossless pass when its external inputs are unavailable.
 
 ### Useful Paths for Testing
 
-These are maintainer-local paths. Equivalent files live in the reader's own game install; `docs/testing-fixtures.md` explains how to locate equivalents.
-- **HOD 1.3 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
-- **HOD 2.0 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
-- **DAE files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
-- **HOD 2.0 files (Vanilla game):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
-- **HOD 2.0 files (pebbles):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/` (maintainer-local; see `docs/testing-fixtures.md` for equivalents)
+These are this machine's local paths. Equivalent files live in another developer's game install; `docs/testing-fixtures.md` explains how to locate equivalents.
+- **HOD 1.3 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
+- **HOD 2.0 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/`
+- **DAE files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/`
+- **HOD 2.0 files (Vanilla game):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/`
+- **HOD 2.0 files (pebbles):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/`
 
 ---
 
