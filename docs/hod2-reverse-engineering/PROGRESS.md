@@ -88,6 +88,14 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 - Prove the split API surface and exact 16-module crate layout in Task 21.
 - Have a Windows user install `HODEditorJS_1.1.0_x64-setup.exe` from `/tmp/cargo_target/x86_64-pc-windows-gnu/release/bundle/nsis/` and confirm the prior `missing libstdc++-6.dll` launch failure is resolved.
 - Have the user retest a HOD containing DXT3 textures and confirm previews, material rendering, and saved output are correct.
+- Fix DAE parsing
+- Fix auto camera distance on loading model
+- Autobudget, meaning if the software can upscale according to the current size of the texture (or size of the ship).  Right now, I think 4K can be the limit, but you don't have to create a 4K texture for a ship engine, for example. Badges material don't need upscaling
+- Proper shader rendering in editor
+- LOD mesh generation
+- Saving as HW2 Classic HOD (Actual HOD 1.0)
+- Saving as HOD 1.3 (correct name, not HOD 1.0)
+- Colorscheme manager, like a dropdown list that changes the collection of color samples to house the colorscheme per game (HW1, HW2, HWCata, HWMobile, Personal set, etc);
 
 ## 2026-06-03: DAE Phantom `nameplate.bmp` Fix
 * **What failed**: The game engine experienced Out-Of-Bounds (OOB) crashes because `dae.rs` injected a fallback `nameplate.bmp` material (and thus an extra `STAT` chunk) for collision geometries (`COL[` or `ROOT_COL`) that lacked `material` attributes.

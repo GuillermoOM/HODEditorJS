@@ -46,3 +46,15 @@ Build completed successfully with existing Vite chunk-size/dynamic-import warnin
 
 Documentation coverage:
 `find docs -name '*.md'` was compared against the Markdown links in `docs/README.md`; every non-archive document is linked. No new permanent format quirk surfaced, so the knowledge base required no addition.
+
+Roadmap migration follow-up:
+The eight open items from the deleted TODO.md were migrated to the PROGRESS.md Planned Tasks section:
+- Fix DAE parsing
+- Fix auto camera distance on loading model
+- Autobudget, meaning if the software can upscale according to the current size of the texture (or size of the ship).  Right now, I think 4K can be the limit, but you don't have to create a 4K texture for a ship engine, for example. Badges material don't need upscaling
+- Proper shader rendering in editor
+- LOD mesh generation
+- Saving as HW2 Classic HOD (Actual HOD 1.0)
+- Saving as HOD 1.3 (correct name, not HOD 1.0)
+- Colorscheme manager, like a dropdown list that changes the collection of color samples to house the colorscheme per game (HW1, HW2, HWCata, HWMobile, Personal set, etc);
+The required full-file `grep -c "^- \[ \]\|^-" docs/hod2-reverse-engineering/PROGRESS.md` reports 195 dash-prefixed lines. Section-scoped `sed -n '/^## Planned Tasks$/,/^## 2026-06-03/p' ... | grep -c '^-'` reports 11, comprising the original 3 Planned Tasks plus the migrated 8 roadmap bullets.
