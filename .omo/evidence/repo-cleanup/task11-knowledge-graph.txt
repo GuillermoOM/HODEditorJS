@@ -130,6 +130,25 @@ Cleanup receipt (`pgrep -af "cargo|vite" || true`):
 
 ## QA failure path
 A scratch document path must be detectable as an unlinked Knowledge Graph entry.
-Command: cp docs/README.md /tmp/opencode/knowledge-graph-failure.md; printf '\n- docs/TEMP_probe.md\n' >> /tmp/opencode/knowledge-graph-failure.md; grep -F 'docs/TEMP_probe.md' /tmp/opencode/knowledge-graph-failure.md
-Result: `- docs/TEMP_probe.md`; grep exit 0; scratch file removed.
-Conclusion: PASS — the temporary orphan probe was detected by the link scan input check and did not modify repository docs.
+Command:
+```
+rm -rf /tmp/opencode/fp-verify-task11
+git clone . /tmp/opencode/fp-verify-task11
+cd /tmp/opencode/fp-verify-task11
+find docs -name '*.md' -not -path 'docs/hod2-reverse-engineering/archive_logs/*' | while read f; do b=$(basename "$f"); grep -q "$b" docs/README.md || echo "ORPHAN: $f"; done
+printf 'BASELINE_EXIT=%s\n' "$?"
+printf '# x\n' > docs/orphan-test.md
+find docs -name '*.md' -not -path 'docs/hod2-reverse-engineering/archive_logs/*' | while read f; do b=$(basename "$f"); grep -q "$b" docs/README.md || echo "ORPHAN: $f"; done
+printf 'INJECTED_EXIT=%s\n' "$?"
+rm docs/orphan-test.md
+find docs -name '*.md' -not -path 'docs/hod2-reverse-engineering/archive_logs/*' | while read f; do b=$(basename "$f"); grep -q "$b" docs/README.md || echo "ORPHAN: $f"; done
+printf 'RESTORED_EXIT=%s\n' "$?"
+```
+Result:
+```
+BASELINE_EXIT=0
+ORPHAN: docs/orphan-test.md
+INJECTED_EXIT=0
+RESTORED_EXIT=0
+```
+Conclusion: PASS — the documented detector runs against the real documentation set, catches the injected orphan, and returns to zero orphans after removal.

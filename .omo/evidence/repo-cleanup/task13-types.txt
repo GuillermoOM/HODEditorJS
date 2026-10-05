@@ -18,6 +18,28 @@ Cleanup: pgrep -af "cargo|vite" || true found no persistent process.
 
 ## QA failure path
 The compatibility hub must expose extracted types to the Tauri public API.
-Command: temporarily remove `pub use crate::types::*;` from `parser/src/hod.rs`; cargo check --manifest-path src-tauri/Cargo.toml
-Result: exit 101 with unresolved imports for `crate::hod::HODModel`, `crate::hod::HODTexture`, and other moved types; the re-export was restored and the check exited 0.
+Command:
+```
+rm -rf /tmp/opencode/fp-verify-task13
+git clone . /tmp/opencode/fp-verify-task13
+cd /tmp/opencode/fp-verify-task13
+cp parser/src/hod.rs /tmp/opencode/task13-hod.rs
+sed -i '/pub use crate::types::\*;/d' parser/src/hod.rs
+set +e
+cargo check --manifest-path src-tauri/Cargo.toml
+printf 'FAIL_EXIT=%s\n' "$?"
+set -e
+cp /tmp/opencode/task13-hod.rs parser/src/hod.rs
+cargo check --manifest-path src-tauri/Cargo.toml
+printf 'PASS_EXIT=%s\n' "$?"
+```
+Result:
+```
+error[E0432]: unresolved imports `crate::hod::HODCollisionMesh`, `crate::hod::HODMesh`, `crate::hod::HODMeshPart`, `crate::hod::HODVertex`, `crate::hod::Vector3`
+error[E0432]: unresolved imports `crate::hod::HODMeshPart`, `crate::hod::HODModel`, `crate::hod::HODVertex`, `crate::hod::Vector3`
+FAIL_EXIT=101
+  Permission denied (os error 13)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.02s
+PASS_EXIT=0
+```
 Conclusion: PASS — disabling the hub produced the expected compile failure.

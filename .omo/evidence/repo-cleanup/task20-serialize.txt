@@ -32,6 +32,27 @@ Lossless verification:
 
 ## QA failure path
 The serialization compatibility hub must fail compilation if its re-export is removed.
-Command: temporarily remove `pub use crate::serialize::*;` from `parser/src/hod.rs`; cargo check --manifest-path src-tauri/Cargo.toml
-Result: exit 101; unresolved `crate::hod::base64_encode`, `crate::hod::write_len_string`, and `crate::hod::write_vertex`; re-export restored.
+Command:
+```
+rm -rf /tmp/opencode/fp-verify-task20
+git clone . /tmp/opencode/fp-verify-task20
+cd /tmp/opencode/fp-verify-task20
+cp parser/src/hod.rs /tmp/opencode/task20-hod.rs
+sed -i '/pub use crate::serialize::\*;/d' parser/src/hod.rs
+set +e
+cargo check --manifest-path src-tauri/Cargo.toml
+printf 'FAIL_EXIT=%s\n' "$?"
+set -e
+cp /tmp/opencode/task20-hod.rs parser/src/hod.rs
+cargo check --manifest-path src-tauri/Cargo.toml
+printf 'PASS_EXIT=%s\n' "$?"
+```
+Result:
+```
+error[E0425]: cannot find function `write_vertex` in module `crate::hod`
+FAIL_EXIT=101
+  Permission denied (os error 13)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 20.66s
+PASS_EXIT=0
+```
 Conclusion: PASS — the hub failure mode was exercised and detected.

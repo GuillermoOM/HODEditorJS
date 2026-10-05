@@ -60,7 +60,31 @@ The eight open items from the deleted TODO.md were migrated to the PROGRESS.md P
 
 ## QA failure path
 The active citation scan must detect a deliberately reintroduced `hod.rs:NNNN` reference.
-Command: grep -n "hod.rs:[0-9]" /tmp/opencode/quickstart-fail.md
-Result: `256:QA scratch citation: hod.rs:1234` (exit 0); scratch file was removed.
+Command:
+```
+rm -rf /tmp/opencode/fp-verify-task24
+git clone . /tmp/opencode/fp-verify-task24
+cd /tmp/opencode/fp-verify-task24
+cp docs/hod2-reverse-engineering/QUICKSTART.md /tmp/opencode/quickstart-scratch.md
+printf '\nSee parser/src/hod.rs:1234\n' >> /tmp/opencode/quickstart-scratch.md
+set +e
+grep -nE 'hod\.rs:[0-9]+' /tmp/opencode/quickstart-scratch.md
+printf 'SCRATCH_CITATION_EXIT=%s\n' "$?"
+grep -nE 'hod\.rs:[0-9]+' docs/hod2-reverse-engineering/QUICKSTART.md
+printf 'REAL_CITATION_EXIT=%s\n' "$?"
+set -e
+printf '%s\n' '--- LINK_SCAN ---'
+find docs -name '*.md' -not -path 'docs/hod2-reverse-engineering/archive_logs/*' | while read f; do b=$(basename "$f"); grep -q "$b" docs/README.md || echo "ORPHAN: $f"; done
+printf 'LINK_SCAN_EXIT=%s\n' "$?"
+rm /tmp/opencode/quickstart-scratch.md
+```
+Result:
+```
+256:See parser/src/hod.rs:1234
+SCRATCH_CITATION_EXIT=0
+REAL_CITATION_EXIT=1
+--- LINK_SCAN ---
+LINK_SCAN_EXIT=0
+```
 Conclusion: PASS — the citation check detects the forbidden line-number reference.
 The required full-file `grep -c "^- \[ \]\|^-" docs/hod2-reverse-engineering/PROGRESS.md` reports 195 dash-prefixed lines. Section-scoped `sed -n '/^## Planned Tasks$/,/^## 2026-06-03/p' ... | grep -c '^-'` reports 11, comprising the original 3 Planned Tasks plus the migrated 8 roadmap bullets.

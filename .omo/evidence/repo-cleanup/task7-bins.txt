@@ -45,6 +45,27 @@ Cleanup receipt: pgrep -af "cargo|vite" || true was run at task end.
 
 ## QA failure path
 The deleted `compare_burns` source must be rejected if its manifest entry is accidentally retained.
-Command: scratch copy of `parser/` with `src/bin/compare_burns.rs` removed while retaining the `[[bin]] compare_burns` manifest entry; `cargo check --manifest-path /tmp/opencode/task7-failure/parser/Cargo.toml`
-Result: cargo reported that it could not find `src/bin/compare_burns.rs` for the `compare_burns` bin and exited non-zero; the real repository check after removing the manifest entry exited 0.
+Command:
+```
+rm -rf /tmp/opencode/fp-verify-task7
+git clone . /tmp/opencode/fp-verify-task7
+cd /tmp/opencode/fp-verify-task7
+printf '\n[[bin]]\nname = "compare_burns"\npath = "src/bin/compare_burns.rs"\n' >> parser/Cargo.toml
+set +e
+cargo check --manifest-path parser/Cargo.toml
+printf 'FAIL_EXIT=%s\n' "$?"
+set -e
+git checkout -- parser/Cargo.toml
+cargo check --manifest-path parser/Cargo.toml
+printf 'PASS_EXIT=%s\n' "$?"
+```
+Result:
+```
+error: can't find bin `compare_burns` at path `/tmp/opencode/fp-verify-task7/parser/src/bin/compare_burns.rs`
+error: could not compile due to 1 previous target resolution error
+FAIL_EXIT=101
+  Permission denied (os error 13)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.35s
+PASS_EXIT=0
+```
 Conclusion: PASS — the scratch failure proves the manifest edit is load-bearing.

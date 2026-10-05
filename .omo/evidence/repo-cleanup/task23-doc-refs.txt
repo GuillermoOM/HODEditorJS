@@ -52,6 +52,25 @@ Historical-file proof:
 
 ## QA failure path
 The active-document tool inventory must report a deliberately introduced removed-bin reference.
-Command: add `cargo run --bin test_pebble` to a scratch copy of QUICKSTART.md; grep -rhoE "cargo run --bin [a-z_]+" /tmp/opencode/quickstart-scratch.md | sort -u
-Result: output included `cargo run --bin test_pebble`, alongside the existing inventory; scratch file was removed.
+Command:
+```
+rm -rf /tmp/opencode/fp-verify-task23
+git clone . /tmp/opencode/fp-verify-task23
+cd /tmp/opencode/fp-verify-task23
+cp docs/hod2-reverse-engineering/QUICKSTART.md /tmp/opencode/quickstart-scratch.md
+printf '\ncargo run --bin test_pebble\n' >> /tmp/opencode/quickstart-scratch.md
+set +e
+grep -nE 'replicate_testing|testing_diff|test_hodor_replication|test_fenris|dump_mult|compare_hods|dump_kdop|face_pool_compare|test_pebble' /tmp/opencode/quickstart-scratch.md
+printf 'SCRATCH_EXIT=%s\n' "$?"
+grep -nE 'replicate_testing|testing_diff|test_hodor_replication|test_fenris|dump_mult|compare_hods|dump_kdop|face_pool_compare|test_pebble' docs/hod2-reverse-engineering/QUICKSTART.md
+printf 'REAL_EXIT=%s\n' "$?"
+set -e
+rm /tmp/opencode/quickstart-scratch.md
+```
+Result:
+```
+256:cargo run --bin test_pebble
+SCRATCH_EXIT=0
+REAL_EXIT=1
+```
 Conclusion: PASS — the check catches a forbidden tool reference in a scratch document.
