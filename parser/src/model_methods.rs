@@ -115,21 +115,21 @@ impl HODModel {
         }
 
         if !has_heading {
-        let new_heading = HODJoint {
+            let new_heading = HODJoint {
                 name: head_name.clone(),
                 parent_name: Some(pos_name.clone()),
                 local_transform: compose_transform_matrix(
-            Vector3 {
+                    Vector3 {
                         x: 0.0,
                         y: 0.0,
                         z: 5.0,
                     },
-            Vector3 {
+                    Vector3 {
                         x: 0.0,
                         y: 0.0,
                         z: 0.0,
                     },
-            Vector3 {
+                    Vector3 {
                         x: 1.0,
                         y: 1.0,
                         z: 1.0,
@@ -162,21 +162,21 @@ impl HODModel {
             .iter()
             .any(|j| j.name.eq_ignore_ascii_case(&muzzle_name));
         if !has_muzzle {
-        let new_muzzle = HODJoint {
+            let new_muzzle = HODJoint {
                 name: muzzle_name,
                 parent_name: Some(head_name), // Parented to Heading
                 local_transform: compose_transform_matrix(
-            Vector3 {
+                    Vector3 {
                         x: 0.0,
                         y: 0.0,
                         z: 5.0,
                     },
-            Vector3 {
+                    Vector3 {
                         x: 0.0,
                         y: 0.0,
                         z: 0.0,
                     },
-            Vector3 {
+                    Vector3 {
                         x: 1.0,
                         y: 1.0,
                         z: 1.0,
@@ -256,7 +256,7 @@ impl HODModel {
                             let p_mat = &parent_joint.local_transform.m;
                             let c_mat = &joint.local_transform.m;
 
-        let mut new_transform = Matrix4 { m: [[0.0; 4]; 4] };
+                            let mut new_transform = Matrix4 { m: [[0.0; 4]; 4] };
                             for r in 0..4 {
                                 for c in 0..4 {
                                     new_transform.m[r][c] = p_mat[r][0] * c_mat[0][c]

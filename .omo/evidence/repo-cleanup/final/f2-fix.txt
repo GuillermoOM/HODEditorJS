@@ -40,3 +40,4 @@ Gates:
 read_len_string remains pub in parser/src/types.rs and is reachable as
 hwr_hod_parser::hod::read_len_string through the compatibility hub. The
 private compiler.rs write_len_string was not changed.
+Indentation remediation: restored original leading whitespace in engine_nozzles.rs and model_methods.rs; `git diff b7e2609^ -- parser/src/model_methods.rs parser/src/engine_nozzles.rs` and the corresponding `git diff -w` show identical rename-only line sets with no whitespace-only differences.

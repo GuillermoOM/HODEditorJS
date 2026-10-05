@@ -15,7 +15,7 @@ pub fn synthesize_engine_nozzles_v1(model: &mut HODModel) {
             && nav.name[1..].chars().all(char::is_numeric)
         {
             let size = if nav.size > 0.0 { nav.size } else { 4.0 };
-    burns.push(crate::types::HODEngineBurn {
+            burns.push(crate::types::HODEngineBurn {
                 name: nav.name.clone(),
                 parent_name: nav.name.clone(),
                 num_divisions: 8,
