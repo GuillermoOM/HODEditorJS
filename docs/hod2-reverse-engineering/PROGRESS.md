@@ -81,8 +81,10 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 - HOD 1.0 retrofit follow-up: frontend HOD 1.0 compatibility transform `synthesize_engine_nozzles_v1` can reclassify `e#` NAVL rows as engine burns after load if explicit BURN detection misses an edge case.
 - `preserved_chunks` field on `HODModel` uses `#[serde(skip)]`, so raw KDOP/COLD IFF chunks are lost during JSON serialization (Tauri IPC round-trip). KDOP is now regenerated from collision mesh vertices via `kdop::generate_kdop()`, and COLD is regenerated with full BBOX/BSPH/TRIS children + header bounding data. However, other preserved chunks (SCAR, BNDV, INFO) are also lost during JSON round-trip.
 - `verify_lossless` reports file size differences (expected since pool is always regenerated), but all structural counts (meshes, joints, markers, navlights, engine burns) match perfectly.
+- ✅ Task 20 extracted all serialization helpers from `parser/src/hod.rs` into `parser/src/serialize.rs`; `hod.rs` is now a 13-line compatibility re-export hub. Parser checks and the Tauri check pass, and `cargo test --manifest-path parser/Cargo.toml` reports 28 passed tests including `serialize_stat_params_roundtrip`. Lossless verification exited 0 with expected deltas `1316`, `-73438`, `-759998`, and `-4817608`; all four generated files reparsed with identical structural counts. Removing the serialize re-export was independently verified to fail the Tauri check with unresolved hub paths, then restored.
 
 ## Planned Tasks
+- Prove the split API surface and exact 16-module crate layout in Task 21.
 - Have a Windows user install `HODEditorJS_1.1.0_x64-setup.exe` from `/tmp/cargo_target/x86_64-pc-windows-gnu/release/bundle/nsis/` and confirm the prior `missing libstdc++-6.dll` launch failure is resolved.
 - Have the user retest a HOD containing DXT3 textures and confirm previews, material rendering, and saved output are correct.
 
