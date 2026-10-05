@@ -1502,7 +1502,7 @@ pub(crate) fn find_tga_recursive(dir: &std::path::Path, filename_lower: &str) ->
     }
     None
 }
-fn parse_stat_params(
+pub(crate) fn parse_stat_params(
     data: &[u8],
     start: usize,
     param_count: usize,

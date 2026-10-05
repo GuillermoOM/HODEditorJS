@@ -1,0 +1,31 @@
+Task 20: Extract serialize.rs and make hod.rs a compatibility hub
+
+Changed:
+- Moved the serialization implementation from parser/src/hod.rs to parser/src/serialize.rs.
+- parser/src/hod.rs is 13 lines and re-exports the established public API.
+- Added pub mod serialize; to parser/src/lib.rs.
+- Promoted parse_stat_params to pub(crate) for the fixture-free serialize test.
+
+Verification:
+- wc -l parser/src/hod.rs parser/src/serialize.rs: 13 and 2991.
+- cargo check --manifest-path parser/Cargo.toml: exit 0.
+- cargo check --manifest-path src-tauri/Cargo.toml: exit 0.
+- cargo test --manifest-path parser/Cargo.toml: 28 passed, 0 failed.
+- lsp_diagnostics parser/src/serialize.rs: no diagnostics.
+
+Hub failure-path QA:
+- Temporarily removed pub use crate::serialize::*; from parser/src/hod.rs.
+- cargo check --manifest-path src-tauri/Cargo.toml: exit 101.
+- Exact unresolved errors included:
+  error[E0432]: unresolved import crate::hod::base64_encode
+  error[E0432]: unresolved import crate::hod::write_len_string
+  error[E0425]: cannot find function write_vertex in module crate::hod
+- Restored the re-export and subsequent checks pass.
+
+Lossless verification:
+- Command: timeout 600 cargo run --bin verify_lossless --manifest-path parser/Cargo.toml
+- Exit: 0.
+- Markers: 4x SUCCESS: Re-parsed generated file!
+- Expected size deltas: 1316, -73438, -759998, -4817608.
+- Structural counts matched for every case:
+  2/1/0/0/0, 3/30/16/5/8, 7/51/4/11/4, 3/4/0/0/0 (meshes/joints/navlights/markers/engine-burns).
