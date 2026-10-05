@@ -1,7 +1,7 @@
 //! Public compatibility hub for the HOD parser API.
 //!
 //! Implementation is split across focused parser modules while existing
-//! callers continue to resolve the established `crate::hod` paths.
+//! callers continue to resolve the established `hod` paths.
 
 pub use crate::animation::*;
 pub use crate::engine_nozzles::*;

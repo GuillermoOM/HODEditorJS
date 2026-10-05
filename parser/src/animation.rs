@@ -1,5 +1,5 @@
 use crate::iff::IffChunk;
-use crate::hod::{read_len_string, write_len_string};
+use crate::types::{read_len_string, write_len_string};
 use crate::math::{evaluate_curve, euler_to_quaternion, quaternion_to_euler, ParsedCurve, HODKeyframeCurveValue};
 use crate::types::{HODAnimation, HODAnimationTrack, HODJoint, HODKeyframe, HODModel, Vector3};
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -40,7 +40,7 @@ pub(crate) fn companion_mad_candidates(hod_path: &Path) -> Vec<PathBuf> {
     for normalized_stem in normalized_stems {
         let candidate_lower = parent.join(format!("{}.mad", normalized_stem));
         let candidate_upper = parent.join(format!("{}.MAD", normalized_stem));
-        
+
         if !candidates.iter().any(|existing| existing == &candidate_lower) {
             candidates.push(candidate_lower);
         }

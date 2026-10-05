@@ -1,5 +1,4 @@
-use crate::hod::base64_encode;
-use crate::types::HODTexture;
+use crate::types::{base64_encode, HODTexture};
 
 pub fn compress_dxt1(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
     let out_size = ((width.max(1) + 3) / 4) * ((height.max(1) + 3) / 4) * 8;
@@ -40,7 +39,7 @@ pub fn generate_mip_chain(
         }
         let next_w = std::cmp::max(1, cur_w / 2);
         let next_h = std::cmp::max(1, cur_h / 2);
-        
+
         if let Some(img) = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(cur_w as u32, cur_h as u32, cur_rgba.clone()) {
             let resized = image::imageops::resize(
                 &img,
@@ -50,7 +49,7 @@ pub fn generate_mip_chain(
             );
             cur_rgba = resized.into_raw();
         }
-        
+
         cur_w = next_w;
         cur_h = next_h;
     }

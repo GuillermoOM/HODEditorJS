@@ -1,4 +1,5 @@
-use crate::hod::*;
+use crate::model_methods::normalize_collision_meshes;
+use crate::types::*;
 
 pub fn synthesize_engine_nozzles_v1(model: &mut HODModel) {
     if !model.engine_burns.is_empty() {
@@ -14,28 +15,28 @@ pub fn synthesize_engine_nozzles_v1(model: &mut HODModel) {
             && nav.name[1..].chars().all(char::is_numeric)
         {
             let size = if nav.size > 0.0 { nav.size } else { 4.0 };
-            burns.push(crate::hod::HODEngineBurn {
+    burns.push(crate::types::HODEngineBurn {
                 name: nav.name.clone(),
                 parent_name: nav.name.clone(),
                 num_divisions: 8,
                 num_flames: 1,
                 vertices: vec![
-                    crate::hod::Vector3 {
+                    crate::types::Vector3 {
                         x: -size,
                         y: -size,
                         z: 0.0,
                     },
-                    crate::hod::Vector3 {
+                    crate::types::Vector3 {
                         x: size,
                         y: -size,
                         z: 0.0,
                     },
-                    crate::hod::Vector3 {
+                    crate::types::Vector3 {
                         x: size,
                         y: size,
                         z: 0.0,
                     },
-                    crate::hod::Vector3 {
+                    crate::types::Vector3 {
                         x: -size,
                         y: size,
                         z: 0.0,
@@ -63,14 +64,14 @@ pub fn reverse_engine_nozzles_v1(model: &mut HODModel) {
             && burn.name.len() >= 2
             && burn.name[1..].chars().all(char::is_numeric)
         {
-            new_navs.push(crate::hod::HODNavLight {
+            new_navs.push(crate::types::HODNavLight {
                 name: burn.name.clone(),
                 section: 0,
                 size: 4.0, // Best guess fallback
                 phase: 0.0,
                 frequency: 1.0,
                 style: "engine".to_string(),
-                color: crate::hod::Vector3 {
+                color: crate::types::Vector3 {
                     x: 1.0,
                     y: 1.0,
                     z: 1.0,
@@ -112,8 +113,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
 
             // Box vertices: 8 corners
             let vertices = vec![
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: min.x,
                         y: min.y,
                         z: min.z,
@@ -125,8 +126,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     binormal: None,
                     skinning_data: None,
                 },
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: max.x,
                         y: min.y,
                         z: min.z,
@@ -138,8 +139,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     binormal: None,
                     skinning_data: None,
                 },
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: max.x,
                         y: max.y,
                         z: min.z,
@@ -151,8 +152,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     binormal: None,
                     skinning_data: None,
                 },
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: min.x,
                         y: max.y,
                         z: min.z,
@@ -164,8 +165,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     binormal: None,
                     skinning_data: None,
                 },
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: min.x,
                         y: min.y,
                         z: max.z,
@@ -177,8 +178,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     binormal: None,
                     skinning_data: None,
                 },
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: max.x,
                         y: min.y,
                         z: max.z,
@@ -190,8 +191,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     binormal: None,
                     skinning_data: None,
                 },
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: max.x,
                         y: max.y,
                         z: max.z,
@@ -203,8 +204,8 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                     binormal: None,
                     skinning_data: None,
                 },
-                crate::hod::HODVertex {
-                    position: crate::hod::Vector3 {
+                crate::types::HODVertex {
+                    position: crate::types::Vector3 {
                         x: min.x,
                         y: max.y,
                         z: max.z,
@@ -228,7 +229,7 @@ pub fn generate_collision_mesh(model: &mut HODModel) {
                 1, 5, 6, 1, 6, 2, // bottom
             ];
 
-            cm.mesh.parts = vec![crate::hod::HODMeshPart {
+            cm.mesh.parts = vec![crate::types::HODMeshPart {
                 material_index: 0,
                 vertex_mask: 1, // position only
                 vertices,

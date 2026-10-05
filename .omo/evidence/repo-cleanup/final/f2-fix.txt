@@ -1,0 +1,42 @@
+F2 remediation evidence (2026-10-04)
+
+Provenance: pre-split 544c72e:parser/src/hod.rs had the identical five
+trailing-whitespace lines at the corresponding sites. Extraction was
+byte-identical; git diff --check on a new-file commit reports inherited
+whitespace as introduced. The five lines are now stripped.
+
+Before, grep -n "crate::hod" parser/src/*.rs:
+parser/src/collision.rs:1 use crate::hod::{HODCollisionMesh, HODMesh, HODMeshPart, HODVertex, Vector3};
+parser/src/collision.rs:687 pub fn generate_all_lod_meshes(model: &mut crate::hod::HODModel) {
+parser/src/compiler.rs:1 use crate::hod::{HODMeshPart, HODModel, HODVertex, Vector3};
+parser/src/compiler.rs:611 let _ = crate::hod::write_vertex(
+parser/src/dae.rs:1 use crate::hod::*;
+parser/src/engine_nozzles.rs:1 use crate::hod::*; (plus inline crate::hod types)
+parser/src/model_methods.rs:118,122,127,132,165,169,174,179,259 inline crate::hod types
+parser/src/parse.rs:9 use crate::hod::base64_encode;
+parser/src/parse.rs:2656 use crate::hod::write_len_string;
+parser/src/serialize.rs:5 use crate::parse::read_len_string;
+parser/src/serialize.rs:1256,2221 inline crate::hod::write_vertex
+parser/src/texture_codec.rs:1 use crate::hod::base64_encode;
+
+After, grep -n "crate::hod" parser/src/*.rs:
+parser/src/collision.rs:1 use crate::hod::{HODCollisionMesh, HODMesh, HODMeshPart, HODVertex, Vector3};
+parser/src/collision.rs:687 pub fn generate_all_lod_meshes(model: &mut crate::hod::HODModel) {
+parser/src/compiler.rs:1 use crate::hod::{HODMeshPart, HODModel, HODVertex, Vector3};
+parser/src/compiler.rs:611 let _ = crate::hod::write_vertex(
+parser/src/dae.rs:1 use crate::hod::*;
+
+grep -rn ' $' parser/src/*.rs:
+(empty; no matches)
+
+Gates:
+- cargo check --manifest-path parser/Cargo.toml: exit 0.
+- cargo check --manifest-path src-tauri/Cargo.toml: exit 0.
+- cargo test --manifest-path parser/Cargo.toml: 28 passed, 0 failed.
+- verify_lossless markers: four SUCCESS: Re-parsed generated file! lines;
+  FAILED size diffs 1316, -73438, -759998, -4817608; original/reparsed
+  mesh, joint, navlight, marker, and engine-burn counts match for all four.
+
+read_len_string remains pub in parser/src/types.rs and is reachable as
+hwr_hod_parser::hod::read_len_string through the compatibility hub. The
+private compiler.rs write_len_string was not changed.

@@ -1,6 +1,6 @@
-use crate::iff::IffChunk;
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
+use std::io::{Cursor, Read, Write};
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -265,7 +265,7 @@ pub struct HODModel {
     #[serde(default)]
     pub textures_modified: bool,
     #[serde(skip)]
-    pub preserved_chunks: Vec<IffChunk>,
+    pub preserved_chunks: Vec<crate::iff::IffChunk>,
 }
 
 pub struct ParsingContext {
@@ -276,4 +276,69 @@ pub struct ParsingContext {
     pub hod_dir: Option<PathBuf>,
     pub uncompressed_dir: Option<PathBuf>,
     pub hod_file_path: Option<PathBuf>,
+}
+
+pub(crate) fn write_len_string<W: Write>(writer: &mut W, s: &str) -> Result<(), String> {
+    let bytes = s.as_bytes();
+    writer
+        .write_u32::<LittleEndian>(bytes.len() as u32)
+        .map_err(|e| e.to_string())?;
+    writer.write_all(bytes).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub(crate) fn base64_encode(data: &[u8]) -> String {
+    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    let mut i = 0;
+    while i < data.len() {
+        let byte1 = data[i];
+        let byte2 = if i + 1 < data.len() {
+            Some(data[i + 1])
+        } else {
+            None
+        };
+        let byte3 = if i + 2 < data.len() {
+            Some(data[i + 2])
+        } else {
+            None
+        };
+
+        let val = ((byte1 as u32) << 16)
+            | ((byte2.unwrap_or(0) as u32) << 8)
+            | (byte3.unwrap_or(0) as u32);
+
+        let char1 = CHARSET[((val >> 18) & 63) as usize] as char;
+        let char2 = CHARSET[((val >> 12) & 63) as usize] as char;
+        let char3 = if byte2.is_some() {
+            CHARSET[((val >> 6) & 63) as usize] as char
+        } else {
+            '='
+        };
+        let char4 = if byte3.is_some() {
+            CHARSET[(val & 63) as usize] as char
+        } else {
+            '='
+        };
+
+        result.push(char1);
+        result.push(char2);
+        result.push(char3);
+        result.push(char4);
+
+        i += 3;
+    }
+    result
+}
+
+pub fn read_len_string<R: Read>(reader: &mut R) -> Result<String, String> {
+    let len = reader
+        .read_u32::<LittleEndian>()
+        .map_err(|e| e.to_string())? as usize;
+    if len == 0 {
+        return Ok(String::new());
+    }
+    let mut buf = vec![0u8; len];
+    reader.read_exact(&mut buf).map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&buf).to_string())
 }

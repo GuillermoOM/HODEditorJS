@@ -6,8 +6,8 @@ use crate::texture_codec::{
     compressed_texture_mip_size, decompress_dxt1, decompress_dxt3, decompress_dxt5,
     encode_b64_png_thumbnail, flip_rgba_vertical_in_place,
 };
-use crate::hod::base64_encode;
 use crate::types::*;
+use crate::types::{base64_encode, read_len_string};
 use crate::xpress;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read};
@@ -1238,7 +1238,7 @@ impl HODModel {
             }
         }
 
-        println!("[RUST] Finished parsing! Name='{}', Meshes={}, Joints={}, Markers={}, NavLights={}, EngineBurns={}, EngineGlows={}, EngineShapes={}, CollisionMeshes={}, Dockpaths={}", 
+        println!("[RUST] Finished parsing! Name='{}', Meshes={}, Joints={}, Markers={}, NavLights={}, EngineBurns={}, EngineGlows={}, EngineShapes={}, CollisionMeshes={}, Dockpaths={}",
                  model_name, meshes.len(), joints.len(), markers.len(), nav_lights.len(), engine_burns.len(), engine_glows.len(), engine_shapes.len(), collision_meshes.len(), dockpaths.len());
 
         let mut model = Self {
@@ -2018,18 +2018,6 @@ fn parse_basic_mesh(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HO
     })
 }
 
-pub fn read_len_string<R: Read>(reader: &mut R) -> Result<String, String> {
-    let len = reader
-        .read_u32::<LittleEndian>()
-        .map_err(|e| e.to_string())? as usize;
-    if len == 0 {
-        return Ok(String::new());
-    }
-    let mut buf = vec![0u8; len];
-    reader.read_exact(&mut buf).map_err(|e| e.to_string())?;
-    Ok(String::from_utf8_lossy(&buf).to_string())
-}
-
 fn parse_dock_chunk(data: &[u8], is_v2: bool) -> Result<Vec<HODDockpath>, String> {
     if is_v2 {
         parse_dock_extended(data).or_else(|extended_err| {
@@ -2082,7 +2070,7 @@ fn parse_dock_extended(data: &[u8]) -> Result<Vec<HODDockpath>, String> {
 
         let remaining_bytes = r.get_ref().len() as u64 - r.position();
         println!("[DOCK DEBUG] path='{}', num_points={}, remaining={}", name, num_points, remaining_bytes);
-        
+
         let max_possible_points = remaining_bytes / 50;
         if num_points as u64 > max_possible_points {
             return Err("DOCK num_points exceeds buffer space".to_string());
@@ -2653,7 +2641,7 @@ fn parse_markers_v2(chunk: &IffChunk) -> Result<Vec<HODMarker>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hod::write_len_string;
+    use crate::types::write_len_string;
 
     #[test]
     fn types_struct_defaults_are_preserved() {

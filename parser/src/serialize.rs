@@ -2,25 +2,16 @@ use crate::animation::serialize_anim_curve;
 use crate::engine_nozzles::generate_collision_mesh;
 use crate::iff::{ChunkType, IffChunk};
 use crate::math::{compose_transform_matrix, decompose_matrix, quaternion_to_euler};
-use crate::parse::read_len_string;
 use crate::texture_codec::{
     compress_dxt1, compress_dxt3, compress_dxt5, decode_texture_png_rgba,
     flip_rgba_vertical_in_place, generate_mip_chain, texture_name_key,
 };
 use crate::types::*;
+use crate::types::{read_len_string, write_len_string};
 use crate::xpress;
 use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Cursor, Read, Write};
 
-
-pub(crate) fn write_len_string<W: Write>(writer: &mut W, s: &str) -> Result<(), String> {
-    let bytes = s.as_bytes();
-    writer
-        .write_u32::<LittleEndian>(bytes.len() as u32)
-        .map_err(|e| e.to_string())?;
-    writer.write_all(bytes).map_err(|e| e.to_string())?;
-    Ok(())
-}
 fn serialize_single_marker(marker: &HODMarker, is_v2: bool) -> Result<Vec<u8>, String> {
     let mut data = Vec::new();
     write_len_string(&mut data, &marker.name)?;
@@ -55,51 +46,6 @@ fn serialize_single_marker(marker: &HODMarker, is_v2: bool) -> Result<Vec<u8>, S
         .map_err(|e| e.to_string())?;
 
     Ok(data)
-}
-
-// Low-overhead base64 encoder for image base64 streaming previews
-pub(crate) fn base64_encode(data: &[u8]) -> String {
-    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut result = String::new();
-    let mut i = 0;
-    while i < data.len() {
-        let byte1 = data[i];
-        let byte2 = if i + 1 < data.len() {
-            Some(data[i + 1])
-        } else {
-            None
-        };
-        let byte3 = if i + 2 < data.len() {
-            Some(data[i + 2])
-        } else {
-            None
-        };
-
-        let val = ((byte1 as u32) << 16)
-            | ((byte2.unwrap_or(0) as u32) << 8)
-            | (byte3.unwrap_or(0) as u32);
-
-        let char1 = CHARSET[((val >> 18) & 63) as usize] as char;
-        let char2 = CHARSET[((val >> 12) & 63) as usize] as char;
-        let char3 = if byte2.is_some() {
-            CHARSET[((val >> 6) & 63) as usize] as char
-        } else {
-            '='
-        };
-        let char4 = if byte3.is_some() {
-            CHARSET[(val & 63) as usize] as char
-        } else {
-            '='
-        };
-
-        result.push(char1);
-        result.push(char2);
-        result.push(char3);
-        result.push(char4);
-
-        i += 3;
-    }
-    result
 }
 
 pub fn write_vertex<W: Write>(
@@ -1253,7 +1199,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
                 }
 
                 for v in &part.vertices {
-                    let _ = crate::hod::write_vertex(
+                    let _ = write_vertex(
                         &mut decomp_mesh,
                         v,
                         part.vertex_mask,
@@ -2218,7 +2164,7 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
         for cm in &updated_model.collision_meshes {
             for part in &cm.mesh.parts {
                 for v in &part.vertices {
-                    let _ = crate::hod::write_vertex(
+                    let _ = write_vertex(
                         &mut new_mesh_pool,
                         v,
                         part.vertex_mask,
