@@ -1,0 +1,37 @@
+Task 19: Extract parser/src/parse.rs from parser/src/hod.rs
+
+git diff --stat (source files):
+ parser/src/hod.rs | 2901 +++++------------------------------------------------
+ parser/src/lib.rs |    1 +
+ 2 files changed, 233 insertions(+), 2669 deletions(-)
+ parser/src/parse.rs is a new 2400-line extracted source file.
+
+Verification:
+- cargo check --manifest-path parser/Cargo.toml: exit 0
+- cargo check --manifest-path src-tauri/Cargo.toml: exit 0
+- LSP diagnostics for parser/src/parse.rs and parser/src/hod.rs: no diagnostics
+- cargo test --manifest-path parser/Cargo.toml: 27 passed, 0 failed
+- cargo run --bin verify_lossless --manifest-path parser/Cargo.toml: exit 0
+
+verify_lossless marker lines:
+FAILED: Sizes do not match! Diff: 1316
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=2, Joints=1, NavLights=0, Markers=0, EngineBurns=0
+  Reparsed: Meshes=2, Joints=1, NavLights=0, Markers=0, EngineBurns=0
+FAILED: Sizes do not match! Diff: -73438
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=3, Joints=30, NavLights=16, Markers=5, EngineBurns=8
+  Reparsed: Meshes=3, Joints=30, NavLights=16, Markers=5, EngineBurns=8
+FAILED: Sizes do not match! Diff: -759998
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=7, Joints=51, NavLights=4, Markers=11, EngineBurns=4
+  Reparsed: Meshes=7, Joints=51, NavLights=4, Markers=11, EngineBurns=4
+FAILED: Sizes do not match! Diff: -4817608
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=3, Joints=4, NavLights=0, Markers=0, EngineBurns=0
+  Reparsed: Meshes=3, Joints=4, NavLights=0, Markers=0, EngineBurns=0
+
+Visibility changes:
+- find_tga_recursive promoted to pub(crate) for the unchanged parse_texture implementation in hod.rs.
+- parse_texture promoted to pub(crate) so parse.rs can call it without moving it.
+- write_len_string and base64_encode were not moved or changed.
