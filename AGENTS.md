@@ -18,26 +18,9 @@ This handbook will explain:
 
 ## Build & Packaging
 
-This section describes this machine's local development environment; `README.md` contains the generic instructions for any developer.
+See `README.md` for full build and packaging instructions for any developer and platform. Builds need the Tauri prerequisites, including GTK/WebKit on Linux. On this machine a container is used; specifics live in the machine-local environment file.
 
-**All release builds (`tauri build`) must be performed inside the `mesa-dev` distrobox.** Native host builds fail here because the host lacks the GTK/WebKit build dependencies and AppImage FUSE support. The Windows cross-compile also requires `mesa-dev`, which provides `mingw-w64` and `makensis`.
-
-```bash
-# Development mode (the `--` separator matters; a pipe would run `npm` on the host)
-distrobox enter mesa-dev -- npm run tauri dev
-
-# Release build environment
-distrobox enter mesa-dev
-
-# Linux
-# `linuxdeploy` can fail while stripping the AppImage on this distro.
-NO_STRIP=1 npm run tauri build
-
-# Windows NSIS
-# This checkout path contains spaces (`Homeworld 347380`), and binutils `dlltool` fails
-# to link when the target directory has spaces, so use a space-free target directory.
-CARGO_TARGET_DIR=/tmp/cargo_target npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
-```
+Machine-specific paths, container names, and build quirks live in your untracked local-environment file (this machine: `.omo/local-environment.md`). Read it if it exists before assuming any absolute path or build command variant. See `docs/local-environment.md` for the convention and template.
 
 For parser-only verification: `cargo check --lib --manifest-path parser/Cargo.toml` (or `--lib` to skip unrelated `validation_suite.rs`).
 For frontend-only verification: `npm run build`.
@@ -48,16 +31,18 @@ See `README.md` for the generic equivalents, full artifact paths, and details.
 
 **CRITICAL PARSER RULE:** If you change any serialization logic in `parser/src/serialize.rs`, parsing logic in `parser/src/parse.rs`, DXT/texture codec logic in `parser/src/texture_codec.rs`, or logic in `parser/src/compiler.rs`, you **MUST** run `verify_lossless` to prove you did not break the game engine format.
 
+Fixture paths are read from the machine-local environment file (this machine: `.omo/local-environment.md`); `verify_lossless` exits with an actionable message when it is absent.
+
 If the game installation required by `verify_lossless` is absent, run `cargo test --manifest-path parser/Cargo.toml` instead and state in the session record that `verify_lossless` was **not run**. Do not claim a lossless pass when its external inputs are unavailable.
 
 ### Useful Paths for Testing
 
-These are this machine's local paths. Equivalent files live in another developer's game install; `docs/testing-fixtures.md` explains how to locate equivalents.
-- **HOD 1.3 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
-- **HOD 2.0 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/`
-- **DAE files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/`
-- **HOD 2.0 files (Vanilla game):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/`
-- **HOD 2.0 files (pebbles):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/`
+Fixture files are external inputs extracted from your own game/mod installation. See `docs/testing-fixtures.md` for what is needed and `docs/local-environment.md` for where to record paths.
+- HOD 1.3 ship directory
+- HOD 2.0 mod ship directory
+- DAE conversion directory
+- Vanilla HOD 2.0 ship directory
+- Vanilla HOD 2.0 pebble directory
 
 ---
 

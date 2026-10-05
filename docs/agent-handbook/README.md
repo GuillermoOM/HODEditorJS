@@ -60,13 +60,12 @@ cargo run --bin verify_lossless
 If `verify_lossless` fails to cleanly round-trip the mesh, joint, or marker counts on the test files (`pebble_0.hod`, `ter_elysium.hod`, `ter_zephyrus.hod`), your changes are destructive and must be reverted/fixed immediately.
 
 ### Useful Paths for Testing
-- **HOD 1.3 files (FS mod, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
-- **HOD 2.0 files (FS mod, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/`
-- **DAE files (FS mod, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/`
-- **HOD 2.0 files (Vanilla game, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/`
-- **HOD 2.0 files (pebbles, maintainer-local):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/`
-
-These are maintainer-local examples; use equivalent files from your own installation as described in [`docs/testing-fixtures.md`](../testing-fixtures.md).
+Fixture files are external inputs extracted from your own game/mod installation. See [`docs/testing-fixtures.md`](../testing-fixtures.md) for what is needed and [`docs/local-environment.md`](../local-environment.md) for the machine-local environment file convention.
+- HOD 1.3 ship directory
+- HOD 2.0 mod ship directory
+- DAE conversion directory
+- Vanilla HOD 2.0 ship directory
+- Vanilla HOD 2.0 pebble directory
 
 ## 4. UI Scripts and Automated Refactoring
 
@@ -113,17 +112,18 @@ When preparing a new GitHub release, follow these exact steps to ensure versions
    git push origin master --tags
    ```
 
-3. **Build Binaries (Linux Host)**:
-   All official release builds **must** be performed inside the `mesa-dev` distrobox to ensure cross-compilation toolchains and GTK/WebKit dependencies are present.
-   ```bash
-   distrobox enter mesa-dev
+3. **Build Binaries**:
+    Perform release builds in your build environment with the required Tauri prerequisites and cross-compilation toolchains. On this machine, the environment is documented in the untracked local-environment file.
+    ```bash
+    # Build Linux Assets (AppImage, DEB, RPM)
+    npm run tauri build
+    # If linuxdeploy fails while stripping the AppImage on your distro:
+    NO_STRIP=1 npm run tauri build
 
-   # Build Linux Assets (AppImage, DEB, RPM)
-   NO_STRIP=1 npm run tauri build
-
-   # Build Windows Asset (NSIS Installer)
-   CARGO_TARGET_DIR=/tmp/cargo_target npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
-   ```
+    # Build Windows Asset (NSIS Installer)
+    CARGO_TARGET_DIR=<space-free-dir> npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
+    ```
+    If the checkout path contains spaces, use a space-free target directory because Windows GNU binutils `dlltool` can fail otherwise.
 
 4. **Create GitHub Release and Upload Assets**:
    Use the GitHub CLI (`gh`) to create the release, paste the changelog/notes, and attach the newly compiled binaries:
@@ -132,7 +132,7 @@ When preparing a new GitHub release, follow these exact steps to ensure versions
      "src-tauri/target/release/bundle/appimage/HODEditorJS_X.Y.Z_amd64.AppImage" \\
      "src-tauri/target/release/bundle/deb/HODEditorJS_X.Y.Z_amd64.deb" \\
      "src-tauri/target/release/bundle/rpm/HODEditorJS-X.Y.Z-1.x86_64.rpm" \\
-     "/tmp/cargo_target/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_X.Y.Z_x64-setup.exe" \\
+      "<target-dir>/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_X.Y.Z_x64-setup.exe" \\
      --title "Version X.Y.Z" \\
      --notes "- First bullet point of changelog\\n- Second bullet point"
    ```

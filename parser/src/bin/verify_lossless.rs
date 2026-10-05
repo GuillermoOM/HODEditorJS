@@ -1,14 +1,11 @@
 use hwr_hod_parser::dae::parse_dae;
 use hwr_hod_parser::hod::{generate_v2_from_model, save_edits, HODModel};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 fn main() {
-    let pebble_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/pebble_0/pebble_0.hod";
-    let elysium_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/ter_elysium.hod";
-    let fenris_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_fenris/ter_fenris.hod";
-    let asteroid_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/resource/asteroid/asteroid_3/asteroid_3.hod";
-    let dae_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/effect/galaxymap/hodsunpacked/mapgalaxy/galaxymapgalaxy.dae";
-    let carrier_path = "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/hgn_mothership/hgn_mothership.hod";
+    let [pebble_path, elysium_path, fenris_path, asteroid_path, dae_path, carrier_path] =
+        resolve_fixture_paths();
 
     println!("--- Testing hgn_mothership (HOD) ---");
     let bytes = fs::read(carrier_path).unwrap();
@@ -16,16 +13,16 @@ fn main() {
     println!("Parsed mothership! Dockpaths: {}", model.dockpaths.len());
 
     println!("--- Testing Pebble (HOD 2.0) ---");
-    test_file(pebble_path, true);
+    test_file(&pebble_path, true);
 
     println!("\n--- Testing Ter Elysium (HOD 2.0) ---");
-    test_file(elysium_path, true);
+    test_file(&elysium_path, true);
 
     println!("\n--- Testing Ter Fenris (HOD 2.0, With Animation) ---");
-    test_file(fenris_path, true);
+    test_file(&fenris_path, true);
 
     println!("\n--- Testing Asteroid 3 (HOD 1.0) ---");
-    test_file(asteroid_path, false);
+    test_file(&asteroid_path, false);
 
     println!("\n--- Testing DAE Fallback ---");
     let dae_bytes = fs::read(dae_path).unwrap();
@@ -105,4 +102,73 @@ fn test_file(path: &str, is_v2: bool) {
             println!("FAILED: Could not re-parse generated file! {}", e);
         }
     }
+}
+
+fn resolve_fixture_paths() -> [String; 6] {
+    let keys = [
+        "pebble_0.hod",
+        "ter_elysium.hod",
+        "ter_fenris.hod",
+        "asteroid_3.hod",
+        "galaxymapgalaxy.dae",
+        "hgn_mothership.hod",
+    ];
+    let candidates = match std::env::var_os("HODE_LOCAL_ENV") {
+        Some(path) => vec![PathBuf::from(path)],
+        None => vec![
+            PathBuf::from(".omo/local-environment.md"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.omo/local-environment.md"),
+        ],
+    };
+
+    let contents = candidates.iter().find_map(|path| fs::read_to_string(path).ok());
+    let paths = contents.as_deref().map(|contents| {
+        keys.map(|key| {
+            contents.lines().find_map(|line| {
+                let suffix = line.split_once(key)?.1;
+                let suffix = suffix.strip_prefix('`').unwrap_or(suffix);
+                let value = suffix.strip_prefix(':')?.trim().trim_matches('`').trim();
+                (!value.is_empty()).then(|| value.to_owned())
+            })
+        })
+    });
+
+    let missing_keys: Vec<_> = keys
+        .iter()
+        .enumerate()
+        .filter_map(|(index, key)| {
+            paths
+                .as_ref()
+                .and_then(|paths| paths[index].as_ref())
+                .is_none()
+                .then_some(*key)
+        })
+        .collect();
+    if !missing_keys.is_empty() {
+        eprintln!("missing local-environment entries: {}", missing_keys.join(", "));
+        eprintln!(
+            "See docs/local-environment.md for the template (copy to .omo/local-environment.md and fill in your paths)."
+        );
+        std::process::exit(1);
+    }
+
+    let resolved: [String; 6] = match paths {
+        Some(paths) => paths.map(|path| match path {
+            Some(path) => path,
+            None => std::process::exit(1),
+        }),
+        None => std::process::exit(1),
+    };
+    let missing_files: Vec<_> = resolved
+        .iter()
+        .filter(|path| !Path::new(path).exists())
+        .collect();
+    if !missing_files.is_empty() {
+        for path in missing_files {
+            eprintln!("fixture not found: {path}");
+        }
+        std::process::exit(1);
+    }
+
+    resolved
 }

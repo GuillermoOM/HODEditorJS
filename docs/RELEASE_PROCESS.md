@@ -1,7 +1,6 @@
 # Release Process
 
-This document describes the exact process for building and publishing a new release of HODEditorJS. 
-Because the application uses Tauri, native system dependencies (GTK, WebKit) and specific cross-compilation toolchains (MinGW) are required. All builds must be performed inside the isolated `mesa-dev` distrobox container.
+This document describes the process for building and publishing a new release of HODEditorJS. Because the application uses Tauri, native system dependencies (GTK, WebKit) and, for Windows cross-compilation, MinGW are required. Perform release builds in your build environment; machine-specific details belong in the local-environment file.
 
 ## Prerequisites
 
@@ -9,21 +8,18 @@ Because the application uses Tauri, native system dependencies (GTK, WebKit) and
 2. Update the version number in:
    * `package.json`
    * `src-tauri/tauri.conf.json`
-3. Ensure the distrobox container is available:
-   ```bash
-   distrobox enter mesa-dev
-   ```
+3. Ensure your platform's Tauri prerequisites and any required build environment or container are available.
 
 ## 1. Building the Linux Release Bundles
 
-Run the following command *inside* the `mesa-dev` distrobox:
+Run the following command in your build environment:
 
 ```bash
 cd /path/to/HODEditorJS
-NO_STRIP=1 npm run tauri build
+npm run tauri build
 ```
 
-*Note: `NO_STRIP=1` is required to prevent `linuxdeploy` from crashing on modern `.relr.dyn` relocations when bundling the AppImage.*
+If `linuxdeploy` fails while stripping the AppImage on your distro, retry with `NO_STRIP=1 npm run tauri build`.
 
 This will generate the following artifacts:
 * `src-tauri/target/release/bundle/deb/HODEditorJS_<VERSION>_amd64.deb`
@@ -32,17 +28,17 @@ This will generate the following artifacts:
 
 ## 2. Building the Windows Installer
 
-Run the following command *inside* the `mesa-dev` distrobox:
+Run the following command in your build environment:
 
 ```bash
 cd /path/to/HODEditorJS
-CARGO_TARGET_DIR=/tmp/cargo_target npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
+CARGO_TARGET_DIR=<space-free-dir> npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
 ```
 
-*Note: `CARGO_TARGET_DIR=/tmp/cargo_target` is required because the Windows GNU `dlltool` fails when running in a path that contains spaces (like the default Steam Library path).*
+`CARGO_TARGET_DIR=<space-free-dir>` is optional, but recommended when the checkout path contains spaces. Windows GNU binutils `dlltool` can fail when the target directory contains spaces, for example in a Steam Library path.
 
 This will generate the following artifact:
-* `/tmp/cargo_target/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_<VERSION>_x64-setup.exe`
+* `<target-dir>/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_<VERSION>_x64-setup.exe` (or the equivalent path under `src-tauri/target/` when using the default target directory)
 
 ## 3. Publishing to GitHub
 
@@ -58,7 +54,7 @@ This will generate the following artifact:
        "src-tauri/target/release/bundle/deb/HODEditorJS_<VERSION>_amd64.deb" \
        "src-tauri/target/release/bundle/rpm/HODEditorJS-<VERSION>-1.x86_64.rpm" \
        "src-tauri/target/release/bundle/appimage/HODEditorJS_<VERSION>_amd64.AppImage" \
-       "/tmp/cargo_target/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_<VERSION>_x64-setup.exe" \
+       "<target-dir>/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_<VERSION>_x64-setup.exe" \
        --title "v<VERSION>" \
        --notes "Release notes go here."
    ```

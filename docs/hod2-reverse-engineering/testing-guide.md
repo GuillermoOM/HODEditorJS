@@ -9,9 +9,9 @@ Run the commands from the repository root with Rust and Cargo installed.
 - The validation suite needs the external `testing/pebble_0/`,
   `testing/pebble_1/`, and `testing/pebble_2/` fixture directories. See
   `docs/testing-fixtures.md` for how to obtain the corpus.
-- `verify_lossless` needs the maintainer's game installation at the absolute
-  paths listed below. Those paths are machine-specific and are not included
-  in this repository.
+- `verify_lossless` needs the external fixture files described below. Record
+  machine-specific paths in an untracked local-environment file as described in
+  `docs/local-environment.md`.
 
 ## `verify_lossless`
 
@@ -25,16 +25,17 @@ Invocation:
 cargo run --bin verify_lossless --manifest-path parser/Cargo.toml
 ```
 
-Inputs: the game installation must provide all six paths hard-coded in
-`parser/src/bin/verify_lossless.rs:6-11`:
+Inputs: the game installation must provide all six fixture files listed below,
+resolved from the `key: path` entries in your local-environment file (see
+`docs/local-environment.md`):
 
 ```text
-/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/pebble_0/pebble_0.hod
-/run/media/system/Data/SteamLibrary/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/ter_elysium.hod
-/run/media/system/Data/SteamLibrary/common/Homeworld/HWRM_FSFC/source/ship/ter_fenris/ter_fenris.hod
-/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/resource/asteroid/asteroid_3/asteroid_3.hod
-/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/effect/galaxymap/hodsunpacked/mapgalaxy/galaxymapgalaxy.dae
-/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/hgn_mothership/hgn_mothership.hod
+- `pebble_0.hod` — HOD 2.0 pebble fixture
+- `ter_elysium.hod` — HOD 2.0 multi-mesh ship fixture
+- `ter_fenris.hod` — HOD 2.0 animated ship fixture
+- `asteroid_3.hod` — HOD 1.0 compatibility fixture
+- `galaxymapgalaxy.dae` — DAE fallback fixture
+- `hgn_mothership.hod` — HOD 2.0 ship fixture
 ```
 
 ## `validation_suite`

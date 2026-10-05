@@ -486,12 +486,19 @@ mod tests {
 
     #[test]
     fn test_xpress_hodor_mesh_pool() {
-        let hodor_comp = std::fs::read(
-            "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/ter_centaur/rtl_test/hodor_comp_mesh.bin",
-        ).unwrap();
-        let expected_decomp = std::fs::read(
-            "/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/ter_centaur/rtl_test/decomp_mesh.bin",
-        ).unwrap();
+        let fixture_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../testing/ter_centaur/rtl_test");
+        let hodor_comp_path = fixture_dir.join("hodor_comp_mesh.bin");
+        let expected_decomp_path = fixture_dir.join("decomp_mesh.bin");
+        if !hodor_comp_path.exists() || !expected_decomp_path.exists() {
+            eprintln!(
+                "skipping test_xpress_hodor_mesh_pool: fixtures not present under testing/ter_centaur/rtl_test"
+            );
+            return;
+        }
+
+        let hodor_comp = std::fs::read(hodor_comp_path).unwrap();
+        let expected_decomp = std::fs::read(expected_decomp_path).unwrap();
 
         let our_decomp = decompress(&hodor_comp, expected_decomp.len()).unwrap();
         assert_eq!(
