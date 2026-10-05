@@ -1,0 +1,48 @@
+Task 24 final consistency evidence
+Date: 2026-10-04
+
+Active citation check (historical dated PROGRESS entries intentionally preserved):
+grep -rn "hod.rs:[0-9]" docs/ --include='*.md' | grep -v 'docs/hod2-reverse-engineering/archive_logs/'
+Reported only pre-existing dated historical citations in docs/hod2-reverse-engineering/PROGRESS.md; no new citation was added.
+
+QA failure path:
+Scratch copy of docs/hod2-reverse-engineering/QUICKSTART.md received `hod.rs:1234`.
+grep -n "hod.rs:[0-9]" /tmp/opencode/quickstart-fail.md
+256:QA scratch citation: hod.rs:1234
+Scratch file was removed after the check.
+
+Fresh-clone smoke:
+git clone . /tmp/opencode/hod-clone2
+ls -A /tmp/opencode/hod-clone2
+AGENTS.md
+docs
+.git
+.gitignore
+index.html
+LICENSE
+.omo
+package.json
+package-lock.json
+parser
+public
+README.md
+release_notes.md
+screenshots
+src
+src-tauri
+tsconfig.json
+tsconfig.node.json
+vite.config.ts
+
+The clone contains exactly the IS-1 allowlist. `.omo/` is an allowlisted tracked project-state directory; no unallowlisted entry remains. `git status --porcelain` in the clone: empty.
+
+Clone parser verification:
+cargo check --manifest-path parser/Cargo.toml: exit 0
+Existing Cargo cache permission warning and compiler warnings were emitted; compilation finished successfully.
+
+Clone frontend verification:
+npm install && npm run build: exit 0
+Build completed successfully with existing Vite chunk-size/dynamic-import warnings. npm install reported 7 audit vulnerabilities (2 low, 1 moderate, 4 high); this is dependency audit output, not a build failure.
+
+Documentation coverage:
+`find docs -name '*.md'` was compared against the Markdown links in `docs/README.md`; every non-archive document is linked. No new permanent format quirk surfaced, so the knowledge base required no addition.
