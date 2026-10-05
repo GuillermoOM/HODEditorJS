@@ -16,7 +16,8 @@ This is a **Tauri** desktop application with three major structural boundaries:
    - Responsible for native OS bridging (file dialogs) and defining IPC commands like `load_hod`, `save_hod`, `export_textures_tga`.
    - Core file: `src/lib.rs`.
 3. **`parser/` (Core Engine)**: Pure Rust library (`hwr_hod_parser`).
-   - Responsible for the heavy lifting: binary parsing, struct mapping, Microsoft Xpress compression (`xpress.rs`), and binary serialization of HOD files (`hod.rs`, `iff.rs`, `compiler.rs`).
+   - Responsible for the heavy lifting across 16 parser modules: `collision.rs`, `compiler.rs`, `dae.rs`, `engine_nozzles.rs`, `hod.rs`, `iff.rs`, `kdop.rs`, `math.rs`, `model_methods.rs`, `parse.rs`, `serialize.rs`, `shader_map.rs`, `texture_codec.rs`, `types.rs`, `animation.rs`, and `xpress.rs`.
+   - `hod.rs` is a 13-line compatibility re-export hub; the eight extracted modules are `types`, `math`, `texture_codec`, `animation`, `model_methods`, `engine_nozzles`, `parse`, and `serialize`. Binary parsing and serialization are therefore distributed across the module layout rather than kept in one file.
    - Includes multiple utility bins (`src/bin/*`) for diagnostic dumping and validation testing.
 
 ## 2. HOD Save Architecture (CRITICAL HARD RULE)
