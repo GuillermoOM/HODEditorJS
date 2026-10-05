@@ -23,3 +23,9 @@ Created document headings:
   ## Required Inputs
   ## Obtaining Fixtures
   ## Expected Layout
+
+## QA failure path
+Fixture content must be both ignored and absent from the Git index, not merely untracked.
+Command: git check-ignore -v testing/pebble_0; git ls-files testing/; git status --porcelain --untracked-files=all | grep '^?? testing/'
+Result: `.gitignore:40:testing/\ttesting/pebble_0`; `git ls-files testing/` empty; status grep empty (exit 1).
+Conclusion: PASS — the fixture corpus is ignored, unindexed, and absent from status.

@@ -1,0 +1,117 @@
+Task 10 evidence: rewrite testing guide
+Timestamp of post-edit inventory capture: 2026-10-04T13:54:49-07:00
+
+BEFORE: ls parser/src/bin/
+dump_pool.rs
+validation_suite.rs
+verify_lossless.rs
+
+BEFORE: current tool table, quoted verbatim from testing-guide.md
+## Test Commands
+
+### Regenerate from-assets HODs
+
+Builds from OBJ + TGA + JSON, copies KDOP/COLD/INFO from vanilla:
+
+```bash
+cd parser && cargo run --bin replicate_testing
+```
+
+### Compare vanilla, roundtrip, and from_assets
+
+Shows chunk structure, POOL sizes, Xpress indicator/literal/match counts, KDOP hashes:
+
+```bash
+cd parser && cargo run --bin testing_diff
+```
+
+### Mandatory verification suite
+
+Runs roundtrip, DAE fallback, and structural preservation checks:
+
+```bash
+cd parser && cargo run --bin verify_lossless
+```
+
+### HODOR Source-Asset Replication Suite
+
+The true test of the compiler is whether it natively generates byte-accurate outputs identical to HODOR when parsing raw `.dae` files.
+
+```bash
+# Validates DAE complex materials, Xpress compression, and tangent calculation vs HODOR.exe
+cd parser && cargo run --bin test_hodor_replication
+
+# Validates empty-original save paths
+cd parser && cargo run --bin test_fenris
+```
+
+### Other diagnostic binaries
+
+```bash
+# Dump recursive chunk tree for any HOD file
+cd parser && cargo run --bin dump_mult -- <path_to_hod>
+
+# Compare two HOD files byte-by-byte at chunk level
+cd parser && cargo run --bin compare_hods -- <file1> <file2>
+
+# Dump KDOP chunk contents
+cd parser && cargo run --bin dump_kdop -- <path_to_hod>
+
+# Dump POOL stream sizes
+cd parser && cargo run --bin dump_pool -- <path_to_hod>
+
+# Decompressed face pool comparison
+cd parser && cargo run --bin face_pool_compare -- <vanilla_hod> <generated_hod>
+```
+
+AFTER: ls parser/src/bin/
+dump_pool.rs
+validation_suite.rs
+verify_lossless.rs
+
+AFTER: grep -oE "cargo run --bin [a-z_]+" docs/hod2-reverse-engineering/testing-guide.md | sort -u
+cargo run --bin dump_pool
+cargo run --bin validation_suite
+cargo run --bin verify_lossless
+
+The two inventory lists match exactly. `git diff --check -- docs/hod2-reverse-engineering/testing-guide.md` passed.
+
+Worktree status before edit:
+ M AGENTS.md
+ M docs/README.md
+R  testing/manual_tests.md -> docs/manual-test-log.md
+ M package.json
+ M src-tauri/Cargo.lock
+ M src-tauri/Cargo.toml
+ M src-tauri/tauri.conf.json
+
+## QA failure path
+The testing-guide inventory check must reject a tool name whose source bin does not exist.
+Command: test -e parser/src/bin/does_not_exist.rs
+Result: exit 1 (path absent); the real guide inventory listed only `dump_pool`, `validation_suite`, and `verify_lossless`, each present.
+Conclusion: PASS — a fabricated bin is detected as missing and the active inventory contains only existing tools.
+
+Worktree status after edit, before commit:
+ M AGENTS.md
+ M docs/README.md
+ M docs/hod2-reverse-engineering/testing-guide.md
+R  testing/manual_tests.md -> docs/manual-test-log.md
+ M package.json
+ M src-tauri/Cargo.lock
+ M src-tauri/Cargo.toml
+ M src-tauri/tauri.conf.json
+
+LSP: no Markdown language server is configured, so lsp_diagnostics could not run for this document.
+
+Commit: `65fa9e5ff32a1a06866c50a6954696f9705b03ad docs: rewrite testing guide to the tools that exist`.
+The commit contains only `docs/hod2-reverse-engineering/testing-guide.md`.
+
+Final cleanup:
+pgrep -af "cargo|vite" || true
+526291 /bin/bash -c pgrep -af "cargo|vite" || true
+
+Final status after the concurrent manual-test-log commit:
+ M package.json
+ M src-tauri/Cargo.lock
+ M src-tauri/Cargo.toml
+ M src-tauri/tauri.conf.json

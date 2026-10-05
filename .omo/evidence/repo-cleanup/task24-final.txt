@@ -57,4 +57,10 @@ The eight open items from the deleted TODO.md were migrated to the PROGRESS.md P
 - Saving as HW2 Classic HOD (Actual HOD 1.0)
 - Saving as HOD 1.3 (correct name, not HOD 1.0)
 - Colorscheme manager, like a dropdown list that changes the collection of color samples to house the colorscheme per game (HW1, HW2, HWCata, HWMobile, Personal set, etc);
+
+## QA failure path
+The active citation scan must detect a deliberately reintroduced `hod.rs:NNNN` reference.
+Command: grep -n "hod.rs:[0-9]" /tmp/opencode/quickstart-fail.md
+Result: `256:QA scratch citation: hod.rs:1234` (exit 0); scratch file was removed.
+Conclusion: PASS — the citation check detects the forbidden line-number reference.
 The required full-file `grep -c "^- \[ \]\|^-" docs/hod2-reverse-engineering/PROGRESS.md` reports 195 dash-prefixed lines. Section-scoped `sed -n '/^## Planned Tasks$/,/^## 2026-06-03/p' ... | grep -c '^-'` reports 11, comprising the original 3 Planned Tasks plus the migrated 8 roadmap bullets.

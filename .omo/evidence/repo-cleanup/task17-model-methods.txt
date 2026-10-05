@@ -1,0 +1,33 @@
+Task T17 verification evidence
+
+cargo check --manifest-path parser/Cargo.toml: exit 0
+cargo test --manifest-path parser/Cargo.toml: 23 passed, 0 failed
+cargo check --manifest-path src-tauri/Cargo.toml: exit 0
+
+cargo run --bin verify_lossless --manifest-path parser/Cargo.toml: exit 0
+FAILED: Sizes do not match! Diff: 1316
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=2, Joints=1, NavLights=0, Markers=0, EngineBurns=0
+  Reparsed: Meshes=2, Joints=1, NavLights=0, Markers=0, EngineBurns=0
+FAILED: Sizes do not match! Diff: -73438
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=3, Joints=30, NavLights=16, Markers=5, EngineBurns=8
+  Reparsed: Meshes=3, Joints=30, NavLights=16, Markers=5, EngineBurns=8
+FAILED: Sizes do not match! Diff: -759998
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=7, Joints=51, NavLights=4, Markers=11, EngineBurns=4
+  Reparsed: Meshes=7, Joints=51, NavLights=4, Markers=11, EngineBurns=4
+FAILED: Sizes do not match! Diff: -4817608
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=3, Joints=4, NavLights=0, Markers=0, EngineBurns=0
+  Reparsed: Meshes=3, Joints=4, NavLights=0, Markers=0, EngineBurns=0
+
+wc -l parser/src/hod.rs parser/src/model_methods.rs:
+5877 parser/src/hod.rs
+ 706 parser/src/model_methods.rs
+
+## QA failure path
+Model-method extraction must detect broken duplicate-name repair behavior.
+Command: cargo test --manifest-path parser/Cargo.toml model_methods_ -- --nocapture
+Result: running 2 tests; `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out`.
+Conclusion: PASS — `model_methods_deduplicate_names_makes_unique` is the failure detector; a reversed rename condition would fail its uniqueness assertion.

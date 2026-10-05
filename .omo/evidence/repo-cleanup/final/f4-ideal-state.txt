@@ -1,0 +1,175 @@
+F4 Ideal-State Fidelity Review
+Date: 2026-10-04
+Plan: .omo/plans/repo-cleanup-and-hod-split.md
+
+IS-1
+Check command:
+  git clone . /tmp/opencode/hod-f4 && ls -A /tmp/opencode/hod-f4
+Real output:
+  Cloning into '/tmp/opencode/hod-f4'...
+  done.
+  AGENTS.md
+  docs
+  .git
+  .gitignore
+  index.html
+  LICENSE
+  .omo
+  package.json
+  package-lock.json
+  parser
+  public
+  README.md
+  release_notes.md
+  screenshots
+  src
+  src-tauri
+  tsconfig.json
+  tsconfig.node.json
+  vite.config.ts
+Assessment:
+  The allowlisted project identity and directories are present. `testing/` is absent,
+  as required for the documented external input. `.git` is normal clone metadata.
+  `.omo/` is the known, hidden, plan-mandated audit trail; its tracked contents are
+  six evidence files, two notepads, and one ledger. It is project audit metadata,
+  not desktop/workspace debris, so it does not violate the IS-1 intent.
+PASS
+
+IS-2
+Check commands:
+  git ls-files | grep -E 'patch_|inject|delete_dxt|inspect_|\.py$'
+  find . -name '*.py' -not -path './node_modules/*' -not -path './.git/*'
+Real output:
+  (both commands produced no output; both exited successfully because the grep
+  result was explicitly tolerated with `|| true`.)
+PASS
+
+IS-3
+Check commands:
+  git ls-files '*.rs'
+  cargo check --manifest-path parser/Cargo.toml --bins
+Real output (tracked Rust inventory):
+  parser/src/animation.rs
+  parser/src/bin/dump_pool.rs
+  parser/src/bin/validation_suite.rs
+  parser/src/bin/verify_lossless.rs
+  parser/src/collision.rs
+  parser/src/compiler.rs
+  parser/src/dae.rs
+  parser/src/engine_nozzles.rs
+  parser/src/hod.rs
+  parser/src/iff.rs
+  parser/src/kdop.rs
+  parser/src/lib.rs
+  parser/src/math.rs
+  parser/src/model_methods.rs
+  parser/src/parse.rs
+  parser/src/serialize.rs
+  parser/src/shader_map.rs
+  parser/src/texture_codec.rs
+  parser/src/types.rs
+  parser/src/xpress.rs
+  src-tauri/build.rs
+  src-tauri/src/lib.rs
+  src-tauri/src/main.rs
+Real output (cargo check):
+  warning: failed to auto-clean cache data (permission denied in global cache)
+  ... Rust warnings for unused imports/variables and deprecated PNG encoder ...
+  warning: `hwr_hod_parser` (lib) generated 40 warnings
+  warning: `hwr_hod_parser` (bin "validation_suite") generated 1 warning
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.29s
+PASS
+
+IS-4
+Check command:
+  wc -l parser/src/*.rs | sort -n
+Real output:
+      13 parser/src/hod.rs
+      16 parser/src/lib.rs
+     250 parser/src/iff.rs
+     279 parser/src/types.rs
+     292 parser/src/engine_nozzles.rs
+     307 parser/src/shader_map.rs
+     311 parser/src/math.rs
+     418 parser/src/kdop.rs
+     453 parser/src/texture_codec.rs
+     502 parser/src/xpress.rs
+     706 parser/src/model_methods.rs
+     752 parser/src/compiler.rs
+     800 parser/src/collision.rs
+     825 parser/src/animation.rs
+     988 parser/src/dae.rs
+    2739 parser/src/parse.rs
+    2991 parser/src/serialize.rs
+   12642 total
+Spot-read evidence: `types.rs` defines model data types; `math.rs` transforms/curves;
+`texture_codec.rs` texture compression; `animation.rs` MAD/keyframes;
+`model_methods.rs` model operations; `engine_nozzles.rs` nozzle synthesis;
+`parse.rs` binary parsing; `serialize.rs` binary writing. Supporting modules are
+named for IFF, KDOP, shader maps, collision, compiler, DAE, and XPress concerns.
+Maximum is 2991, below 3000.
+PASS
+
+IS-5
+Check commands:
+  git status --porcelain
+  git check-ignore -v testing/pebble_0 .omo/foo .obsidian/foo dist/ node_modules/
+Real output:
+  git status --porcelain: (no output)
+  .gitignore:40:testing/  testing/pebble_0
+  .gitignore:36:.omo/      .omo/foo
+  .gitignore:37:.obsidian/ .obsidian/foo
+  .gitignore:11:dist     dist/
+  .gitignore:10:node_modules node_modules/
+The clone `.gitignore` comments identify Rust/build artifacts, AI/local tool state,
+and external game/mod fixture inputs; these paths match the actual tree and probes.
+PASS
+
+IS-6
+Check command:
+  cd docs && for f in $(find . -name '*.md' | grep -v archive_logs | sed 's|^\./||'); do base=$(basename "$f"); rel=${f#./}; grep -q "$rel" README.md || grep -q "$base" README.md || echo "UNLINKED: $f"; done
+Real output:
+  (no output)
+Check command:
+  find docs/hod2-reverse-engineering/archive_logs -maxdepth 1 -type f -printf '%f\\n' | sort
+Real output (required stale plans present):
+  collision-fixes-plan.md
+  collision-pipeline-investigation-plan.md
+  daenerys-analysis.md
+  gap-fix-implementation-plan.md
+  kdop-scar-pipeline-gap-plan.md
+  stat-crash-fix.md
+The archive also contains other historical records, which is consistent with its
+documented purpose.
+PASS
+
+IS-7
+Check commands and real output:
+  ls parser/src/bin/
+  dump_pool.rs
+  validation_suite.rs
+  verify_lossless.rs
+
+  grep -oE '\\b(dump_pool|validation_suite|verify_lossless)\\b' docs/hod2-reverse-engineering/testing-guide.md | sort -u
+  dump_pool
+  validation_suite
+  verify_lossless
+
+  grep -Ein 'https?://|torrent|mirror' docs/testing-fixtures.md || true
+  (no output)
+
+  grep -Ein 'do not redistribute|CC BY-NC|HWRM_FSFC' docs/testing-fixtures.md
+  34:Do not redistribute these assets. They are extracted Homeworld Remastered game
+  36:fixtures is **HWRM_FSFC**. The repository's [`LICENSE`](../LICENSE) is CC
+
+  grep -Ein 'fallback|cargo test|verify_lossless was not run|absent|missing' AGENTS.md
+  42:If the game installation required by `verify_lossless` is absent, run `cargo test --manifest-path parser/Cargo.toml` instead and state in the session record that `verify_lossless` was **not run**. Do not claim a lossless pass when its external inputs are unavailable.
+
+  test -e docs/testing-fixtures.md; printf 'docs/testing-fixtures.md exit=%s\\n' "$?"
+  docs/testing-fixtures.md exit=0
+The fixture guide explicitly requires extraction from the reader's own installation
+or own mod copies and prohibits third-party asset sources/redistribution. The
+PROGRESS migration check also found `TODO.md` absent and `## Planned Tasks` present.
+PASS
+
+VERDICT: APPROVE

@@ -1,0 +1,30 @@
+Task 14: extract math helpers from parser/src/hod.rs
+
+Pre/post structure:
+- grep confirmed the seven declarations at hod.rs lines 3640, 3707, 7013, 7029, 7057, 7081, 7124 before extraction.
+- parser/src/hod.rs declarations removed; parser/src/math.rs contains the moved helpers.
+- wc -l parser/src/hod.rs parser/src/math.rs: 7674 and 311 (hod.rs was 7940 after Task 13).
+- parser/src/lib.rs now declares pub mod math; hod.rs re-exports crate::math::*.
+- byte-identical proof: compose_transform_matrix, decompose_matrix, and euler_to_quaternion bodies matched the pre-edit HEAD source exactly; moved bodies retain original logic/comments.
+
+Checks:
+- lsp_diagnostics parser/src/math.rs: no diagnostics.
+- cargo check --manifest-path parser/Cargo.toml: exit 0.
+- cargo check --manifest-path src-tauri/Cargo.toml: exit 0.
+- cargo test --manifest-path parser/Cargo.toml math_: exit 0; 2 passed, 0 failed.
+- cargo test --manifest-path parser/Cargo.toml: exit 0; 17 passed, 0 failed.
+- cargo run --bin verify_lossless --manifest-path parser/Cargo.toml: exit 0. Marker comparison: 4 SUCCESS: Re-parsed generated file! lines; FAILED size diffs 1316, -73438, -759998, -4817608; all Original/Reparsed Meshes markers match baseline.
+- git diff --check: exit 0.
+
+Warnings/issues:
+- Cargo emitted the pre-existing global cache cleanup warning for window-vibrancy/.cargo_vcs_info.json permission denied.
+- Cargo emitted existing parser warnings plus unchanged moved-math assignment warnings; no new errors.
+- The first lossless invocation exceeded the 120-second tool timeout while processing the largest fixture; the rerun with a 600-second timeout completed successfully.
+
+Cleanup: no persistent cargo/vite process remained; protected version-bump files were not edited or staged.
+
+## QA failure path
+The math extraction tests must detect disagreement between transform composition and decomposition.
+Command: cargo test --manifest-path parser/Cargo.toml math_ -- --nocapture
+Result: running 2 tests; `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out`.
+Conclusion: PASS — `math_compose_decompose_roundtrip` is the failure detector; a sign/constant drift in `decompose_matrix` would violate its 1e-4 round-trip assertion.

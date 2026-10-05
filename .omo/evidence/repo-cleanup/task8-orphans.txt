@@ -1,0 +1,137 @@
+Task 8 orphan-module evidence
+
+Working tree before deletion:
+ M docs/agent-handbook/README.md
+ M package.json
+ M parser/Cargo.toml
+D  parser/src/bin/compare_burns.rs
+D  parser/src/bin/dump_matt.rs
+D  parser/src/bin/dump_model.rs
+D  parser/src/bin/dump_raw.rs
+D  parser/src/bin/dump_texpool.rs
+D  parser/src/bin/inspect_hod.rs
+D  parser/src/bin/roundtrip_test.rs
+D  parser/src/bin/verify_dae.rs
+D  parser/src/bin/verify_dae_fenris.rs
+D  parser/src/bin/verify_dae_joints.rs
+ D parser/src/inject_backend_fixes.py
+ M src-tauri/Cargo.lock
+ M src-tauri/Cargo.toml
+  M src-tauri/tauri.conf.json
+
+## QA failure path
+Deleted orphan modules must not be declared or imported by the parser module root.
+Command: ls parser/src/obj.rs parser/src/texture_packer.rs parser/src/dds_encode.rs 2>&1; grep -c "obj\|texture_packer\|dds_encode" parser/src/lib.rs
+Result: all three `ls` paths reported `No such file or directory` (ls exit 2); module-root grep output `0` (grep exit 1).
+Conclusion: PASS — the deleted modules are absent and `lib.rs` does not declare them.
+ D src/components/inject.py
+ D src/components/inject_fixes.py
+D  tools/find_xpress_decompress.py
+D  tools/ghidra_decompress.py
+D  tools/rtl_compress_test.c
+D  tools/rtl_compress_test.exe
+
+Pre-delete orphan proof command:
+grep -rn "crate::obj\|texture_packer::\|dds_encode::\|mod obj\|mod texture_packer\|mod dds_encode" parser/src/ parser/Cargo.toml
+stdout: [empty]
+exit: 1 (zero matches)
+
+parser/src/lib.rs module declaration proof:
+1:pub mod collision;
+2:pub mod compiler;
+3:pub mod dae;
+4:pub mod hod;
+5:pub mod iff;
+6:pub mod kdop;
+7:pub mod shader_map;
+8:pub mod xpress;
+
+Deletion:
+git rm parser/src/obj.rs parser/src/texture_packer.rs parser/src/dds_encode.rs
+rm 'parser/src/dds_encode.rs'
+rm 'parser/src/obj.rs'
+rm 'parser/src/texture_packer.rs'
+
+Post-delete existence checks:
+parser/src/obj.rs: exit 1
+parser/src/texture_packer.rs: exit 1
+parser/src/dds_encode.rs: exit 1
+
+Parser gates:
+cargo check --manifest-path parser/Cargo.toml: exit 0; finished dev profile, 37 library warnings and existing cargo cache permission warning.
+cargo test --manifest-path parser/Cargo.toml: exit 0
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s
+
+Documentation scope:
+git diff --stat -- docs/hod2-reverse-engineering/gap-fix-implementation-plan.md
+ docs/hod2-reverse-engineering/gap-fix-implementation-plan.md | 5 +++++
+ 1 file changed, 5 insertions(+)
+The body is byte-identical; only the prepended four-line banner plus separator blank line was added.
+git diff --stat -- docs/hod2-reverse-engineering/PROGRESS.md
+stdout: [empty]
+
+Working tree after verification:
+ M docs/hod2-reverse-engineering/gap-fix-implementation-plan.md
+ M package.json
+ M parser/Cargo.toml
+D  parser/src/bin/compare_burns.rs
+D  parser/src/bin/dump_matt.rs
+D  parser/src/bin/dump_model.rs
+D  parser/src/bin/dump_raw.rs
+D  parser/src/bin/dump_texpool.rs
+D  parser/src/bin/inspect_hod.rs
+D  parser/src/bin/roundtrip_test.rs
+D  parser/src/bin/verify_dae.rs
+D  parser/src/bin/verify_dae_fenris.rs
+D  parser/src/bin/verify_dae_joints.rs
+ D parser/src/inject_backend_fixes.py
+ M src-tauri/Cargo.lock
+ M src-tauri/Cargo.toml
+ M src-tauri/tauri.conf.json
+ D src/components/inject.py
+ D src/components/inject_fixes.py
+D  tools/find_xpress_decompress.py
+D  tools/ghidra_decompress.py
+D  tools/rtl_compress_test.c
+D  tools/rtl_compress_test.exe
+ D parser/src/dds_encode.rs
+ D parser/src/obj.rs
+ D parser/src/texture_packer.rs
+
+Adversarial notes:
+misleading_success_output: orphan proof is the zero-match grep above, not git rm success.
+dirty_worktree: pre-existing version-bump files remain modified and are not part of this task.
+stale_state: stale plan body retained; only banner prepended; PROGRESS historical references remain unchanged.
+prompt_injection: not applicable; no external instruction-bearing input processed.
+cancel/resume: not applicable; no cancellation or resume occurred.
+hung_commands: not applicable; cargo commands completed within timeout.
+malformed_input: not applicable; no malformed input processed.
+flaky_tests: not applicable; deterministic parser tests passed.
+repeated_interruption: not applicable; no interruption occurred.
+
+Commit:
+ab43960 chore: delete never-compiled parser modules; mark old module plan superseded
+Targeted staged diff: 4 files changed, 5 insertions(+), 548 deletions(-).
+
+Final cleanup receipt:
+pgrep -af "cargo|vite" || true
+519536 /bin/bash -c set +e; cargo run --bin verify_lossless --manifest-path parser/Cargo.toml > /tmp/task7-verify-lossless.out 2>&1; status=$?; printf 'VERIFY_LOSSLESS_EXIT=%s\n' "$status"; wc -l /tmp/task7-verify-lossless.out; sha256sum /tmp/task7-verify-lossless.out; cat /tmp/task7-verify-lossless.out; exit "$status"
+520328 /bin/bash -c pgrep -af "cargo|vite" || true
+The remaining cargo process belongs to concurrent Task 7, not Task 8.
+
+Final git status --porcelain:
+ M package.json
+ M parser/Cargo.toml
+ D parser/src/bin/compare_burns.rs
+ D parser/src/bin/dump_matt.rs
+ D parser/src/bin/dump_model.rs
+ D parser/src/bin/dump_raw.rs
+ D parser/src/bin/dump_texpool.rs
+ D parser/src/bin/inspect_hod.rs
+ D parser/src/bin/roundtrip_test.rs
+ D parser/src/bin/verify_dae.rs
+ D parser/src/bin/verify_dae_fenris.rs
+ D parser/src/bin/verify_dae_joints.rs
+ M src-tauri/Cargo.lock
+ M src-tauri/Cargo.toml
+ M src-tauri/tauri.conf.json

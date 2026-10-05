@@ -48,4 +48,10 @@ Changed files and reasons:
 Historical-file proof:
 `git diff -- docs/manual-test-log.md` produced no output.
 `git diff -- docs/hod2-reverse-engineering/PROGRESS.md` showed only forward-looking
-changes at lines 634 and 683-687; no dated historical entry was modified.
+ changes at lines 634 and 683-687; no dated historical entry was modified.
+
+## QA failure path
+The active-document tool inventory must report a deliberately introduced removed-bin reference.
+Command: add `cargo run --bin test_pebble` to a scratch copy of QUICKSTART.md; grep -rhoE "cargo run --bin [a-z_]+" /tmp/opencode/quickstart-scratch.md | sort -u
+Result: output included `cargo run --bin test_pebble`, alongside the existing inventory; scratch file was removed.
+Conclusion: PASS — the check catches a forbidden tool reference in a scratch document.

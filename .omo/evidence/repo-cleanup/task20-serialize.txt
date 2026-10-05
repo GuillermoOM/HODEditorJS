@@ -29,3 +29,9 @@ Lossless verification:
 - Expected size deltas: 1316, -73438, -759998, -4817608.
 - Structural counts matched for every case:
   2/1/0/0/0, 3/30/16/5/8, 7/51/4/11/4, 3/4/0/0/0 (meshes/joints/navlights/markers/engine-burns).
+
+## QA failure path
+The serialization compatibility hub must fail compilation if its re-export is removed.
+Command: temporarily remove `pub use crate::serialize::*;` from `parser/src/hod.rs`; cargo check --manifest-path src-tauri/Cargo.toml
+Result: exit 101; unresolved `crate::hod::base64_encode`, `crate::hod::write_len_string`, and `crate::hod::write_vertex`; re-export restored.
+Conclusion: PASS — the hub failure mode was exercised and detected.

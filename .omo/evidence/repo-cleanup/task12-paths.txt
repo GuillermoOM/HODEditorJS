@@ -1,0 +1,49 @@
+Task 12 path cleanup evidence
+
+Before-state command:
+grep -rn "/run/media/system" TODO.md docs/manual-test-log.md AGENTS.md
+
+Before-state hits:
+TODO.md:24:- [x] Fix HOD 1.0 Material Loading (testing with `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/shi_cain/shi_cain.hod` which the ui isn't showing any materials. Material loading is working well when loading HOD 2.0)
+TODO.md:25:- [x] tested ter_elysium.hod (2.0) loading and saving with the editor, the output file loads in game, but the ship is turned 90 degrees left and tilting a bit to the left about 30 degrees, maybe something to check out on (ter_elysium.hod (original) vs ter_elysium2.hod (created by editor, both located at `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`).
+TODO.md:40:- [x] GLOW textures are rendering wrong in the texture shaded mode in editor, shader is interpreting wrong the colors, see here to compare files (original and edited) `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/ter_elysium/`
+TODO.md:45:    - Animations not being loaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
+TODO.md:46:    - Docking Paths not being loeaded properly (not shown in editor for `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/ter_orion/ter_orion.hod`)
+docs/manual-test-log.md:13:`/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/mod-tools/HODEditorJS/testing/`
+docs/manual-test-log.md:839:For HOD 1.0 files loaded onto editor from `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
+AGENTS.md:62:- **HOD 1.3 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/freespace_remastered/ship/`
+AGENTS.md:63:- **HOD 2.0 files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld/HWRM_FSFC/source/ship/`
+AGENTS.md:64:- **DAE files (FS mod):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/current_project_processing/ship_converted/`
+AGENTS.md:65:- **HOD 2.0 files (Vanilla game):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/ship/`
+AGENTS.md:66:- **HOD 2.0 files (pebbles):** `/run/media/system/Data/SteamLibrary/steamapps/common/Homeworld 347380/GBXTools/WorkshopTool/uncompressed_bigs/HWRM/pebble/`
+
+Moved-file provenance:
+git log -1 --format=%H -- docs/manual-test-log.md
+142bf34f5a3f666250a9ccccf1de24d06347bdb1
+
+After-state checks:
+grep -rn "/run/media/system" TODO.md docs/manual-test-log.md
+(no output)
+git diff -- docs/manual-test-log.md | grep -c '^[-+]SHA:\|^[-+]Timestamp:'
+0
+git diff --stat
+ AGENTS.md                 | 15 +++++++++++++++
+ TODO.md                   | 10 +++++-----
+ docs/manual-test-log.md   |  4 ++--
+ package.json              |  2 +-
+ src-tauri/Cargo.lock      |  2 +-
+ src-tauri/Cargo.toml      |  2 +-
+ src-tauri/tauri.conf.json |  2 +-
+
+Worktree before/after notes:
+The four pre-existing version-bump files remain unstaged. Sibling Task 11's staged docs README/archive changes remain untouched. Task 12 edits are limited to TODO.md, docs/manual-test-log.md, and AGENTS.md.
+
+Cleanup receipt:
+pgrep -af "cargo|vite" || true
+(only the receipt shell command matched; no persistent cargo or vite process)
+
+## QA failure path
+Active documents must not retain maintainer-specific absolute paths, while historical progress entries may retain them.
+Command: grep -rn "/run/media/system\|/home/guillermo" TODO.md docs/manual-test-log.md 2>&1; grep -rn "/run/media/system" docs/hod2-reverse-engineering/PROGRESS.md | head -3
+Result: `grep: TODO.md: No such file or directory`; no active-log path matches; historical control printed three PROGRESS matches.
+Conclusion: PASS — active path leakage is absent; retained historical PROGRESS paths are explicitly distinguished and allowed.

@@ -1,0 +1,49 @@
+Task T15: extract parser/src/texture_codec.rs
+
+Commands and results:
+
+cargo check --manifest-path parser/Cargo.toml
+EXIT=0
+
+cargo check --manifest-path src-tauri/Cargo.toml
+EXIT=0
+
+cargo test --manifest-path parser/Cargo.toml
+running 19 tests
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+EXIT=0
+
+cargo run --bin verify_lossless --manifest-path parser/Cargo.toml
+FAILED: Sizes do not match! Diff: 1316
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=2, Joints=1, NavLights=0, Markers=0, EngineBurns=0
+  Reparsed: Meshes=2, Joints=1, NavLights=0, Markers=0, EngineBurns=0
+FAILED: Sizes do not match! Diff: -73438
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=3, Joints=30, NavLights=16, Markers=5, EngineBurns=8
+  Reparsed: Meshes=3, Joints=30, NavLights=16, Markers=5, EngineBurns=8
+FAILED: Sizes do not match! Diff: -759998
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=7, Joints=51, NavLights=4, Markers=11, EngineBurns=4
+  Reparsed: Meshes=7, Joints=51, NavLights=4, Markers=11, EngineBurns=4
+FAILED: Sizes do not match! Diff: -4817608
+SUCCESS: Re-parsed generated file!
+  Original: Meshes=3, Joints=4, NavLights=0, Markers=0, EngineBurns=0
+  Reparsed: Meshes=3, Joints=4, NavLights=0, Markers=0, EngineBurns=0
+EXIT=0
+
+wc -l parser/src/hod.rs parser/src/texture_codec.rs parser/src/lib.rs
+7272 parser/src/hod.rs
+453 parser/src/texture_codec.rs
+11 parser/src/lib.rs
+
+New tests:
+- texture_codec::tests::decompress_dxt3_expands_explicit_alpha
+- texture_codec::tests::texture_codec_mip_size_matches_layout
+- texture_codec::tests::texture_codec_flip_is_involution
+
+## QA failure path
+Codec regressions must be caught by the moved texture assertions and lossless gate.
+Command: cargo test --manifest-path parser/Cargo.toml texture_codec_ -- --nocapture
+Result: running 2 tests; `test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out`.
+Conclusion: PASS — `texture_codec_mip_size_matches_layout` and `texture_codec_flip_is_involution` are failure detectors for codec layout and buffer-transform drift.

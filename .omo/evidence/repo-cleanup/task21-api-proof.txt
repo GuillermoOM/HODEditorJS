@@ -113,3 +113,9 @@ Result: PASS. The fresh clone demonstrably compiles the hub and fails when its
 types re-export is disabled. The clone was removed with rm -rf.
 
 Overall result: all Task 21 API, layout, clone, and failure-path checks passed.
+
+## QA failure path
+The fresh-clone smoke check must compile the compatibility hub rather than bypassing it.
+Command: in `/tmp/opencode/hod-clone`, replace `pub use crate::types::*;` with `pub use crate::types::DISABLED_TEST;`; cargo check --manifest-path parser/Cargo.toml
+Result: non-zero; cargo reported 99 previous errors, including `no DISABLED_TEST in types` and unresolved moved-type imports from `crate::hod`.
+Conclusion: PASS — the fresh clone demonstrably fails when the hub re-export is disabled.
