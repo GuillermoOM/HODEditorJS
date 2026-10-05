@@ -1,0 +1,25 @@
+Task 22: untrack fixture corpus and document acquisition
+
+Precondition:
+  test -e testing/manual_tests.md exit: 1
+
+Index and disk checks:
+  git ls-files testing/ | wc -l: 0
+  du -sh testing/: 239M\ttesting/
+
+Ignore proof:
+  git check-ignore -v testing/pebble_0:
+  .gitignore:40:testing/\ttesting/pebble_0
+
+Status QA:
+  git status --porcelain --untracked-files=all | grep '^?? testing/' output: empty
+  testing untracked entries: 0
+
+Document scan:
+  grep -iE "https?://|torrent|mirror|download" docs/testing-fixtures.md: empty
+
+Created document headings:
+  # Testing Fixtures
+  ## Required Inputs
+  ## Obtaining Fixtures
+  ## Expected Layout
