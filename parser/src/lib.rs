@@ -7,4 +7,5 @@ pub mod kdop;
 pub mod math;
 pub mod shader_map;
 pub mod types;
+pub mod texture_codec;
 pub mod xpress;
