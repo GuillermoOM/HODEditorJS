@@ -9,4 +9,5 @@ pub mod shader_map;
 pub mod types;
 pub mod texture_codec;
 pub mod animation;
+pub mod model_methods;
 pub mod xpress;
