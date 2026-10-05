@@ -365,45 +365,59 @@ npm install
 ```
 
 ### Run in Development Mode
-The dev server must run **inside** the `mesa-dev` distrobox — the host has no GTK/WebKit and will fail with missing libraries. Note the `--` separator: a pipe (`|`) would run `npm` on the host instead.
+Install the platform-specific Tauri prerequisites listed above before running the dev server; otherwise it may fail because GTK/WebKit libraries are missing.
 ```bash
-distrobox enter mesa-dev -- npm run tauri dev
+npm run tauri dev
 ```
 
 ### Build Linux Binaries (.deb, .rpm, .AppImage)
 
-**All builds must be performed inside the `mesa-dev` distrobox.** Native host builds fail due to missing GTK/WebKit dependencies and AppImage FUSE issues.
+Install the platform-specific Tauri prerequisites from the [Tauri Prerequisites Guide](https://v2.tauri.app/start/prerequisites/) before building. This includes the GTK/WebKit libraries required by the Linux build.
 
 ```bash
-# Enter the distrobox
-distrobox enter mesa-dev
-
-# Build Linux bundles (NO_STRIP=1 required on Fedora 41+ to bypass outdated linuxdeploy strip)
-NO_STRIP=1 npm run tauri build
+# Build Linux bundles
+npm run tauri build
 ```
 
+If `linuxdeploy` fails while stripping the AppImage on newer distros (observed on Fedora 41+), prefix the build with `NO_STRIP=1`.
+
 **Output:**
-- `src-tauri/target/release/bundle/deb/HODEditorJS_1.1.0_amd64.deb`
-- `src-tauri/target/release/bundle/rpm/HODEditorJS-1.1.0-1.x86_64.rpm`
-- `src-tauri/target/release/bundle/appimage/HODEditorJS_1.1.0_amd64.AppImage`
+- `src-tauri/target/release/bundle/deb/HODEditorJS_<version>_amd64.deb`
+- `src-tauri/target/release/bundle/rpm/HODEditorJS-<version>-1.x86_64.rpm`
+- `src-tauri/target/release/bundle/appimage/HODEditorJS_<version>_amd64.AppImage`
 
-### Cross-Compile Windows Installer (.exe) from Linux
+The `<version>` in each filename comes from `package.json` and `src-tauri/tauri.conf.json`.
 
-Windows cross-compilation uses `mingw-w64` inside the same `mesa-dev` distrobox. The `dlltool` path-with-spaces bug requires `CARGO_TARGET_DIR=/tmp/cargo_target`.
+### Building on Windows Natively
+
+On Windows, the native build produces the NSIS installer directly:
 
 ```bash
-distrobox enter mesa-dev
+npm run tauri build
+```
 
-# Add the Rust target (only needed once)
+### Cross-Compiling the Windows Installer from Linux (Optional)
+
+Install `mingw-w64`, which provides `x86_64-w64-mingw32-gcc` and `dlltool`, and add the Rust target once:
+
+```bash
 rustup target add x86_64-pc-windows-gnu
 
 # Build Windows NSIS installer
+npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
+```
+
+If your checkout path contains spaces, `dlltool` (binutils) can fail during the link step. Setting `CARGO_TARGET_DIR` to a space-free path (for example, `/tmp/cargo_target`) avoids this:
+
+```bash
 CARGO_TARGET_DIR=/tmp/cargo_target npm run tauri build -- --target x86_64-pc-windows-gnu --bundles nsis
 ```
 
 **Output:**
-- `/tmp/cargo_target/x86_64-pc-windows-gnu/release/hodeditorjs.exe` (23 MB)
-- `/tmp/cargo_target/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_1.1.0_x64-setup.exe` (11 MB)
+- `src-tauri/target/x86_64-pc-windows-gnu/release/hodeditorjs.exe`
+- `src-tauri/target/x86_64-pc-windows-gnu/release/bundle/nsis/HODEditorJS_<version>_x64-setup.exe`
+
+If `CARGO_TARGET_DIR` was set, these paths are under that directory instead. The `<version>` in the installer filename comes from `package.json` and `src-tauri/tauri.conf.json`.
 
 ### Windows Runtime DLLs
 
