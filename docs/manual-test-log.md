@@ -1011,7 +1011,7 @@ Parser fix verification:
 
 ---
 
-SHA: `(working tree - IFF size-endianness heuristic fix)`
+SHA: `1454668`
 Timestamp: `16/10/2026 20:33`
 Test hod: `testing/bst_mothership/bst_mothership.hod` (32,382,858 B)
 
@@ -1036,13 +1036,13 @@ Previously failing file:
 3. Regression sweep - real Rust `dump_pool` over all 505 HODs in `uncompressed_bigs` (290 vanilla ships, 4 pebbles, 114 HOD 1.3 ships), `HWRM_FSFC/source/ship` (92), and `testing/bst_mothership` (5): zero `Error reading chunk`: [x] PASS
 4. Sibling files `bst_mothership2.hod`, `bst_mothership - current.hod`, `bst_mothership_wip2.hod`, `bst_mothership_old.hod`: load as before (35/35/35/39 meshes): [x] PASS
 
-Editor manual test (load `testing/bst_mothership/bst_mothership.hod` in the app):
+Editor manual test (load `testing/bst_mothership/bst_mothership.hod` in the app) - user-verified 16/10/2026:
 
 1. Opened `bst_mothership.hod` in editor:
-    - No loading errors: [ ] PENDING (user)
-    - Textures orientation: [ ] PENDING (user)
-    - Textures assigned to correct materials: [ ] PENDING (user)
-    - Full meshes shown: [ ] PENDING (user)
-    - Collision mesh loaded: [ ] PENDING (user)
-    - All expected nodes loaded: [ ] PENDING (user)
-2. In-game check of any exported file from this ship: [ ] PENDING (user)
+    - No loading errors: [x] PASS
+    - Textures orientation: [x] PASS
+    - Textures assigned to correct materials: [x] PASS
+    - Full meshes shown: [x] PASS
+    - Collision mesh loaded: [x] PASS
+    - All expected nodes loaded: [x] PASS
+2. In-game check of any exported file from this ship: [ ] NOT RUN (read-path-only fix; no output format changed)
