@@ -1,5 +1,5 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{self, Cursor, Read, Write};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChunkType {
@@ -18,8 +18,29 @@ pub struct IffChunk {
 }
 
 impl IffChunk {
+    /// Resolves a chunk's payload size from its raw 4-byte size field.
+    ///
+    /// HOD files normally store chunk sizes big-endian, but `NRML` BMSH
+    /// children of `MULT` have been observed with little-endian sizes.
+    /// Only reinterpret a size as little-endian when the big-endian value
+    /// cannot possibly fit in the bytes remaining in the stream while the
+    /// little-endian value can.
+    ///
+    /// Do NOT reintroduce a fixed "big-endian size looks unreasonably large"
+    /// threshold (the old code used `> 0x00FFFFFF`): legitimate big-endian
+    /// sizes above 16MB whose low byte is `0x00` (e.g. a 32MB `POOL` of size
+    /// `0x01E90E00`) read as a "reasonable" little-endian value and were
+    /// silently corrupted, blowing the IFF boundary.
+    fn resolve_chunk_size(size_be: u32, size_le: u32, remaining: u64) -> (u32, bool) {
+        if u64::from(size_be) > remaining && u64::from(size_le) <= remaining {
+            (size_le, true)
+        } else {
+            (size_be, false)
+        }
+    }
+
     /// Reads a single chunk from a stream (which can be a Cursor over memory)
-    pub fn read_chunk<R: Read>(reader: &mut R) -> io::Result<Self> {
+    pub fn read_chunk<R: Read + Seek>(reader: &mut R) -> io::Result<Self> {
         let mut id_bytes = [0u8; 4];
         if let Err(e) = reader.read_exact(&mut id_bytes) {
             return Err(e);
@@ -29,17 +50,19 @@ impl IffChunk {
         let mut size_bytes = [0u8; 4];
         reader.read_exact(&mut size_bytes)?;
 
-        let mut size = u32::from_be_bytes(size_bytes);
-        let size_le = u32::from_le_bytes(size_bytes);
+        // Bytes left in the stream after this size field. A chunk's size
+        // covers everything that follows the size field (real id + payload,
+        // plus the version word for NRML), so a size larger than this can
+        // only be satisfied by running past the end of the stream.
+        let after_size = reader.stream_position()?;
+        let remaining = reader.seek(SeekFrom::End(0))?.saturating_sub(after_size);
+        reader.seek(SeekFrom::Start(after_size))?;
 
-        // Dynamic endianness detection: if BigEndian size is ridiculously large (e.g., > 16MB)
-        // and LittleEndian size is reasonable, use LittleEndian.
-        // HOD 2.0 MULT child chunks use LittleEndian for their sizes (like BMSH).
-        let mut used_le = false;
-        if size > 0x00FFFFFF && size_le <= 0x00FFFFFF {
-            size = size_le;
-            used_le = true;
-        }
+        let (size, _) = Self::resolve_chunk_size(
+            u32::from_be_bytes(size_bytes),
+            u32::from_le_bytes(size_bytes),
+            remaining,
+        );
 
         match raw_id.as_str() {
             "FORM" => {
@@ -246,5 +269,77 @@ impl IffChunk {
         for child in &self.children {
             child.find_all_children(id, matches);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use byteorder::LittleEndian;
+
+    #[test]
+    fn keeps_large_big_endian_size_when_low_byte_is_zero() {
+        // Regression: the POOL in testing/bst_mothership/bst_mothership.hod is
+        // 0x01E90E00 bytes. The old "> 16MB => little-endian" heuristic read
+        // the size as 0x000EE901 and desynchronized the IFF walk.
+        assert_eq!(
+            IffChunk::resolve_chunk_size(0x01E90E00, 0x000EE901, 32_382_540),
+            (0x01E90E00, false)
+        );
+        // Exactly-fitting big-endian sizes are also kept.
+        assert_eq!(
+            IffChunk::resolve_chunk_size(0x01E90E00, 0x000EE901, 0x01E90E00),
+            (0x01E90E00, false)
+        );
+    }
+
+    #[test]
+    fn falls_back_to_little_endian_only_when_big_endian_cannot_fit() {
+        // MULT child NRML BMSH sizes may be little-endian: here size 100000 is
+        // stored as bytes [A0 86 01 00], i.e. big-endian 0xA0860100.
+        assert_eq!(
+            IffChunk::resolve_chunk_size(0xA0860100, 100_000, 100_000),
+            (100_000, true)
+        );
+        // A small big-endian size that fits is never reinterpreted.
+        assert_eq!(IffChunk::resolve_chunk_size(52, 0x34000000, 52), (52, false));
+        // If neither reading fits, keep big-endian and let the read fail loudly.
+        assert_eq!(
+            IffChunk::resolve_chunk_size(0xFFFFFFFF, 0xFFFFFFFF, 100),
+            (0xFFFFFFFF, false)
+        );
+    }
+
+    #[test]
+    fn reads_little_endian_nrml_bmsh_child() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"NRML");
+        buf.write_u32::<LittleEndian>(52).unwrap(); // size: 4 realid + 4 version + 44 data
+        buf.extend_from_slice(b"BMSH");
+        buf.write_u32::<BigEndian>(1400).unwrap();
+        buf.extend_from_slice(&[0xAB; 44]);
+
+        let mut cursor = Cursor::new(buf);
+        let chunk = IffChunk::read_chunk(&mut cursor).unwrap();
+        assert_eq!(chunk.id, "BMSH");
+        assert_eq!(chunk.chunk_type, ChunkType::Normal);
+        assert_eq!(chunk.version, 1400);
+        assert_eq!(chunk.data.len(), 44);
+        assert_eq!(cursor.position(), 8 + 52);
+    }
+
+    #[test]
+    fn reads_large_big_endian_default_chunk() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"POOL");
+        buf.write_u32::<BigEndian>(0x01000000).unwrap(); // > 16MB with low byte 0x00
+        buf.resize(buf.len() + 0x01000000, 0);
+
+        let mut cursor = Cursor::new(buf);
+        let chunk = IffChunk::read_chunk(&mut cursor).unwrap();
+        assert_eq!(chunk.id, "POOL");
+        assert_eq!(chunk.chunk_type, ChunkType::Default);
+        assert_eq!(chunk.data.len(), 0x01000000);
+        assert_eq!(cursor.position(), 8 + 0x01000000);
     }
 }

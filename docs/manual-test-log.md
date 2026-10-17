@@ -1008,3 +1008,41 @@ Parser fix verification:
 3. Regressions:
     - `shi_demon.hod` / `ter_zephyrus_1.3_original.hod` (`name[1].ext` convention): [x] PASS - texture names byte-identical to before the fix.
     - `testing/hgn_hft_hw2.hod` (HODEditorJS export with baked-in damage): [x] PASS - unchanged, still 2 textures (nothing more is recoverable from that file).
+
+---
+
+SHA: `(working tree - IFF size-endianness heuristic fix)`
+Timestamp: `16/10/2026 20:33`
+Test hod: `testing/bst_mothership/bst_mothership.hod` (32,382,858 B)
+
+**Goal**: Fix `IFF boundary read error: failed to fill whole buffer` when loading `testing/bst_mothership/bst_mothership.hod`.
+
+Root cause:
+
+1. The `POOL` size field at `0x3A` is big-endian `0x01E90E00` (~32 MB). BE is provably correct: `FORM ... HVMD` begins exactly at `0x3E + 0x01E90E00 = 0x1E90E3E`, and the BE chunk chain (`POOL` → `HVMD` → `DTRM` → `INFO`) ends exactly at EOF (`0x1EE1F8A`): [x] CONFIRMED
+2. The old dynamic-endianness heuristic in `IffChunk::read_chunk` (`size > 0x00FFFFFF && size_le <= 0x00FFFFFF` → use little-endian) misread that size as `0x000EE901` (977,153 B) because the size's low byte is `0x00`. The parser resumed at `0xEE93F`, inside the Xpress-compressed texture pool, read a bogus chunk size (2,166,295,448) and failed the boundary read: [x] CONFIRMED
+3. Fix: `IffChunk::resolve_chunk_size` now uses little-endian only when the big-endian size cannot fit in the bytes remaining in the stream while the little-endian size can; valid big-endian sizes can never be flipped: [x] DONE
+
+Parser/build verification:
+
+1. `cargo check --lib`: [x] PASS - pre-existing warnings only.
+2. `cargo test --lib`: [x] PASS - 32 passed, including 4 new `iff::tests` (large BE size kept, LE fallback limited to overrun, LE `NRML BMSH` chunk read, 16 MiB `POOL` read).
+3. `cargo run --bin verify_lossless`: [x] PASS - 4x `SUCCESS: Re-parsed generated file!`, size diffs `1316/-73438/-759998/-4817608`, all Original/Reparsed counts identical to the established baseline; DAE fallback `Output size: 140254 bytes`.
+
+Previously failing file:
+
+1. `testing/bst_mothership/bst_mothership.hod` (temporary `diag_load` bin, deleted before commit): loads with `meshes=39, joints=193, textures=53, materials=18, navlights=33, markers=45, glows=10, dockpaths=15, collisions=1`: [x] PASS
+2. `dump_pool` reads all 6 top-level chunks (`VERS`, `NAME`, `POOL` len 32,050,688, `HVMD` 84 children, `DTRM` 28 children, `INFO`): [x] PASS
+3. Regression sweep - real Rust `dump_pool` over all 505 HODs in `uncompressed_bigs` (290 vanilla ships, 4 pebbles, 114 HOD 1.3 ships), `HWRM_FSFC/source/ship` (92), and `testing/bst_mothership` (5): zero `Error reading chunk`: [x] PASS
+4. Sibling files `bst_mothership2.hod`, `bst_mothership - current.hod`, `bst_mothership_wip2.hod`, `bst_mothership_old.hod`: load as before (35/35/35/39 meshes): [x] PASS
+
+Editor manual test (load `testing/bst_mothership/bst_mothership.hod` in the app):
+
+1. Opened `bst_mothership.hod` in editor:
+    - No loading errors: [ ] PENDING (user)
+    - Textures orientation: [ ] PENDING (user)
+    - Textures assigned to correct materials: [ ] PENDING (user)
+    - Full meshes shown: [ ] PENDING (user)
+    - Collision mesh loaded: [ ] PENDING (user)
+    - All expected nodes loaded: [ ] PENDING (user)
+2. In-game check of any exported file from this ship: [ ] PENDING (user)
