@@ -1932,8 +1932,13 @@ fn parse_basic_mesh(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HO
                 // HOD 2.0 face pool stores plain little-endian u16 indices, local to each part.
                 let raw = safe_read_u16(&mut context.face_pool)?;
                 raw_indices.push(raw);
+                // hwmod 修复：索引是【全局】的（跨本 mesh 的所有 part 累计），
+                // 必须减去本 part 的起始偏移才能得到局部索引。
+                // 原来的写法是 min(raw, vertex_count-1)，会把越界索引全部夹到最后
+                // 一个顶点上 —— 这正是三角面变成一团刺的原因。
+                let local = (raw as usize).saturating_sub(cumulative_vertex_offset);
                 let safe_idx = if vertex_count > 0 {
-                    std::cmp::min(raw, (vertex_count - 1) as u16)
+                    std::cmp::min(local, vertex_count - 1) as u16
                 } else {
                     0
                 };
