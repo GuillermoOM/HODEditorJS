@@ -166,6 +166,10 @@ The information below might need verification:
 3. Select the LOD level you want to replace
 4. Click **Import OBJ** to load your `.obj` file
 5. The mesh geometry replaces the selected LOD in-place, reconstructing positions, normals, and UV coordinates
+6. `usemtl` groups are preserved as separate mesh parts. A matching HOD material name is reused; otherwise a placeholder material is created
+7. Click **Import MTL Materials** and select the companion `.mtl` file to fill those materials. `newmtl` names are matched to HOD material names, and each `map_Kd` path is matched by filename against the textures already loaded in the HOD (case-insensitive, ignoring folders, extensions, `_DIFF`, and compression suffixes)
+
+The MTL import does not read image files from the disk. Import the matching textures through the Textures panel first; otherwise the material is created without a diffuse map and the import report lists the missing texture.
 
 ### Importing Collision Hulls and Auto Generation
 
@@ -182,7 +186,7 @@ The information below might need verification:
 
 ### Exporting
 
-All importable mesh types can also be exported as `.obj` files via the corresponding **Export OBJ** buttons. Exported files include `.mtl` material references and TGA textures are written to the same folder.
+All importable mesh types can also be exported as `.obj` files via the corresponding **Export OBJ** buttons. For a mesh LOD, the OBJ save dialog defaults to `<mesh name>_lod<lod>.obj`, and the MTL dialog defaults to the matching `<mesh name>_lod<lod>.mtl`; the OBJ contains a matching `mtllib` line and the MTL contains one `newmtl` per HOD material plus a `map_Kd` diffuse reference. Loaded textures are exported as `<texture name>.tga` so the OBJ/MTL/TGA set can be re-imported.
 
 ---
 
@@ -213,7 +217,8 @@ This feature is under active development. Complex DAE files with advanced featur
 | Save HOD As | Native save dialog for new path + companion `.mad` |
 | New HOD | Create blank HOD 2.0 template with single Root joint |
 | Import DAE | Collada import via Rust XML parser (WIP) |
-| Import OBJ (mesh) | Per-LOD mesh replacement via Three.js OBJLoader |
+| Import OBJ (mesh) | Per-LOD mesh replacement via Three.js OBJLoader, preserving `usemtl` parts |
+| Import MTL (mesh) | Match `newmtl` names to HOD materials and `map_Kd` paths to loaded textures |
 | Export OBJ (mesh) | Per-LOD mesh export with `.mtl` and TGA textures |
 | Import OBJ (collision) | Import geometry into collision hull mesh parts |
 | Export OBJ (collision) | Export collision hull as OBJ |

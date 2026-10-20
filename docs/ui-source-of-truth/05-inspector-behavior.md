@@ -52,6 +52,8 @@ Collision creation/removal controls belong to the COL/collision flow, not engine
 
 Mesh inspector supports editing mesh name, LOD, parent, and materials according to current code. OBJ import/export controls are exposed from Inspector and route through app/Tauri callbacks.
 
+Mesh OBJ import preserves `usemtl` groups as mesh parts. Each `usemtl` name reuses an existing HOD material with the same name (case-insensitive) or creates a placeholder material using the selected LOD's current shader. The mesh inspector also exposes **Import MTL Materials**: `newmtl` names are matched to HOD materials (created if absent), and the `map_Kd` path is matched by filename to textures already loaded in the model, ignoring folders, extensions, known texture-type suffixes, and compression suffixes. MTL import never reads image files from disk and must not overwrite an existing texture assignment when no matching loaded texture exists.
+
 ## Engine Nodes
 
 Inspector contains editors for engine burn/glow/shape data. Agents must verify exact fields in `Inspector.tsx` before adding or documenting new engine-specific controls.

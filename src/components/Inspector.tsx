@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
 import { parseTextureGroups, SHADER_SLOTS, KNOWN_TYPES } from "../texture_utils";
+import { parseMtl, resolveDiffuseTexture } from "../mtl_utils";
 import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2, FlipVertical } from "lucide-react";
 import { WeaponGroupInspector } from "./WeaponGroupInspector";
 
@@ -560,33 +561,151 @@ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, on
       const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
       const objGroup = new OBJLoader().parse(fileContent);
       const newParts: any[] = [];
+      const nextMaterials = [...(model.materials || [])];
+      const currentMaterial = model.materials?.[selectedLodMesh.parts[0]?.material_index ?? 0];
+      const defaultShader = currentMaterial?.shader_name || "ship";
+      const defaultSlotCount = Math.max(SHADER_SLOTS[defaultShader.toLowerCase()]?.length || 4, 4);
+      let createdMaterials = 0;
+
+      // OBJLoader exposes usemtl names on child.material. Reuse an existing HOD material
+      // with the same name, or create a placeholder that a later MTL import can populate.
+      const ensureMaterialIndex = (rawName: string): number => {
+        const name = rawName.trim();
+        if (!name) return nextMaterials.length > 0 ? 0 : ensureMaterialIndex("material_0");
+
+        const existingIndex = nextMaterials.findIndex((m) => m.name.toLowerCase() === name.toLowerCase());
+        if (existingIndex >= 0) return existingIndex;
+
+        nextMaterials.push({
+          name,
+          shader_name: defaultShader,
+          texture_maps: new Array(defaultSlotCount).fill(""),
+          parameters: [],
+          params: []
+        });
+        createdMaterials++;
+        return nextMaterials.length - 1;
+      };
+
+      const buildPart = (geo: THREE.BufferGeometry, start: number, count: number, materialIndex: number) => {
+        const posAttr = geo.attributes.position;
+        const normalAttr = geo.attributes.normal;
+        const uvAttr = geo.attributes.uv;
+        const indexAttr = geo.index;
+        const vertices: any[] = [];
+        const indices: number[] = [];
+
+        for (let i = 0; i < count; i++) {
+          const sourceIndex = indexAttr ? indexAttr.getX(start + i) : start + i;
+          vertices.push({
+            position: { x: posAttr.getX(sourceIndex), y: posAttr.getY(sourceIndex), z: posAttr.getZ(sourceIndex) },
+            normal: normalAttr ? { x: normalAttr.getX(sourceIndex), y: normalAttr.getY(sourceIndex), z: normalAttr.getZ(sourceIndex) } : { x: 0, y: 1, z: 0 },
+            uv: uvAttr ? { u: uvAttr.getX(sourceIndex), v: 1 - uvAttr.getY(sourceIndex) } : { u: 0, v: 0 },
+            tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 }
+          });
+          indices.push(i);
+        }
+
+        return { material_index: materialIndex, vertex_mask: 0x600B, vertices, indices };
+      };
+
       objGroup.traverse((child: any) => {
         if (child.isMesh) {
           const geo = (child as THREE.Mesh).geometry;
-          if (geo?.attributes.position) {
-            const posAttr = geo.attributes.position;
-            const vertices: any[] = [];
-            const indices: number[] = [];
-            for (let i = 0; i < posAttr.count; i++) {
-              vertices.push({
-                position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
-                normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
-                uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
-                tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 }
-              });
-            }
-            const indexAttr = geo.index;
-            if (indexAttr) { for (let i = 0; i < indexAttr.count; i++) indices.push(indexAttr.getX(i)); }
-            else { for (let i = 0; i < posAttr.count; i++) indices.push(i); }
-            newParts.push({ material_index: 0, vertex_mask: 0x600B, vertices, indices });
+          if (!geo?.attributes.position) return;
+
+          const materialArray = Array.isArray(child.material) ? child.material : null;
+          if (materialArray && geo.groups.length > 0) {
+            geo.groups.forEach((group) => {
+              const sourceMaterial = materialArray[group.materialIndex ?? 0];
+              const materialIndex = ensureMaterialIndex(sourceMaterial?.name || "");
+              newParts.push(buildPart(geo, group.start, group.count, materialIndex));
+            });
+          } else {
+            const sourceMaterial = materialArray ? materialArray[0] : child.material;
+            const materialIndex = ensureMaterialIndex(sourceMaterial?.name || "");
+            newParts.push(buildPart(geo, 0, geo.index?.count ?? geo.attributes.position.count, materialIndex));
           }
         }
       });
+
       if (newParts.length > 0) {
-        onModelChange?.({ ...model, meshes: model.meshes.map(m => m.name === selectedLodMesh.name && m.lod === selectedLodMesh.lod ? { ...m, parts: newParts } : m) });
-        alert(`Mesh "${selectedLodMesh.name}" LOD ${selectedLodMesh.lod} replaced by imported OBJ.`);
+        onModelChange?.({
+          ...model,
+          materials: nextMaterials,
+          meshes: model.meshes.map(m => m.name === selectedLodMesh.name && m.lod === selectedLodMesh.lod ? { ...m, parts: newParts } : m)
+        });
+        const materialNote = createdMaterials > 0 ? ` ${createdMaterials} new material(s) created from usemtl names; import the .mtl to fill their textures.` : "";
+        alert(`Mesh "${selectedLodMesh.name}" LOD ${selectedLodMesh.lod} replaced by imported OBJ.${materialNote}`);
       } else { alert("No valid geometries found in the OBJ file."); }
     } catch (e: any) { console.error(e); alert(`Import failed: ${e.toString()}`); }
+    finally { setIsLoading?.(false); }
+  };
+
+  const handleImportMTL = async () => {
+    if (!selectedLodMesh) return;
+    try {
+      const fileContent = await invoke<string | null>("load_text_file", { filters: ["mtl"] });
+      if (!fileContent) return;
+
+      setIsLoading?.(true);
+      setStatusMsg?.("Importing MTL materials...");
+
+      const definitions = parseMtl(fileContent);
+      if (definitions.length === 0) {
+        alert("No materials were found in the selected MTL file.");
+        return;
+      }
+
+      const nextMaterials = [...(model.materials || [])];
+      const currentMaterial = model.materials?.[selectedLodMesh.parts[0]?.material_index ?? 0];
+      const defaultShader = currentMaterial?.shader_name || "ship";
+      const defaultSlotCount = Math.max(SHADER_SLOTS[defaultShader.toLowerCase()]?.length || 4, 4);
+      const unresolvedTextures: string[] = [];
+      let created = 0;
+      let updated = 0;
+
+      definitions.forEach((definition) => {
+        let materialIndex = nextMaterials.findIndex((m) => m.name.toLowerCase() === definition.name.toLowerCase());
+        let material = materialIndex >= 0 ? nextMaterials[materialIndex] : null;
+
+        if (!material) {
+          material = {
+            name: definition.name,
+            shader_name: defaultShader,
+            texture_maps: new Array(defaultSlotCount).fill(""),
+            parameters: [],
+            params: []
+          };
+          nextMaterials.push(material);
+          materialIndex = nextMaterials.length - 1;
+          created++;
+        } else {
+          updated++;
+        }
+
+        if (definition.diffuseMap) {
+          const textureName = resolveDiffuseTexture(definition.diffuseMap, model.textures || []);
+          if (textureName) {
+            const textureMaps = [...(material.texture_maps || [])];
+            while (textureMaps.length < defaultSlotCount) textureMaps.push("");
+            textureMaps[0] = textureName;
+            nextMaterials[materialIndex] = { ...material, texture_maps: textureMaps };
+          } else {
+            unresolvedTextures.push(`${definition.name}: ${definition.diffuseMap}`);
+          }
+        }
+      });
+
+      onModelChange?.({ ...model, materials: nextMaterials });
+      invoke("log_event", { level: "INFO", message: `Imported MTL: ${created} material(s) added, ${updated} updated.` }).catch(console.error);
+
+      const lines = [`MTL imported: ${created} material(s) added, ${updated} updated.`];
+      if (unresolvedTextures.length > 0) {
+        lines.push("", "These diffuse maps were not found among the loaded HOD textures:", ...unresolvedTextures, "", "Import the matching TGA textures first, then import the MTL again.");
+      }
+      alert(lines.join("\n"));
+    } catch (e: any) { console.error(e); alert(`MTL import failed: ${e.toString()}`); }
     finally { setIsLoading?.(false); }
   };
 
@@ -669,6 +788,7 @@ const MeshLODInspector: React.FC<MeshLODInspectorProps> = ({ model, baseName, on
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
               <button onClick={handleExportOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><Upload size={14} style={{ color: "var(--accent-blue)" }} /> Export OBJ</button>
               <button onClick={handleImportOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}><Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ</button>
+              <button onClick={handleImportMTL} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", gridColumn: "1 / -1" }}><Palette size={14} style={{ color: "var(--accent-cyan)" }} /> Import MTL Materials</button>
             </div>
           </div>
           <div style={{ background: "rgba(22, 160, 255, 0.05)", border: "1px solid rgba(22, 160, 255, 0.15)", borderRadius: "4px", padding: "8px 10px", fontSize: "11px", color: "var(--text-secondary)", lineHeight: "1.4" }}>
