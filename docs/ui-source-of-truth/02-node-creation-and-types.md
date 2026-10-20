@@ -30,6 +30,8 @@ Node creation is driven by the Add Node modal in `HierarchyTree.tsx`. The modal 
 
 Default names are generated from current model counts and naming conventions in `HierarchyTree.tsx`. Agents must copy defaults from code when updating this spec.
 
+Some node types generate their name automatically and therefore hide the Node Name field: `collision`, `engine_nozzle`, `repair_point_template`, `capture_point_template`, and `salvage_point_template`. The Add Node button must be enabled for those types without any user-entered name, because `handleAddNode` supplies the generated name. Types that still show the Node Name field require a non-empty value before submission.
+
 ## Basic Nodes
 
 Joint creation adds a joint under the selected parent with an identity transform.
