@@ -1199,7 +1199,7 @@ const handleDeleteNode = (name: string, type: string) => {
     
     let updatedModel = { ...model };
 
-    if (type === "joint") {
+    if (type === "joint" || type === "engine_nozzle") {
       const jointToDelete = model.joints.find(j => j.name === name);
       const parentJointName = jointToDelete ? jointToDelete.parent_name : "Root";
 
@@ -1225,7 +1225,8 @@ const handleDeleteNode = (name: string, type: string) => {
       updatedModel.engine_shapes = model.engine_shapes.filter(s => s.parent_name !== name);
       updatedModel.dockpaths = model.dockpaths.filter(dp => dp.parent_name !== name);
       updatedModel.nav_lights = model.nav_lights.filter(nav => nav.name !== name);
-      invoke("log_event", { level: "INFO", message: `Deleted joint bone: ${name}. Children re-parented to: ${parentJointName}` }).catch(console.error);
+      const deletedKind = type === "engine_nozzle" ? "engine nozzle" : "joint bone";
+      invoke("log_event", { level: "INFO", message: `Deleted ${deletedKind}: ${name}. Children re-parented to: ${parentJointName}` }).catch(console.error);
     } else if (type.endsWith("_group")) {
       const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(name.toLowerCase() + "_") || j.name.toLowerCase() === name.toLowerCase());
       const jointNames = groupJoints.map(j => j.name);

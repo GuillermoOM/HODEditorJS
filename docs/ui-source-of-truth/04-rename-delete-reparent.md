@@ -48,6 +48,8 @@ Current cascade removes:
 
 Joint delete must not reparent child nodes to the deleted node's parent.
 
+Engine nozzle rows use the `engine_nozzle` selection type even though they are backed by a joint. The context-menu delete for an engine nozzle must route through the same deletion branch as `joint`; otherwise the menu closes and the model is left unchanged. That branch also removes engine burns, glows, and shapes whose `parent_name` matches the nozzle and removes the matching nav light.
+
 Deleting a collision row removes the single `model.collision_meshes[]` entry. Save/import code must not synthesize a replacement collision after deletion.
 
 ## Weapon Group Delete
