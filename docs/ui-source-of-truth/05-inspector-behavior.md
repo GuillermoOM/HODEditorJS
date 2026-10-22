@@ -65,3 +65,5 @@ Engine Glow LOD rows may expose per-LOD visibility toggles that write through th
 Material and texture editing lives in Inspector and the Hierarchy tree's Materials tab. Do not duplicate material state outside model updates. 
 The Hierarchy tree's Materials tab provides a comprehensive list of all loaded materials and textures.
 Texture items in this list have a right-click context menu that can toggle the `legacy_storage_y_flipped` property, which directly controls the WebGL `flipY` parameter in the Viewport for accurate in-game orientation previews.
+
+Material shader discovery must scan both `.prog` files and HOD alias manifests (`hod_alias.manifest`, `mod_alias.manifest`) in the configured shader directories. HOD shader names are aliases, not necessarily program filenames (for example `matteScissor` maps to `sob_matte_s`). The Inspector shader selector must also include every shader name already assigned to a loaded material, preserving its original casing, so existing HOD materials remain selectable even when the configured directory does not expose that exact alias. Texture-slot lookup remains case-insensitive.

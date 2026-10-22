@@ -861,6 +861,23 @@ export const Inspector: React.FC<InspectorProps> = ({
     loadPipelines();
   }, []);
 
+  // Keep shader names already assigned on loaded materials selectable even when
+  // the configured shader directory does not expose that exact alias.
+  const shaderOptions = (() => {
+    const names: string[] = [];
+    const candidates = [
+      ...(model?.materials || []).map((m) => m.shader_name),
+      ...pipelines,
+    ];
+    for (const raw of candidates) {
+      const name = (raw || "").trim();
+      if (!name) continue;
+      if (names.some((existing) => existing.toLowerCase() === name.toLowerCase())) continue;
+      names.push(name);
+    }
+    return names.sort((a, b) => a.localeCompare(b));
+  })();
+
 
   // Generic handlers
 
@@ -3005,11 +3022,11 @@ export const Inspector: React.FC<InspectorProps> = ({
                   style={{ width: "100%" }}
                 >
                   <option value="">-- Select Shader --</option>
-                  {pipelines.map((p) => (
+                  {shaderOptions.map((p) => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>
-                {pipelines.length === 0 && (
+                {shaderOptions.length === 0 && (
                   <div style={{ fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic" }}>
                     No shaders loaded. Configure shader directories in Settings.
                   </div>

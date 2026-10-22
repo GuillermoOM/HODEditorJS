@@ -93,6 +93,7 @@ This tool lets you inspect, edit, and save `.hod` files with a visual interface.
 **Settings**
 - Centralized global Settings Modal accessible from the top toolbar
 - Shader directory configuration (persistent JSON storage) allows selecting multiple native OS folders for resolving raw textures and materials
+- Shader discovery reads both `.prog` files and `hod_alias.manifest` / `mod_alias.manifest`, so HOD aliases such as `matteScissor` resolve to their backing programs
 
 ---
 

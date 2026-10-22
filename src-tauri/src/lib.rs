@@ -3,7 +3,7 @@ use hwr_hod_parser::hod::{HODModel, HODTexture};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -426,6 +426,43 @@ fn save_shader_config(app_handle: tauri::AppHandle, config: ShaderConfig) -> Res
 }
 
 
+fn shader_base_path(path_str: &str) -> PathBuf {
+    let keeper_dir = Path::new(path_str);
+    if keeper_dir.ends_with("shaders") {
+        keeper_dir.to_path_buf()
+    } else {
+        keeper_dir.join("shaders")
+    }
+}
+
+/// Parse HOD shader aliases from `hod_alias.manifest` / `mod_alias.manifest`.
+/// Each entry maps a surface/program stem to the shader name stored in a HOD.
+fn parse_hod_alias_manifest(content: &str) -> Vec<(String, String)> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.split("//").next().unwrap_or("").trim();
+            let mut parts = line.split_whitespace();
+            if parts.next()? != "hod_alias" {
+                return None;
+            }
+            let target = parts.next()?.to_string();
+            let alias = parts.next()?.to_string();
+            Some((target, alias))
+        })
+        .collect()
+}
+
+fn read_hod_alias_entries(shaders_base: &Path) -> Vec<(String, String)> {
+    let mut aliases = Vec::new();
+    for file_name in ["hod_alias.manifest", "mod_alias.manifest"] {
+        if let Ok(content) = fs::read_to_string(shaders_base.join(file_name)) {
+            aliases.extend(parse_hod_alias_manifest(&content));
+        }
+    }
+    aliases
+}
+
 #[derive(serde::Serialize)]
 struct ShaderInfo {
     name: String,
@@ -436,20 +473,16 @@ struct ShaderInfo {
 fn get_dynamic_shader_slots(keeper_paths: Vec<String>) -> Result<Vec<ShaderInfo>, String> {
     use std::collections::HashMap;
     use regex::Regex;
-    let mut shaders = HashMap::new();
-    
+    let mut shaders: HashMap<String, Vec<String>> = HashMap::new();
+    let mut program_params: HashMap<String, Vec<String>> = HashMap::new();
+    let mut aliases: Vec<(String, String)> = Vec::new();
+
     // We match inTexParam
     let re = Regex::new(r"inTex([a-zA-Z0-9_]+)").map_err(|e| e.to_string())?;
 
     for path_str in &keeper_paths {
-        let keeper_dir = std::path::Path::new(path_str);
-        
-        let shaders_base = if keeper_dir.ends_with("shaders") {
-            keeper_dir.to_path_buf()
-        } else {
-            keeper_dir.join("shaders")
-        };
-        
+        let shaders_base = shader_base_path(path_str);
+
         // Sometimes they are in shaders/ or shaders/gl_prog/
         let dirs_to_check = [
             shaders_base.clone(),
@@ -473,22 +506,24 @@ fn get_dynamic_shader_slots(keeper_paths: Vec<String>) -> Result<Vec<ShaderInfo>
                                             params.push(param);
                                         }
                                     }
-                                    
+
+                                    // Keep the program parameters so HOD aliases can reuse them.
+                                    let program = program_params.entry(stem.to_string()).or_default();
+                                    for param in &params {
+                                        if !program.contains(param) {
+                                            program.push(param.clone());
+                                        }
+                                    }
+
                                     let mut name = stem.to_string();
                                     if let Some(stripped) = name.strip_prefix("sob_") {
                                         name = stripped.to_string();
                                     }
-                                    
-                                    if !shaders.contains_key(&name) {
-                                        shaders.insert(name, params);
-                                    } else {
-                                        // Merge params
-                                        if let Some(existing) = shaders.get_mut(&name) {
-                                            for p in params {
-                                                if !existing.contains(&p) {
-                                                    existing.push(p);
-                                                }
-                                            }
+
+                                    let entry = shaders.entry(name).or_default();
+                                    for param in params {
+                                        if !entry.contains(&param) {
+                                            entry.push(param);
                                         }
                                     }
                                 }
@@ -496,6 +531,25 @@ fn get_dynamic_shader_slots(keeper_paths: Vec<String>) -> Result<Vec<ShaderInfo>
                         }
                     }
                 }
+            }
+        }
+
+        aliases.extend(read_hod_alias_entries(&shaders_base));
+    }
+
+    // HODs store alias names such as `matteScissor`, while the shader
+    // directories contain the backing program (`sob_matte_s.prog`).
+    for (target, alias) in aliases {
+        let Some(params) = program_params.get(&target) else {
+            continue;
+        };
+        if params.is_empty() {
+            continue;
+        }
+        let entry = shaders.entry(alias).or_default();
+        for param in params {
+            if !entry.contains(param) {
+                entry.push(param.clone());
             }
         }
     }
@@ -520,14 +574,7 @@ fn get_shader_pipelines(keeper_paths: Vec<String>) -> Result<Vec<String>, String
     let mut pipelines: Vec<String> = Vec::new();
 
     for path_str in &keeper_paths {
-        let keeper_dir = std::path::Path::new(path_str);
-        
-        let shaders_base = if keeper_dir.ends_with("shaders") {
-            keeper_dir.to_path_buf()
-        } else {
-            keeper_dir.join("shaders")
-        };
-        
+        let shaders_base = shader_base_path(path_str);
         let shaders_dir = shaders_base.join("gl_prog");
         write_log("INFO", &format!("Looking for shaders in: {:?}", shaders_dir));
         if shaders_dir.is_dir() {
@@ -551,6 +598,14 @@ fn get_shader_pipelines(keeper_paths: Vec<String>) -> Result<Vec<String>, String
                         }
                     }
                 }
+            }
+        }
+
+        // HOD shader names are aliases defined in hod_alias.manifest, not
+        // necessarily the .prog filenames (e.g. `mattescissor` -> `sob_matte_s`).
+        for (_target, alias) in read_hod_alias_entries(&shaders_base) {
+            if !pipelines.contains(&alias) {
+                pipelines.push(alias);
             }
         }
     }
@@ -867,4 +922,69 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shader_base_path_accepts_shaders_or_parent_directory() {
+        assert_eq!(
+            shader_base_path("/game/HWRM/shaders"),
+            PathBuf::from("/game/HWRM/shaders")
+        );
+        assert_eq!(
+            shader_base_path("/game/HWRM"),
+            PathBuf::from("/game/HWRM/shaders")
+        );
+    }
+
+    #[test]
+    fn parses_hod_alias_manifest_with_comments_and_extra_columns() {
+        let content = r#"
+// Ships
+hod_alias	sob_ship		ship			SOB_
+hod_alias	sob_matte_s		mattescissor	SOB_
+//hod_alias	sob_matte		default		SOB_
+"#;
+        assert_eq!(
+            parse_hod_alias_manifest(content),
+            vec![
+                ("sob_ship".to_string(), "ship".to_string()),
+                ("sob_matte_s".to_string(), "mattescissor".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn shader_aliases_reuse_backing_program_slots() {
+        let root = std::env::temp_dir().join(format!(
+            "hodeditorjs-shader-alias-test-{}",
+            std::process::id()
+        ));
+        let shaders_dir = root.join("shaders");
+        let gl_prog = shaders_dir.join("gl_prog");
+        fs::create_dir_all(&gl_prog).unwrap();
+        fs::write(
+            shaders_dir.join("hod_alias.manifest"),
+            "hod_alias\tsob_matte_s\tmattescissor\tSOB_\n",
+        )
+        .unwrap();
+        fs::write(
+            gl_prog.join("sob_matte_s.prog"),
+            "local tex inTexDiff 0\nlocal tex inTexGlow 1\nlocal tex inTexTeam 2\nlocal tex inTexNorm 3\n",
+        )
+        .unwrap();
+
+        let shaders =
+            get_dynamic_shader_slots(vec![root.to_string_lossy().into_owned()]).unwrap();
+        let alias = shaders
+            .iter()
+            .find(|shader| shader.name == "mattescissor")
+            .expect("mattescissor alias missing");
+        assert_eq!(alias.slots, vec!["Diff", "Glow", "Team", "Norm"]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
 }
