@@ -1932,8 +1932,13 @@ fn parse_basic_mesh(chunk: &IffChunk, context: &mut ParsingContext) -> Result<HO
                 // HOD 2.0 face pool stores plain little-endian u16 indices, local to each part.
                 let raw = safe_read_u16(&mut context.face_pool)?;
                 raw_indices.push(raw);
+                // hwmod 修复：索引是【全局】的（跨本 mesh 的所有 part 累计），
+                // 必须减去本 part 的起始偏移才能得到局部索引。
+                // 原来的写法是 min(raw, vertex_count-1)，会把越界索引全部夹到最后
+                // 一个顶点上 —— 这正是三角面变成一团刺的原因。
+                let local = (raw as usize).saturating_sub(cumulative_vertex_offset);
                 let safe_idx = if vertex_count > 0 {
-                    std::cmp::min(raw, (vertex_count - 1) as u16)
+                    std::cmp::min(local, vertex_count - 1) as u16
                 } else {
                     0
                 };
@@ -2663,6 +2668,81 @@ mod tests {
         };
     }
 
+
+    /// 面池索引在一个 mesh 内是【全局】的，
+    /// 而 BMSH 里的 `vertex_count` 是【本 part 局部】的。
+    /// 这个测试构造一个两 part 的 mesh：
+    ///
+    ///   part 0: 3 个顶点，面池索引 0,1,2          -> 局部 0,1,2
+    ///   part 1: 2 个顶点，面池索引 3,4,3          -> 局部 0,1,0
+    ///
+    /// 如果不减去 `cumulative_vertex_offset`，part 1 的 3,4,3 会被裁剪成 1,1,1，
+    /// 所有三角面塔缩到同一个顶点 —— 就是“三角面炸成一团刺”。
+    #[test]
+    fn face_indices_are_mesh_global_and_part_local() {
+        fn pos_vertex(x: f32) -> Vec<u8> {
+            let mut v = Vec::with_capacity(16);
+            for f in [x, 0.0, 0.0, 1.0] {
+                v.extend_from_slice(&f.to_le_bytes());
+            }
+            v
+        }
+
+        // 5 个顶点：mask 0x01 只有位置，stride = 16 字节
+        let mut mesh_pool = Vec::new();
+        for i in 0..5 {
+            mesh_pool.extend_from_slice(&pos_vertex(i as f32));
+        }
+
+        // 面池：part0 -> 0,1,2；part1 -> 3,4,3（全局）
+        let mut face_pool = Vec::new();
+        for idx in [0u16, 1, 2, 3, 4, 3] {
+            face_pool.extend_from_slice(&idx.to_le_bytes());
+        }
+
+        // BMSH 头：lod = 0，part_count = 2
+        let mut bmsh = Vec::new();
+        bmsh.extend_from_slice(&0i32.to_le_bytes());
+        bmsh.extend_from_slice(&2i32.to_le_bytes());
+        for (vertex_count, indice_count) in [(3i32, 3i32), (2, 3)] {
+            bmsh.extend_from_slice(&0i32.to_le_bytes()); // material_index
+            bmsh.extend_from_slice(&0x01u32.to_le_bytes()); // vertex_mask: 仅位置
+            bmsh.extend_from_slice(&vertex_count.to_le_bytes());
+            bmsh.extend_from_slice(&1i16.to_le_bytes()); // prim_group_count
+            bmsh.extend_from_slice(&indice_count.to_le_bytes());
+        }
+
+        let chunk = crate::iff::IffChunk {
+            id: "BMSH".to_string(),
+            chunk_type: crate::iff::ChunkType::Normal,
+            version: 2,
+            data: bmsh,
+            children: Vec::new(),
+        };
+
+        let mut context = ParsingContext {
+            texture_pool: Cursor::new(Vec::new()),
+            mesh_pool: Cursor::new(mesh_pool),
+            face_pool: Cursor::new(face_pool),
+            is_v2: true,
+            hod_dir: None,
+            uncompressed_dir: None,
+            hod_file_path: None,
+        };
+
+        let mesh = parse_basic_mesh(&chunk, &mut context).expect("应该能解析");
+        assert_eq!(mesh.parts.len(), 2, "应该解析出两个 part");
+
+        let part0: Vec<u16> = mesh.parts[0].indices.clone();
+        let part1: Vec<u16> = mesh.parts[1].indices.clone();
+        assert_eq!(part0, vec![0, 1, 2], "part 0 的索引应该保持 0,1,2");
+        assert_eq!(
+            part1,
+            vec![0, 1, 0],
+            "part 1 的全局索引 3,4,3 应该还原成局部 0,1,0，\
+             而不是被裁剪成 1,1,1"
+        );
+    }
     #[test]
     fn parse_len_string_roundtrip() {
         for value in ["", "ascii", "h\u{e9}llo"] {
