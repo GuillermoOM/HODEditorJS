@@ -2054,15 +2054,15 @@ fn parse_dock_extended(data: &[u8]) -> Result<Vec<HODDockpath>, String> {
     for _ in 0..count {
         let name = read_len_string(&mut r)?;
         let parent_name = read_len_string(&mut r)?;
-        let val1 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-        let val2 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-        let val3 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-        let val4 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-        let val5 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-        let compatible_ships = read_len_string(&mut r)?;
-        let padding1 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
-        let padding2 = read_len_string(&mut r)?;
-        let num_points = r.read_i32::<LittleEndian>().map_err(|e| e.to_string())?;
+        let val1 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?; // GlobalPropertyCount
+        let val2 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?; // LocalPropertyCount
+        let val3 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?; // IsExit
+        let val4 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?; // IsLatch
+        let val5 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?; // Tolerance
+        let compatible_ships = read_len_string(&mut r)?; // DockFamily
+        let padding1 = r.read_u32::<LittleEndian>().map_err(|e| e.to_string())?; // UseAnimation
+        let padding2 = read_len_string(&mut r)?; // LinkedPaths
+        let num_points = r.read_i32::<LittleEndian>().map_err(|e| e.to_string())?; // PathPoint
         if num_points < 0 {
             return Err("Negative num_points in DOCK".to_string());
         }
