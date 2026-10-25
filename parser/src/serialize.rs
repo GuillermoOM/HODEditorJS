@@ -1074,6 +1074,82 @@ fn original_needs_full_v2_regeneration(original_bytes: &[u8], updated_model: &HO
     !has_pool
 }
 
+/// Build a COLD chunk in byte-exact HODOR layout: FORM COLD whose data is
+/// the len-string name only, with DEFAULT children BBOX (min/max extents),
+/// BSPH (center/radius) and TRIS (vertex/index counts only).
+pub(crate) fn build_cold_chunk(cm: &HODCollisionMesh) -> Result<IffChunk, String> {
+    let mut cold_children = Vec::new();
+
+    // BBOX: 6 LE floats (min extents, max extents).
+    let mut bbox_data = Vec::new();
+    for v in [
+        cm.min_extents.x,
+        cm.min_extents.y,
+        cm.min_extents.z,
+        cm.max_extents.x,
+        cm.max_extents.y,
+        cm.max_extents.z,
+    ] {
+        bbox_data
+            .write_f32::<LittleEndian>(v)
+            .map_err(|e| e.to_string())?;
+    }
+    cold_children.push(IffChunk {
+        id: "BBOX".to_string(),
+        chunk_type: ChunkType::Default,
+        version: 0,
+        data: bbox_data,
+        children: Vec::new(),
+    });
+
+    // BSPH: 4 LE floats (center, radius).
+    let mut bsph_data = Vec::new();
+    for v in [cm.center.x, cm.center.y, cm.center.z, cm.radius] {
+        bsph_data
+            .write_f32::<LittleEndian>(v)
+            .map_err(|e| e.to_string())?;
+    }
+    cold_children.push(IffChunk {
+        id: "BSPH".to_string(),
+        chunk_type: ChunkType::Default,
+        version: 0,
+        data: bsph_data,
+        children: Vec::new(),
+    });
+
+    // TRIS: 2 LE i32 counts only; the triangles themselves live in the
+    // mesh/face POOL streams (appended by generate_v2_from_model).
+    let (vcount, icount) = match cm.mesh.parts.first() {
+        Some(part) => (part.vertices.len() as i32, part.indices.len() as i32),
+        None => (0, 0),
+    };
+    let mut tris_data = Vec::new();
+    tris_data
+        .write_i32::<LittleEndian>(vcount)
+        .map_err(|e| e.to_string())?;
+    tris_data
+        .write_i32::<LittleEndian>(icount)
+        .map_err(|e| e.to_string())?;
+    cold_children.push(IffChunk {
+        id: "TRIS".to_string(),
+        chunk_type: ChunkType::Default,
+        version: 0,
+        data: tris_data,
+        children: Vec::new(),
+    });
+
+    let mut cold_data = Vec::new();
+    write_len_string(&mut cold_data, &cm.name).map_err(|e| e.to_string())?;
+
+    Ok(IffChunk {
+        id: "COLD".to_string(),
+        chunk_type: ChunkType::Form,
+        version: 0,
+        data: cold_data,
+        children: cold_children,
+    })
+}
+
 pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result<Vec<u8>, String> {
     use crate::iff::{ChunkType, IffChunk};
     use crate::xpress;
@@ -1745,141 +1821,18 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         }
     }
 
-    // Generate COLD chunk from collision mesh data if not preserved
+    // Generate COLD chunk from collision mesh data if not preserved.
+    // Byte-exact HODOR layout (ter_zephyrus_2.0_original.hod): FORM COLD with
+    // data = len-string name ONLY, then inline DEFAULT children BBOX (6 LE
+    // floats: min/max extents), BSPH (4 LE floats: center/radius) and TRIS
+    // (2 LE i32: vertex count, index count — counts only, the actual
+    // triangles live in the mesh/face POOL streams). Do NOT append bounds to
+    // the data section and do NOT wrap TRIS in a FORM node: the engine reads
+    // TRIS as two count words, so vertex bytes there decode as a gigantic
+    // index count (access violation on load).
     if !model.collision_meshes.is_empty() {
         for cm in &model.collision_meshes {
-            let mut cold_children = Vec::new();
-
-            // BBOX
-            let mut bbox_data = Vec::new();
-            bbox_data
-                .write_f32::<LittleEndian>(cm.min_extents.x)
-                .map_err(|e| e.to_string())?;
-            bbox_data
-                .write_f32::<LittleEndian>(cm.min_extents.y)
-                .map_err(|e| e.to_string())?;
-            bbox_data
-                .write_f32::<LittleEndian>(cm.min_extents.z)
-                .map_err(|e| e.to_string())?;
-            bbox_data
-                .write_f32::<LittleEndian>(cm.max_extents.x)
-                .map_err(|e| e.to_string())?;
-            bbox_data
-                .write_f32::<LittleEndian>(cm.max_extents.y)
-                .map_err(|e| e.to_string())?;
-            bbox_data
-                .write_f32::<LittleEndian>(cm.max_extents.z)
-                .map_err(|e| e.to_string())?;
-            cold_children.push(IffChunk {
-                id: "BBOX".to_string(),
-                chunk_type: ChunkType::Default,
-                version: 0,
-                data: bbox_data,
-                children: Vec::new(),
-            });
-
-            // BSPH
-            let mut bsph_data = Vec::new();
-            bsph_data
-                .write_f32::<LittleEndian>(cm.center.x)
-                .map_err(|e| e.to_string())?;
-            bsph_data
-                .write_f32::<LittleEndian>(cm.center.y)
-                .map_err(|e| e.to_string())?;
-            bsph_data
-                .write_f32::<LittleEndian>(cm.center.z)
-                .map_err(|e| e.to_string())?;
-            bsph_data
-                .write_f32::<LittleEndian>(cm.radius)
-                .map_err(|e| e.to_string())?;
-            cold_children.push(IffChunk {
-                id: "BSPH".to_string(),
-                chunk_type: ChunkType::Default,
-                version: 0,
-                data: bsph_data,
-                children: Vec::new(),
-            });
-
-            // TRIS (vertex data is in mesh pool, just write vertex/index counts)
-            if let Some(part) = cm.mesh.parts.first() {
-                let mut tris_data = Vec::new();
-                tris_data
-                    .write_i32::<LittleEndian>(part.vertices.len() as i32)
-                    .map_err(|e| e.to_string())?;
-                for v in &part.vertices {
-                    tris_data
-                        .write_f32::<LittleEndian>(v.position.x)
-                        .map_err(|e| e.to_string())?;
-                    tris_data
-                        .write_f32::<LittleEndian>(v.position.y)
-                        .map_err(|e| e.to_string())?;
-                    tris_data
-                        .write_f32::<LittleEndian>(v.position.z)
-                        .map_err(|e| e.to_string())?;
-                }
-                tris_data
-                    .write_i32::<LittleEndian>(part.indices.len() as i32)
-                    .map_err(|e| e.to_string())?;
-                for &idx in &part.indices {
-                    tris_data
-                        .write_u16::<LittleEndian>(idx)
-                        .map_err(|e| e.to_string())?;
-                }
-                cold_children.push(IffChunk {
-                    id: "FORM".to_string(),
-                    chunk_type: ChunkType::Form,
-                    version: 0,
-                    data: Vec::new(),
-                    children: vec![IffChunk {
-                        id: "TRIS".to_string(),
-                        chunk_type: ChunkType::Default,
-                        version: 0,
-                        data: tris_data,
-                        children: Vec::new(),
-                    }],
-                });
-            }
-
-            let mut cold_data = Vec::new();
-            write_len_string(&mut cold_data, &cm.name).map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.min_extents.x)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.min_extents.y)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.min_extents.z)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.max_extents.x)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.max_extents.y)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.max_extents.z)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.center.x)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.center.y)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.center.z)
-                .map_err(|e| e.to_string())?;
-            cold_data
-                .write_f32::<LittleEndian>(cm.radius)
-                .map_err(|e| e.to_string())?;
-
-            dtrm_children.push(IffChunk {
-                id: "COLD".to_string(),
-                chunk_type: ChunkType::Form,
-                version: 0,
-                data: cold_data,
-                children: cold_children,
-            });
+            dtrm_children.push(build_cold_chunk(cm)?);
         }
     }
 
@@ -3091,5 +3044,54 @@ mod tests {
             shader_texture_param_name("fx_burn", "Salvage_TP_PAIN", 2),
             "$spec"
         );
+    }
+
+    #[test]
+    fn cold_chunk_matches_hodor_layout() {
+        let cm = HODCollisionMesh {
+            name: "Root".to_string(),
+            min_extents: Vector3 { x: -10.0, y: -10.0, z: -10.0 },
+            max_extents: Vector3 { x: 10.0, y: 10.0, z: 10.0 },
+            center: Vector3 { x: 0.0, y: 0.0, z: 0.0 },
+            radius: 17.32,
+            mesh: HODMesh {
+                name: "CollisionMesh".to_string(),
+                parent_name: "Root".to_string(),
+                lod: 0,
+                has_mult_tags: false,
+                parts: vec![HODMeshPart {
+                    material_index: 0,
+                    vertex_mask: 1,
+                    vertices: vec![
+                        HODVertex {
+                            position: Vector3 { x: 0.0, y: 0.0, z: 0.0 },
+                            normal: None,
+                            color: None,
+                            uv: None,
+                            tangent: None,
+                            binormal: None,
+                            skinning_data: None,
+                        };
+                        8
+                    ],
+                    indices: vec![0u16; 36],
+                }],
+            },
+        };
+        let cold = build_cold_chunk(&cm).unwrap();
+        assert_eq!(cold.id, "COLD");
+        // Data is the len-string name ONLY (HODOR: 8 bytes for "Root").
+        assert_eq!(cold.data.len(), 4 + "Root".len());
+        assert_eq!(cold.children.len(), 3);
+        assert_eq!(cold.children[0].id, "BBOX");
+        assert_eq!(cold.children[0].data.len(), 24);
+        assert_eq!(cold.children[1].id, "BSPH");
+        assert_eq!(cold.children[1].data.len(), 16);
+        // TRIS is counts-only (8 bytes), never wrapped in a FORM node.
+        assert_eq!(cold.children[2].id, "TRIS");
+        assert_eq!(cold.children[2].data.len(), 8);
+        let vcount = i32::from_le_bytes(cold.children[2].data[0..4].try_into().unwrap());
+        let icount = i32::from_le_bytes(cold.children[2].data[4..8].try_into().unwrap());
+        assert_eq!((vcount, icount), (8, 36));
     }
 }

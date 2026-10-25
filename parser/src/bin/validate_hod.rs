@@ -907,6 +907,56 @@ fn validate_file(path: &str, verbose: bool) -> i32 {
     }
     if let Some(dtrm) = chunks.iter().find(|c| c.id == "DTRM") {
         for sub in &dtrm.children {
+            // COLD must be HODOR-layout: data = len-string name only, with
+            // DEFAULT children BBOX (24 B), BSPH (16 B), TRIS (8 B, counts).
+            if sub.id.trim() == "COLD" {
+                let mut pos = 0usize;
+                match read_len_string(&sub.data, &mut pos) {
+                    Some(_) if pos != sub.data.len() => report.error(
+                        "DTRM/COLD",
+                        format!(
+                            "data section is {} bytes but the name string ends at {}; HODOR stores the name only and the engine misreads trailing bounds",
+                            sub.data.len(),
+                            pos
+                        ),
+                    ),
+                    None => report.error(
+                        "DTRM/COLD",
+                        "cannot read collision name (truncated COLD)".to_string(),
+                    ),
+                    _ => {}
+                }
+                let mut seen = Vec::new();
+                for child in &sub.children {
+                    seen.push(child.id.clone());
+                    let want = match child.id.trim() {
+                        "BBOX" => Some(24),
+                        "BSPH" => Some(16),
+                        "TRIS" => Some(8),
+                        _ => None,
+                    };
+                    match want {
+                        Some(n) if child.data.len() != n => report.error(
+                            "DTRM/COLD",
+                            format!(
+                                "child '{}' is {} bytes, HODOR writes {}",
+                                child.id,
+                                child.data.len(),
+                                n
+                            ),
+                        ),
+                        None => report.error(
+                            "DTRM/COLD",
+                            format!(
+                                "unexpected child '{}'; HODOR COLD holds BBOX/BSPH/TRIS only (a FORM-wrapped TRIS desyncs the engine parser)",
+                                child.id
+                            ),
+                        ),
+                        _ => {}
+                    }
+                }
+                report.info("DTRM/COLD", format!("children: {:?}", seen));
+            }
             match sub.id.trim() {
                 "HIER" => {
                     for (name, parent) in parse_hier_names(&sub.data) {
