@@ -3090,7 +3090,7 @@ const handleDeleteNode = (name: string, type: string) => {
                             }}
                             onClick={(e) => e.stopPropagation()}
                             title="Animation duration in seconds (Enter to apply, Esc to cancel)"
-                            style={{ width: "64px", fontSize: "10px", padding: "1px 4px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--accent-cyan)", borderRadius: "3px", color: "var(--text-primary)", marginLeft: "auto", flexShrink: 0 }}
+                            style={{ width: "76px", fontSize: "12px", padding: "3px 6px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--accent-cyan)", borderRadius: "3px", color: "var(--text-primary)", marginLeft: "auto", flexShrink: 0 }}
                           />
                         ) : (
                           <span
@@ -3098,9 +3098,9 @@ const handleDeleteNode = (name: string, type: string) => {
                             onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent-cyan)"; e.currentTarget.style.color = "var(--accent-cyan)"; }}
                             onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "var(--text-muted)"; }}
                             title="Click to edit duration"
-                            style={{ fontSize: "9px", padding: "1px 4px", background: "rgba(255,255,255,0.05)", border: "1px dashed rgba(255,255,255,0.15)", borderRadius: "3px", color: "var(--text-muted)", marginLeft: "auto", flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "3px" }}
+                            style={{ fontSize: "11px", padding: "3px 8px", background: "rgba(255,255,255,0.05)", border: "1px dashed rgba(255,255,255,0.15)", borderRadius: "3px", color: "var(--text-muted)", marginLeft: "auto", flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "4px" }}
                           >
-                            <Pencil size={9} />
+                            <Pencil size={11} />
                             {anim.duration.toFixed(2)}s
                           </span>
                         )}
@@ -3112,7 +3112,7 @@ const handleDeleteNode = (name: string, type: string) => {
                             border: "1px solid rgba(255, 64, 64, 0.3)",
                             color: "#ff4040",
                             borderRadius: "4px",
-                            padding: "2px 6px",
+                            padding: "4px 9px",
                             cursor: "pointer",
                             display: "flex",
                             alignItems: "center",
@@ -3120,7 +3120,7 @@ const handleDeleteNode = (name: string, type: string) => {
                             flexShrink: 0
                           }}
                         >
-                          <Trash2 size={12} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                       
