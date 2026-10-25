@@ -462,36 +462,9 @@ fn parse_matrix(node: Node) -> Matrix4 {
     mat
 }
 
-fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel) {
-    let mut name = node.attribute("name").unwrap_or("unknown").to_string();
-    let mut is_joint = false;
-    let mut is_navl = false;
-    let mut is_burn = false;
-    let mut is_mark = false;
-
-    // Extract real name and type from prefixes
-    if name.starts_with("JNT[") {
-        if let Some(end) = name.find("]") {
-            name = name[4..end].to_string();
-            is_joint = true;
-        }
-    } else if name.starts_with("MARK[") {
-        if let Some(end) = name.find("]") {
-            name = name[5..end].to_string();
-            is_mark = true;
-        }
-    } else if name.starts_with("NAVL[") {
-        if let Some(end) = name.find("]") {
-            name = name[5..end].to_string();
-            is_navl = true;
-        }
-    } else if name.starts_with("BURN[") {
-        if let Some(end) = name.find("]") {
-            name = name[5..end].to_string();
-            is_burn = true;
-        }
-    }
-
+/// Compose a scene node's local transform from its <matrix> or
+/// <translate>/<rotate> children, in document order.
+fn node_transform(node: Node) -> Matrix4 {
     let mut transform = Matrix4 { m: [[0.0; 4]; 4] };
     transform.m[0][0] = 1.0;
     transform.m[1][1] = 1.0;
@@ -572,6 +545,46 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             }
         }
     }
+    transform
+}
+
+fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel) {
+    let mut name = node.attribute("name").unwrap_or("unknown").to_string();
+    let mut is_joint = false;
+    let mut is_navl = false;
+    let mut is_burn = false;
+    let mut is_mark = false;
+    let mut is_dock = false;
+
+    // Extract real name and type from prefixes
+    if name.starts_with("JNT[") {
+        if let Some(end) = name.find("]") {
+            name = name[4..end].to_string();
+            is_joint = true;
+        }
+    } else if name.starts_with("MARK[") {
+        if let Some(end) = name.find("]") {
+            name = name[5..end].to_string();
+            is_mark = true;
+        }
+    } else if name.starts_with("NAVL[") {
+        if let Some(end) = name.find("]") {
+            name = name[5..end].to_string();
+            is_navl = true;
+        }
+    } else if name.starts_with("BURN[") {
+        if let Some(end) = name.find("]") {
+            name = name[5..end].to_string();
+            is_burn = true;
+        }
+    } else if name.starts_with("DOCK[") {
+        if let Some(end) = name.find("]") {
+            name = name[5..end].to_string();
+            is_dock = true;
+        }
+    }
+
+    let mut transform = node_transform(node);
 
     let p_name = parent_name.map(|s| s.to_string());
 
@@ -709,6 +722,81 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             num_flames: 1,
             vertices: burn_vertices,
         });
+    } else if is_dock {
+        // Dock path: DOCK[path]_Fam[family]_Flags[flags] with
+        // SEG[i]_Tol[t]_Spd[s]_Flags[...] point children.
+        // Reverse-engineered from RODOH output (ter_zephyrus_2.0_original.hod):
+        // parent is always 'world', compatible_ships comes from Fam[...],
+        // val1/val2/val4 are constant (6/10/1), val3 is 1 when the Flags
+        // contain "Exit" (Exit Latch paths) and 0 otherwise (Latch paths).
+        let full_name = node.attribute("name").unwrap_or("");
+        let compatible_ships = extract_bracket_value(full_name, "_Fam[")
+            .unwrap_or("")
+            .to_string();
+        let flags = extract_bracket_value(full_name, "_Flags[").unwrap_or("");
+        let mut indexed_points: Vec<(usize, HODDockpoint)> = Vec::new();
+        for child in node.children().filter(|n| n.has_tag_name("node")) {
+            let child_name = child.attribute("name").unwrap_or("");
+            if !child_name.starts_with("SEG[") {
+                continue;
+            }
+            let seg_idx = extract_bracket_value(child_name, "SEG[")
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(usize::MAX);
+            let tolerance = extract_bracket_value(child_name, "_Tol[")
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(0.0);
+            let max_speed = extract_bracket_value(child_name, "_Spd[")
+                .and_then(|v| v.parse::<f32>().ok())
+                .unwrap_or(0.0);
+            let t = node_transform(child);
+            let mut rotation = Matrix4 {
+                m: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            };
+            for r in 0..3 {
+                for c in 0..3 {
+                    rotation.m[r][c] = t.m[r][c];
+                }
+            }
+            indexed_points.push((
+                seg_idx,
+                HODDockpoint {
+                    position: Vector3 {
+                        x: t.m[3][0],
+                        y: t.m[3][1],
+                        z: t.m[3][2],
+                    },
+                    rotation,
+                    tolerance,
+                    max_speed,
+                    extra1: 0,
+                    extra2: 0,
+                },
+            ));
+        }
+        indexed_points.sort_by_key(|(idx, _)| *idx);
+        let points = indexed_points.into_iter().map(|(_, p)| p).collect();
+        model.dockpaths.push(HODDockpath {
+            name: name.clone(),
+            parent_name: "world".to_string(),
+            points,
+            val1: 6,
+            val2: 10,
+            val3: if flags.contains("Exit") { 1 } else { 0 },
+            val4: 1,
+            val5: 0,
+            compatible_ships,
+            padding1: 0,
+            padding2: String::new(),
+        });
+        // SEG children are consumed inline above; do not recurse into them
+        // (or they would leak into the joint hierarchy as bogus joints).
+        return;
     } else {
         // Generic node — add as joint so the hierarchy tree can display it.
         // Filtered prefixes: Flame[], Class[], ROOT_, UVSets[], COL[], HOLD_
@@ -737,6 +825,8 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
             && !name.starts_with("COL[")
             && !name.starts_with("HOLD_")
             && !name.starts_with("ANIM[")
+            && !name.starts_with("DOCK[")
+            && !name.starts_with("SEG[")
         {
             let (pos, rot, _) = decompose_matrix(transform.clone());
             model.joints.push(HODJoint {
@@ -984,5 +1074,80 @@ fn parse_animations(doc: &Document, model: &mut HODModel) {
 
             model.animations.push(hod_anim);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DOCK_DAE: &str = r##"<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <library_visual_scenes>
+    <visual_scene id="test" name="test">
+      <node name="ROOT_LOD[0]" id="ROOT_LOD[0]">
+        <node name="HOLD_DOCK" id="HOLD_DOCK">
+          <translate sid="translate">0 0 0</translate>
+          <node name="DOCK[path1]_Fam[Utility]_Flags[Latch]" id="DOCK[path1]_Fam[Utility]_Flags[Latch]">
+            <translate sid="translate">0 0 0</translate>
+            <rotate sid="rotateZ">0 0 1 0</rotate>
+            <rotate sid="rotateY">0 1 0 0</rotate>
+            <rotate sid="rotateX">1 0 0 0</rotate>
+            <node name="SEG[0]_Tol[50]_Spd[0]_Flags[Player Queue]" id="s0">
+              <translate sid="translate">-170.4814 0 -68.30959</translate>
+              <rotate sid="rotateZ">0 0 1 0</rotate>
+              <rotate sid="rotateY">0 1 0 0</rotate>
+              <rotate sid="rotateX">1 0 0 0</rotate>
+            </node>
+            <node name="SEG[1]_Tol[30]_Spd[5]_Flags[UseRot]" id="s1">
+              <translate sid="translate">-79.468 -7.882353 -19.99933</translate>
+              <rotate sid="rotateZ">0 0 1 0</rotate>
+              <rotate sid="rotateY">0 1 0 -90</rotate>
+              <rotate sid="rotateX">1 0 0 0</rotate>
+            </node>
+          </node>
+          <node name="DOCK[path2]_Fam[Utility]_Flags[Exit Latch]" id="DOCK[path2]_Fam[Utility]_Flags[Exit Latch]">
+            <translate sid="translate">0 0 0</translate>
+            <node name="SEG[0]_Tol[5]_Spd[0]" id="s2">
+              <translate sid="translate">1 2 3</translate>
+            </node>
+          </node>
+        </node>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#test"/>
+  </scene>
+</COLLADA>"##;
+
+    #[test]
+    fn dae_dockpaths_parse_name_family_points() {
+        let model = parse_dae(DOCK_DAE).expect("DAE with DOCK nodes must parse");
+        assert_eq!(model.dockpaths.len(), 2);
+
+        let p1 = &model.dockpaths[0];
+        assert_eq!(p1.name, "path1");
+        assert_eq!(p1.parent_name, "world");
+        assert_eq!(p1.compatible_ships, "Utility");
+        assert_eq!(p1.val3, 0);
+        assert_eq!(p1.points.len(), 2);
+        assert!((p1.points[0].position.x - -170.4814).abs() < 1e-3);
+        assert!((p1.points[0].position.z - -68.30959).abs() < 1e-3);
+        assert_eq!(p1.points[0].tolerance, 50.0);
+        assert_eq!(p1.points[1].tolerance, 30.0);
+        assert_eq!(p1.points[1].max_speed, 5.0);
+        // -90deg about Y: local +X maps to -Z in the rotation rows.
+        assert!((p1.points[1].rotation.m[0][2] - -1.0).abs() < 1e-5);
+
+        let p2 = &model.dockpaths[1];
+        assert_eq!(p2.name, "path2");
+        assert_eq!(p2.val3, 1);
+        assert_eq!(p2.points.len(), 1);
+
+        // DOCK/SEG scaffolding must not leak into the joint hierarchy.
+        assert!(!model.joints.iter().any(|j| j.name.starts_with("DOCK[")
+            || j.name.starts_with("SEG[")
+            || j.name.starts_with("HOLD_")));
     }
 }
