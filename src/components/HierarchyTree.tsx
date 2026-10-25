@@ -286,6 +286,69 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     setSelectedAnimIdx(Math.max(0, selectedAnimIdx > idxToDelete ? selectedAnimIdx - 1 : (selectedAnimIdx === idxToDelete ? 0 : selectedAnimIdx)));
   };
 
+  // Duration editing (minimum mirrors the create-animation dialog: 0.1s).
+  const [editingDurationIdx, setEditingDurationIdx] = useState<number | null>(null);
+  const [editDurationText, setEditDurationText] = useState("");
+
+  const handleDurationCommit = (animIdx: number) => {
+    if (!model) {
+      setEditingDurationIdx(null);
+      return;
+    }
+    const anim = (model.animations ?? [])[animIdx];
+    if (!anim) {
+      setEditingDurationIdx(null);
+      return;
+    }
+    const parsed = parseFloat(editDurationText);
+    if (!Number.isFinite(parsed) || parsed < 0.1) {
+      alert(`Invalid duration "${editDurationText}". Duration must be a number of at least 0.1 seconds.`);
+      setEditingDurationIdx(null);
+      return;
+    }
+    const newDuration = Math.round(parsed * 1000) / 1000;
+    if (newDuration === anim.duration) {
+      setEditingDurationIdx(null);
+      return;
+    }
+    // Shortening below placed keyframes would strand them past the end of
+    // the timeline (playback clamps at duration, so they would never play).
+    // Clamp them to the new duration after explicit confirmation; keyframe
+    // order is restored by re-sorting. Interpolation stays safe: the
+    // viewport guards zero-length spans (t2.time === t1.time → alpha 0).
+    if (newDuration < anim.duration) {
+      const stranded = anim.tracks.reduce(
+        (count, t) => count + t.keyframes.filter((kf) => kf.time > newDuration + 1e-9).length,
+        0
+      );
+      if (stranded > 0) {
+        const confirmed = window.confirm(
+          `Shortening "${anim.name}" to ${newDuration}s strands ${stranded} keyframe(s) placed past the new end.\n\nOK = clamp them to ${newDuration}s.\nCancel = keep the current duration.`
+        );
+        if (!confirmed) {
+          setEditingDurationIdx(null);
+          return;
+        }
+      }
+    }
+    const updatedAnims = (model.animations ?? []).map((a, i) => {
+      if (i !== animIdx) return a;
+      return {
+        ...a,
+        duration: newDuration,
+        tracks: a.tracks.map((t) => ({
+          ...t,
+          keyframes: t.keyframes
+            .map((kf) => (kf.time > newDuration ? { ...kf, time: newDuration } : kf))
+            .sort((x, y) => x.time - y.time),
+        })),
+      };
+    });
+    onModelChange?.({ ...model, animations: updatedAnims });
+    setEditingDurationIdx(null);
+    invoke("log_event", { level: "INFO", message: `Animation "${anim.name}" duration changed: ${anim.duration}s -> ${newDuration}s` }).catch(console.error);
+  };
+
   const handleExportNodes = async () => {
     if (!model) return;
     const exportData = {
@@ -3012,9 +3075,32 @@ const handleDeleteNode = (name: string, type: string) => {
                         <span style={{ fontWeight: "600", color: isActive ? "var(--accent-success)" : "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {anim.name}
                         </span>
-                        <span style={{ fontSize: "9px", padding: "1px 4px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", color: "var(--text-muted)", marginLeft: "auto", flexShrink: 0 }}>
-                          {anim.duration.toFixed(2)}s
-                        </span>
+                        {editingDurationIdx === animIdx ? (
+                          <input
+                            autoFocus
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={editDurationText}
+                            onChange={(e) => setEditDurationText(e.target.value)}
+                            onBlur={() => handleDurationCommit(animIdx)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleDurationCommit(animIdx);
+                              else if (e.key === "Escape") setEditingDurationIdx(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Animation duration in seconds (Enter to apply, Esc to cancel)"
+                            style={{ width: "64px", fontSize: "10px", padding: "1px 4px", background: "rgba(0,0,0,0.4)", border: "1px solid var(--accent-cyan)", borderRadius: "3px", color: "var(--text-primary)", marginLeft: "auto", flexShrink: 0 }}
+                          />
+                        ) : (
+                          <span
+                            onClick={(e) => { e.stopPropagation(); setEditingDurationIdx(animIdx); setEditDurationText(anim.duration.toString()); }}
+                            title="Click to edit duration"
+                            style={{ fontSize: "9px", padding: "1px 4px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", color: "var(--text-muted)", marginLeft: "auto", flexShrink: 0, cursor: "pointer" }}
+                          >
+                            {anim.duration.toFixed(2)}s
+                          </span>
+                        )}
                         <button
                           onClick={(e) => handleDeleteAnimation(animIdx, anim.name, e)}
                           title="Delete Animation"
