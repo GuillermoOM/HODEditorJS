@@ -630,7 +630,12 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
         });
     } else if is_navl {
         // Parse navlight attributes from name string:
-        // NAVL[name]_Sz[size]_Ph[phase]_Fr[freq]_Col[r,g,b]_Dist[dist]_Flags[flags]
+        // NAVL[name]_Type[style]_Sz[size]_Ph[phase]_Fr[freq]_Col[r,g,b]_Dist[dist]_Flags[flags]
+        // NOTE: the style string comes from _Type[...] (e.g. "default"), NOT
+        // from _Flags[...] — RODOH writes the Type verbatim and ignores Flags
+        // (ter_zephyrus: Type[default] + Flags[Sprite] -> style "default").
+        // Writing the Flags value ("Sprite") selects an unknown engine effect
+        // and access-violates at match start when navlights render.
         let full_name = node.attribute("name").unwrap_or("");
         let size = extract_bracket_value(full_name, "_Sz[")
             .and_then(|v| v.parse::<f32>().ok())
@@ -654,7 +659,7 @@ fn parse_scene_node(node: Node, parent_name: Option<&str>, model: &mut HODModel)
         let distance = extract_bracket_value(full_name, "_Dist[")
             .and_then(|v| v.parse::<f32>().ok())
             .unwrap_or(1000.0);
-        let style = extract_bracket_value(full_name, "_Flags[")
+        let style = extract_bracket_value(full_name, "_Type[")
             .unwrap_or("default")
             .to_string();
 
@@ -1120,6 +1125,29 @@ mod tests {
     <instance_visual_scene url="#test"/>
   </scene>
 </COLLADA>"##;
+
+    #[test]
+    fn dae_navlight_style_comes_from_type_not_flags() {
+        let xml = r##"<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <library_visual_scenes>
+    <visual_scene id="test" name="test">
+      <node name="ROOT_LOD[0]" id="ROOT_LOD[0]">
+        <node name="NAVL[e1]_Type[default]_Sz[50]_Ph[0]_Fr[0]_Col[0,0,1]_Dist[130]_Flags[Sprite]" id="n1">
+          <translate sid="translate">0 0 0</translate>
+        </node>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#test"/>
+  </scene>
+</COLLADA>"##;
+        let model = parse_dae(xml).expect("DAE with NAVL node must parse");
+        assert_eq!(model.nav_lights.len(), 1);
+        // RODOH writes the _Type value verbatim ("default"), never _Flags ("Sprite").
+        assert_eq!(model.nav_lights[0].style, "default");
+    }
 
     #[test]
     fn dae_dockpaths_parse_name_family_points() {

@@ -957,6 +957,116 @@ fn validate_file(path: &str, verbose: bool) -> i32 {
                 }
                 report.info("DTRM/COLD", format!("children: {:?}", seen));
             }
+            // KDOP: mirror parse_kdop_collision_mesh strictly. The engine
+            // builds its collision tree from these exact fields.
+            if sub.id.trim() == "KDOP" {
+                let d = &sub.data;
+                const KDOP_HEADER: usize = 28 + 13 * 32;
+                if d.len() < KDOP_HEADER + 8 {
+                    report.error(
+                        "DTRM/KDOP",
+                        format!(
+                            "truncated KDOP ({} bytes, need {})",
+                            d.len(),
+                            KDOP_HEADER + 8
+                        ),
+                    );
+                } else {
+                    let get_f = |o: usize| f32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                    let radius = get_f(0);
+                    let min_e = [get_f(4), get_f(8), get_f(12)];
+                    let max_e = [get_f(16), get_f(20), get_f(24)];
+                    for (label, v) in [
+                        ("radius", radius),
+                        ("min.x", min_e[0]),
+                        ("min.y", min_e[1]),
+                        ("min.z", min_e[2]),
+                        ("max.x", max_e[0]),
+                        ("max.y", max_e[1]),
+                        ("max.z", max_e[2]),
+                    ] {
+                        if !v.is_finite() {
+                            report.error(
+                                "DTRM/KDOP",
+                                format!("non-finite bound {}={}", label, v),
+                            );
+                        }
+                    }
+                    for i in 0..3 {
+                        if min_e[i] > max_e[i] {
+                            report.error(
+                                "DTRM/KDOP",
+                                format!(
+                                    "min extents exceed max on axis {} ({} > {})",
+                                    i, min_e[i], max_e[i]
+                                ),
+                            );
+                        }
+                    }
+                    let mut pos = KDOP_HEADER;
+                    let vcount =
+                        u32::from_le_bytes(d[pos..pos + 4].try_into().unwrap()) as usize;
+                    pos += 4;
+                    if vcount > u16::MAX as usize + 1 {
+                        report.error(
+                            "DTRM/KDOP",
+                            format!("vertex count {} exceeds u16 range", vcount),
+                        );
+                    } else if pos + vcount * 12 + 4 > d.len() {
+                        report.error(
+                            "DTRM/KDOP",
+                            format!(
+                                "vertex buffer overruns KDOP (need {} bytes, have {})",
+                                vcount * 12 + 4,
+                                d.len() - pos
+                            ),
+                        );
+                    } else {
+                        pos += vcount * 12;
+                        let fcount =
+                            u32::from_le_bytes(d[pos..pos + 4].try_into().unwrap()) as usize;
+                        pos += 4;
+                        if pos + fcount * 3 * 2 > d.len() {
+                            report.error(
+                                "DTRM/KDOP",
+                                format!(
+                                    "index buffer overruns KDOP (need {} bytes, have {})",
+                                    fcount * 3 * 2,
+                                    d.len() - pos
+                                ),
+                            );
+                        } else {
+                            let mut bad = 0usize;
+                            for i in 0..fcount * 3 {
+                                let idx = u16::from_le_bytes(
+                                    d[pos + i * 2..pos + i * 2 + 2].try_into().unwrap(),
+                                ) as usize;
+                                if vcount == 0 || idx >= vcount {
+                                    bad += 1;
+                                }
+                            }
+                            if bad > 0 {
+                                report.error(
+                                    "DTRM/KDOP",
+                                    format!(
+                                        "{}/{} KDOP indices out of range for {} vertices",
+                                        bad,
+                                        fcount * 3,
+                                        vcount
+                                    ),
+                                );
+                            }
+                            pos += fcount * 3 * 2;
+                        }
+                        if pos != d.len() {
+                            report.info(
+                                "DTRM/KDOP",
+                                format!("{} trailing bytes after index buffer", d.len() - pos),
+                            );
+                        }
+                    }
+                }
+            }
             match sub.id.trim() {
                 "HIER" => {
                     for (name, parent) in parse_hier_names(&sub.data) {
