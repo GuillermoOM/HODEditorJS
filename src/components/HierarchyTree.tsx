@@ -219,7 +219,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
             const hasKnownType = KNOWN_TYPES.some(t => nameNoFormat.toUpperCase().endsWith(t));
 
             if (!hasKnownType) {
-                let userType = window.prompt(`The imported texture "${importedTex.name}" is missing a recognized type suffix.\\n\\nPlease enter the texture type suffix (e.g. _DIFF, _GLOW, _NORM, _TEAM, _SPEC):`, "_DIFF");
+                let userType = window.prompt(`The imported texture "${importedTex.name}" is missing a recognized type suffix.\n\nPlease enter the texture type suffix (e.g. _DIFF, _GLOW, _SPEC, _TEAM, _NORM, _DIFX, _GLOX):`, "_DIFF");
                 if (userType === null) {
                     alert(`Skipping import of ${importedTex.name}`);
                     continue;

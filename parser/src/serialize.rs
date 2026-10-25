@@ -787,52 +787,146 @@ fn generate_lmip_texture_chunks_and_pool(
     Ok((chunks, texture_pool))
 }
 
+/// Canonical HOD texture parameter names per shader, in HOD STAT slot order.
+/// Ground truth: GBXTools/HODOR/SHADERS.MAP plus STAT dumps of vanilla HODs.
+/// REFL is never a separate texture: it is the R channel packed inside the
+/// $glow texture by HODOR (G=GLOW, B=SPEC, R=REFL). Likewise SPEC on `ship`
+/// and TEAM/STRP/PAIN are channels of the single $glow/$team textures.
+fn shader_slot_table(shader_key: &str) -> Option<&'static [&'static str]> {
+    Some(match shader_key {
+        "ship" | "matte" | "matte2s" | "mattealpha" | "mattealpha2s" | "mattescissor"
+        | "mattescissor2s" | "monolith" | "megalith" | "fxmatte" | "fxmatte_a"
+        | "fxmatte_s" | "bay" | "badge" => &["$diffuse", "$glow", "$team", "$normal"],
+        // $spec sits between $diffuse and $glow in these shaders.
+        "shipglow" | "shipglow_ns" | "badgeglow" => {
+            &["$diffuse", "$spec", "$glow", "$team", "$normal"]
+        }
+        "thruster" => &[
+            "$diffuseOn",
+            "$diffuseOff",
+            "$glowOn",
+            "$glowOff",
+            "$team",
+            "$normal",
+        ],
+        "fx_burn" | "salvage_burn" | "ore" => {
+            &["$diffuse", "$glow", "$spec", "$progress", "$normal"]
+        }
+        "background" | "fx" | "fxsolid" | "fxsoliddalphatest" | "fx_a" | "fx_s"
+        | "fx_harvest" | "res_tendril" | "dustcloud" | "dustcloudflash"
+        | "dustcloudnebula" | "nis_galaxy_vectors" => &["$diffuse"],
+        "res_dustvein" => &["$diffuse", "$noise"],
+        "nis_galaxy_disc" => &["$disc", "$masks"],
+        "bg_planet" => &["$terrain", "$night", "$enviro", "$clouds", "$warp", "$normal"],
+        "bg_planetmelt" => &[
+            "$terrain",
+            "$scorched",
+            "$night",
+            "$burn",
+            "$enviro",
+            "$clouds",
+            "$warp",
+            "$normal",
+        ],
+        "bg_moon" | "bg_planetoid" => &["$terrain", "$night", "$enviro", "$normal"],
+        "bg_cosmic" | "bg_cosmic_a" => &["$matter", "$mask", "$warp"],
+        "bg_cosmic_an" => &["$matter", "$mask", "$warp", "$normal"],
+        // Observed with zero texture params; nothing to name.
+        "innatess" | "default" => &[],
+        _ => return None,
+    })
+}
+
+/// Guess a canonical param name from the texture file name alone (which
+/// mirrors SHADERS.MAP channel roles: Engine_DIFX, Resource_SPEC, ...).
+/// Returns None when no role matches so the caller falls back to slot order.
+fn guess_texture_param_name(tex_key: &str) -> Option<String> {
+    if tex_key.contains("diff_off")
+        || tex_key.contains("diffoff")
+        || tex_key.contains("difx")
+    {
+        Some("$diffuseOff".to_string())
+    } else if tex_key.contains("diff_on") || tex_key.contains("diffon") {
+        Some("$diffuseOn".to_string())
+    } else if tex_key.contains("diff") || tex_key.contains("albedo") || tex_key.contains("base")
+    {
+        Some("$diffuse".to_string())
+    } else if tex_key.contains("glow_off") || tex_key.contains("glowoff") || tex_key.contains("glox")
+    {
+        Some("$glowOff".to_string())
+    } else if tex_key.contains("glow_on") || tex_key.contains("glowon") {
+        Some("$glowOn".to_string())
+    } else if tex_key.contains("glow") || tex_key.contains("emit") {
+        Some("$glow".to_string())
+    } else if tex_key.contains("team") || tex_key.contains("stripe") || tex_key.contains("strp") {
+        Some("$team".to_string())
+    } else if tex_key.contains("norm") || tex_key.contains("normal") || tex_key.contains("bump") {
+        Some("$normal".to_string())
+    } else if tex_key.contains("spec") || tex_key.contains("rough") || tex_key.contains("metal") {
+        Some("$spec".to_string())
+    } else if tex_key.contains("prog") {
+        Some("$progress".to_string())
+    } else if tex_key.contains("warp") {
+        Some("$warp".to_string())
+    } else if tex_key.contains("mask") {
+        Some("$mask".to_string())
+    } else if tex_key.contains("matter") {
+        Some("$matter".to_string())
+    } else if tex_key.contains("noiz") || tex_key.contains("noise") {
+        Some("$noise".to_string())
+    } else if tex_key.contains("disc") {
+        Some("$disc".to_string())
+    } else if tex_key.contains("terrain") || tex_key.contains("terr") {
+        Some("$terrain".to_string())
+    } else if tex_key.contains("night") {
+        Some("$night".to_string())
+    } else if tex_key.contains("enviro") {
+        Some("$enviro".to_string())
+    } else if tex_key.contains("cloud") || tex_key.contains("cld") {
+        Some("$clouds".to_string())
+    } else if tex_key.contains("scorch") {
+        Some("$scorched".to_string())
+    } else if tex_key.contains("burn") {
+        Some("$burn".to_string())
+    } else {
+        None
+    }
+}
+
 fn shader_texture_param_name(shader_name: &str, texture_name: &str, slot_index: usize) -> String {
     let tex_key = texture_name_key(texture_name);
     let shader_key = shader_name.to_lowercase();
+    let guessed = guess_texture_param_name(&tex_key);
 
-    if tex_key.contains("diff_off") || tex_key.contains("diffoff") {
-        return "$diffuseoff".to_string();
+    match shader_slot_table(&shader_key) {
+        Some(table) => {
+            // Prefer the name implied by the texture file, but only when it
+            // is a real slot of this shader (a _SPEC file on `ship` must not
+            // invent a phantom slot: SPEC is a channel of $glow there).
+            if let Some(name) = guessed {
+                if table.contains(&name.as_str()) {
+                    return name;
+                }
+            }
+            table
+                .get(slot_index)
+                .copied()
+                .unwrap_or("$diffuse")
+                .to_string()
+        }
+        None => {
+            // Unknown (mod) shader: keep the legacy name-guess behaviour.
+            if let Some(name) = guessed {
+                return name;
+            }
+            const DEFAULT_SLOTS: [&str; 4] = ["$diffuse", "$glow", "$team", "$normal"];
+            DEFAULT_SLOTS
+                .get(slot_index)
+                .copied()
+                .unwrap_or("$diffuse")
+                .to_string()
+        }
     }
-    if tex_key.contains("glow_off") || tex_key.contains("glowoff") {
-        return "$glowoff".to_string();
-    }
-    if tex_key.contains("diff") || tex_key.contains("albedo") || tex_key.contains("base") {
-        return "$diffuse".to_string();
-    }
-    if tex_key.contains("glow") || tex_key.contains("emit") {
-        return "$glow".to_string();
-    }
-    if tex_key.contains("team") || tex_key.contains("stripe") {
-        return "$team".to_string();
-    }
-    if tex_key.contains("norm") || tex_key.contains("normal") || tex_key.contains("bump") {
-        return "$normal".to_string();
-    }
-    if tex_key.contains("spec") || tex_key.contains("rough") || tex_key.contains("metal") {
-        return "$specular".to_string();
-    }
-
-    let ship_slots = ["$diffuse", "$glow", "$team", "$normal", "$specular"];
-    let thruster_slots = [
-        "$diffuse",
-        "$glow",
-        "$team",
-        "$normal",
-        "$diffuseoff",
-        "$glowoff",
-    ];
-    let default_slots = ["$diffuse", "$glow", "$team", "$normal"];
-
-    let slots = if shader_key.contains("thruster") {
-        &thruster_slots[..]
-    } else if shader_key.contains("ship") || shader_key.contains("bay") {
-        &ship_slots[..]
-    } else {
-        &default_slots[..]
-    };
-
-    slots.get(slot_index).unwrap_or(&"$diffuse").to_string()
 }
 
 fn write_stat_texture_params<W: Write>(
@@ -2933,5 +3027,61 @@ mod tests {
             assert_eq!(actual.value, expected.value);
             assert_eq!(actual.name, expected.name);
         }
+    }
+
+    #[test]
+    fn shader_texture_param_names_match_shaders_map() {
+        // `ship` has 4 texture slots; REFL/SPEC are channels of $glow, so a
+        // _SPEC file must never invent a phantom 5th slot (old code wrote
+        // the non-existent `$specular`).
+        assert_eq!(shader_texture_param_name("ship", "Hull_DIFF", 0), "$diffuse");
+        assert_eq!(shader_texture_param_name("ship", "Hull_GLOW", 1), "$glow");
+        assert_eq!(shader_texture_param_name("ship", "Hull_TEAM", 2), "$team");
+        assert_eq!(shader_texture_param_name("ship", "Hull_NORM", 3), "$normal");
+        assert_eq!(shader_texture_param_name("ship", "Hull_SPEC", 4), "$diffuse");
+        // shipglow-family order is diffuse, SPEC, glow, team, normal.
+        assert_eq!(
+            shader_texture_param_name("shipglow", "Resource_DIFF", 0),
+            "$diffuse"
+        );
+        assert_eq!(
+            shader_texture_param_name("shipglow", "Resource_SPEC", 1),
+            "$spec"
+        );
+        assert_eq!(
+            shader_texture_param_name("shipglow", "Resource_GLOW", 2),
+            "$glow"
+        );
+        assert_eq!(
+            shader_texture_param_name("shipglow", "Resource_TEAM", 3),
+            "$team"
+        );
+        assert_eq!(
+            shader_texture_param_name("shipglow", "Resource_NORM", 4),
+            "$normal"
+        );
+        // Thruster on/off pairs keep their canonical HOD casing.
+        assert_eq!(
+            shader_texture_param_name("thruster", "Engine_DIFX", 1),
+            "$diffuseOff"
+        );
+        assert_eq!(
+            shader_texture_param_name("thruster", "Engine_GLOX", 3),
+            "$glowOff"
+        );
+        // Background slots use file-role suffixes mapped to $terrain/$night.
+        assert_eq!(
+            shader_texture_param_name("bg_planet", "Kharak_DIFF", 0),
+            "$terrain"
+        );
+        assert_eq!(
+            shader_texture_param_name("bg_planet", "Kharak_GLOW", 1),
+            "$night"
+        );
+        // fx_burn $spec textures ship with the _PAIN suffix; slot order wins.
+        assert_eq!(
+            shader_texture_param_name("fx_burn", "Salvage_TP_PAIN", 2),
+            "$spec"
+        );
     }
 }

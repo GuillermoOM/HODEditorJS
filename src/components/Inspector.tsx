@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
-import { parseTextureGroups, SHADER_SLOTS, KNOWN_TYPES } from "../texture_utils";
+import { parseTextureGroups, SHADER_SLOTS, KNOWN_TYPES, getExpectedSlots, findTextureForSlot } from "../texture_utils";
 import { parseMtl, resolveDiffuseTexture } from "../mtl_utils";
 import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2, FlipVertical } from "lucide-react";
 import { WeaponGroupInspector } from "./WeaponGroupInspector";
@@ -2903,8 +2903,7 @@ export const Inspector: React.FC<InspectorProps> = ({
         
         const updatedMaterials = model.materials.map(m => {
           if (m.name === material.name) {
-            const shaderLower = (m.shader_name || "").toLowerCase();
-            const expectedSlots = SHADER_SLOTS[shaderLower] || ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"];
+            const expectedSlots = getExpectedSlots(m.shader_name || "", m.texture_maps || []);
             
             const newMaps = expectedSlots.map(slotLabel => {
               if (!group) return "";
@@ -2915,7 +2914,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                 expectedType = "_" + match[1];
               }
               
-              const matchedTex = group.textures.find(t => t.type === expectedType);
+              const matchedTex = expectedType ? findTextureForSlot(group, expectedType) : undefined;
               if (matchedTex) return matchedTex.originalName;
               
               // Fallback to empty string if missing in group
@@ -3052,8 +3051,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                     }
                   }
 
-                  const shaderLower = (material.shader_name || "").toLowerCase();
-                  const expectedSlots = SHADER_SLOTS[shaderLower] || ["Diffuse Map (DIFF)", "Glow Map (GLOW)", "Team Paint Map (TEAM)", "Normal Map (NORM)"];
+                  const expectedSlots = getExpectedSlots(material.shader_name || "", material.texture_maps || []);
 
                   return (
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>

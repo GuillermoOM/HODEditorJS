@@ -1441,14 +1441,27 @@ export const Viewport: React.FC<ViewportProps> = ({
                   if (b64) {
                     const tex = getCachedTexture(b64, hTexture.name, !!hTexture.legacy_storage_y_flipped);
                     const lowerName = texName.toLowerCase();
+                    // Suffix roles mirror SHADERS.MAP channel roles. REFL/SPEC on
+                    // `ship` are channels packed inside the GLOW texture, not
+                    // separate maps; shipglow-family $spec has no direct
+                    // three.js binding without an envmap. Thruster DIFX/GLOX
+                    // are off-state alternates stored after the ON textures,
+                    // so first-wins keeps the ON state visible.
+                    const hasKnownSuffix = lowerName.includes("_team") || lowerName.includes("_temx")
+                      || lowerName.includes("_diff") || lowerName.includes("_difx")
+                      || lowerName.includes("_norm") || lowerName.includes("_normal")
+                      || lowerName.includes("_glow") || lowerName.includes("_glox")
+                      || lowerName.includes("_spec") || lowerName.includes("_spex");
                     if (lowerName.includes("_team") || lowerName.includes("_temx")) {
                       teamMap = tex;
-                    } else if (lowerName.includes("_diff") || lowerName.includes("_difx") || (tIdx === 0 && !lowerName.includes("_norm") && !lowerName.includes("_glow") && !lowerName.includes("_team"))) {
-                      textureMap = tex;
                     } else if (lowerName.includes("_norm") || lowerName.includes("_normal")) {
                       normalMap = tex;
                     } else if (lowerName.includes("_glow") || lowerName.includes("_glox")) {
-                      glowMap = tex;
+                      if (!glowMap) glowMap = tex;
+                    } else if (lowerName.includes("_diff") || lowerName.includes("_difx")) {
+                      if (!textureMap) textureMap = tex;
+                    } else if (tIdx === 0 && !hasKnownSuffix) {
+                      textureMap = tex;
                     }
                   }
                 }
