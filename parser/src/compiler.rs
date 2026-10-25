@@ -630,10 +630,15 @@ pub fn generate_pool_data(
     }
 
     // Compress the mesh and face streams using Xpress compression.
+    // The mesh stream MUST always be real XPress output: a 330-file vanilla
+    // sweep found raw (comp_len == decomp_len) streams only for face pools,
+    // never for mesh pools, so the engine cannot be relied on to accept a
+    // raw mesh stream (suspected DAE-sourced in-game access violation).
+    // Face pools keep the size threshold: vanilla ships raw face streams.
     let comp_mesh = if decomp_mesh.is_empty() {
         Vec::new()
     } else {
-        crate::xpress::compress_or_raw(&decomp_mesh)
+        crate::xpress::compress(&decomp_mesh)
     };
 
     let comp_face = if decomp_face.is_empty() {

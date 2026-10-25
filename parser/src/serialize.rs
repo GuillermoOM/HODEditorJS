@@ -1175,7 +1175,9 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
             generate_lmip_texture_chunks_and_pool(&model.textures)?;
         generated_texture_chunks = gen_chunks;
         if !generated_texture_pool.is_empty() {
-            comp_tex_buf = xpress::compress_or_raw(&generated_texture_pool);
+            // Always real XPress output: no vanilla HOD ships a raw texture
+            // stream either (see the mesh-stream note in generate_pool_data).
+            comp_tex_buf = xpress::compress(&generated_texture_pool);
             decomp_tex_len_val = generated_texture_pool.len() as u32;
         }
     }
@@ -1311,8 +1313,14 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
             }
         }
 
-        // Raw (uncompressed) mesh and face streams
-        let new_comp_mesh = decomp_mesh.clone();
+        // The mesh stream must be real XPress output even when appending
+        // collision data (see generate_pool_data); the face stream keeps
+        // its bytes since vanilla HODs ship raw face pools.
+        let new_comp_mesh = if decomp_mesh.is_empty() {
+            Vec::new()
+        } else {
+            xpress::compress(&decomp_mesh)
+        };
         let new_comp_face = decomp_face.clone();
 
         println!("[RUST] After collision append: decomp_mesh={} bytes, decomp_face={} bytes, new_comp_mesh={} bytes, new_comp_face={} bytes", decomp_mesh.len(), decomp_face.len(), new_comp_mesh.len(), new_comp_face.len());

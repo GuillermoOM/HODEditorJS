@@ -39,7 +39,7 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
 
     let mut model = HODModel::new();
     model.is_v2 = true;
-    model.version = 1400; // Force HOD 2.0 version
+    model.version = 0x200; // HOD 2.0 file version (VERS), as written by HODOR
 
     // Parse materials first (just names for now)
     let mut material_names = Vec::new();
