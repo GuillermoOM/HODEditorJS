@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, HODAnimation, HODDockpath } from "./Viewport";
 import { parseTextureGroups, KNOWN_TYPES, getExpectedTextureType } from "../texture_utils";
-import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2 } from "lucide-react";
+import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2, Pencil } from "lucide-react";
 
 interface HierarchyTreeProps {
   model: HODModel | null;
@@ -3095,9 +3095,12 @@ const handleDeleteNode = (name: string, type: string) => {
                         ) : (
                           <span
                             onClick={(e) => { e.stopPropagation(); setEditingDurationIdx(animIdx); setEditDurationText(anim.duration.toString()); }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent-cyan)"; e.currentTarget.style.color = "var(--accent-cyan)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "var(--text-muted)"; }}
                             title="Click to edit duration"
-                            style={{ fontSize: "9px", padding: "1px 4px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", color: "var(--text-muted)", marginLeft: "auto", flexShrink: 0, cursor: "pointer" }}
+                            style={{ fontSize: "9px", padding: "1px 4px", background: "rgba(255,255,255,0.05)", border: "1px dashed rgba(255,255,255,0.15)", borderRadius: "3px", color: "var(--text-muted)", marginLeft: "auto", flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "3px" }}
                           >
+                            <Pencil size={9} />
                             {anim.duration.toFixed(2)}s
                           </span>
                         )}
