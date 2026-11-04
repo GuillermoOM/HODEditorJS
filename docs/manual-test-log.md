@@ -1278,14 +1278,16 @@ Test hod: `testing/acolyte/smt_fta_acolyte.hod` (material `page022`, shader `thr
 
 ### Manual editor checks
 
-1. Open `smt_fta_acolyte.hod`; Inspector → material `page022` shows the five slots the file actually binds (Diffuse On, Diffuse Off, Glow On, Glow Off, Team) with the expected textures; open vanilla `tai_missile.hod` to also see Normal: [ ] NOT RUN
-2. Save as `*_from_2.0_to_2.0.hod`; reopen the saved file and confirm the bound slots are unchanged and no slot gained another slot's texture: [ ] NOT RUN
-3. Inspect the saved STAT entries (`cargo run --bin dump_pool -- <saved.hod>`). For `smt_fta_acolyte.hod` the aliases must be `$diffuseOn`, `$diffuseOff`, `$glowOn`, `$glowOff`, `$team`; for vanilla `tai_missile.hod` they must be `$diffuseOn`, `$diffuseOff`, `$glowOn`, `$glowOff`, `$team`, `$normal`. No `$diffuse`, no under-`$glow`/`$normal` shifts, Team not dropped: [ ] NOT RUN
+1. Open `smt_fta_acolyte.hod`; Inspector → material `page022` shows the five slots the file actually binds (Diffuse On, Diffuse Off, Glow On, Glow Off, Team) with the expected textures; open vanilla `tai_missile.hod` to also see Normal: [x] PASS (user)
+2. Save as `*_from_2.0_to_2.0.hod`; reopen the saved file and confirm the bound slots are unchanged and no slot gained another slot's texture: [x] PASS (user)
+3. Inspect the saved STAT entries (`cargo run --bin dump_pool -- <saved.hod>`). For `smt_fta_acolyte.hod` the aliases must be `$diffuseOn`, `$diffuseOff`, `$glowOn`, `$glowOff`, `$team`; for vanilla `tai_missile.hod` they must be `$diffuseOn`, `$diffuseOff`, `$glowOn`, `$glowOff`, `$team`, `$normal`. No `$diffuse`, no under-`$glow`/`$normal` shifts, Team not dropped: [x] PASS (user)
 
 ### Manual in-game checks
 
-1. Load the saved HOD in game; thruster on-state diffuse matches the authored texture (not `default_white`): [ ] NOT RUN
-2. Thruster glow on-state uses the authored glow map (not `default_black`): [ ] NOT RUN
-3. Off-state diffuse/glow (`_DIFX`/`_GLOX`) appear when the engine is inactive: [ ] NOT RUN
-4. For the six-slot vanilla test HOD, the Normal slot shows the authored normal map, with no fake bump from the glow texture: [ ] NOT RUN
-5. No crash on load and the ship renders normally: [ ] NOT RUN
+1. Load the saved HOD in game; thruster on-state diffuse matches the authored texture (not `default_white`): [x] PASS (user)
+2. Thruster glow on-state uses the authored glow map (not `default_black`): [x] PASS (user)
+3. Off-state diffuse/glow (`_DIFX`/`_GLOX`) appear when the engine is inactive: [x] PASS (user)
+4. For the six-slot vanilla test HOD, the Normal slot shows the authored normal map, with no fake bump from the glow texture: [x] PASS (user)
+5. No crash on load and the ship renders normally: [x] PASS (user)
+
+**User verification**: PASS — user reported the thruster fix works fine.
