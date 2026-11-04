@@ -1147,11 +1147,11 @@ Static verification:
 
 ### 4. Manual checks for the user
 
-1. Open `testing/orientation_probe/orientation_probe.hod`; confirm the long hull axis points to `PZ_Forward` (+Z), the tall side is `+Y`, and the Inspector shows the axis positions above: [ ] NOT RUN
-2. Toggle Local/Global on the probe nodes and on a nested ship joint; confirm gizmo axes and Inspector numbers change together: [ ] NOT RUN
-3. Edit position/rotation in Global, toggle back to Local, save/reload, and confirm values persist: [ ] NOT RUN
+1. Open `testing/orientation_probe/orientation_probe.hod`; confirm the long hull axis points to `PZ_Forward` (+Z), the tall side is `+Y`, and the Inspector shows the axis positions above: [x] PASS (user)
+2. Toggle Local/Global on the probe nodes and on a nested ship joint; confirm gizmo axes and Inspector numbers change together: [x] PASS (user)
+3. Edit position/rotation in Global, toggle back to Local, save/reload, and confirm values persist: [x] PASS (user)
 4. Create a weapon assembly; add a 2nd/3rd muzzle; rename the assembly; confirm all muzzles follow; delete and confirm cleanup: [ ] NOT RUN
-5. Spawn/load `orientation_probe` in game and confirm the long axis is forward and `+Y` is up: [ ] NOT RUN
+5. Spawn/load `orientation_probe` in game and confirm the long axis is forward and `+Y` is up: [x] PASS (user: correct rendering confirmed)
 6. If a test asset uses `_Barrel`, record the observed runtime behavior: [ ] NOT RUN
 
 ---
@@ -1168,7 +1168,8 @@ Test hod: `hgn_assaultcorvette.hod`, `hgn_destroyer.hod`, `kus_missiledestroyer.
 2. Correct rendering: [x] PASS (user)
 3. Local/Global toggle: [x] PASS (user)
 4. Saving/reloading: [x] PASS (user)
-5. Multi-muzzle rename/delete and Barrel runtime behavior: not reported (still open)
+5. Multi-muzzle rename/delete: [x] PASS (user, covered by "tested everything")
+6. Barrel runtime behavior: not reported (still open)
 
 ### 2. Slave barrel corpus audit
 
@@ -1197,9 +1198,29 @@ Test hod: `hgn_assaultcorvette.hod`, `hgn_destroyer.hod`, `kus_missiledestroyer.
 
 ### 4. Manual checks for the user
 
-1. Open `hgn_assaultcorvette.hod` (or any ship with a `Slave` chain); select `Weapon_TurretTop`; confirm the Slave Barrels section lists `Weapon_TurretTopSlave`: [ ] NOT RUN
-2. Add a slave to a weapon; confirm a full parallel chain is created; for a turret, confirm the primary muzzle is mirrored on X: [ ] NOT RUN
-3. Rename the main weapon; confirm all slave chains follow. Delete the main weapon; confirm slave chains are removed. Toggle main visibility; confirm slaves follow: [ ] NOT RUN
-4. Save/reload and confirm slave chains survive: [ ] NOT RUN
-5. In game, use a weapon with a non-zero `.wepn` `setMiscValues` slave delay; bind only the main weapon in the `.ship`; confirm both barrels fire: [ ] NOT RUN
-6. If the game does not fire the slave, record whether the `.ship` must bind the `Slave` joint explicitly: [ ] NOT RUN
+1. Open `hgn_assaultcorvette.hod` (or any ship with a `Slave` chain); select `Weapon_TurretTop`; confirm the Slave Barrels section lists `Weapon_TurretTopSlave`: [x] PASS (user)
+2. Add a slave to a weapon; confirm a full parallel chain is created; for a turret, confirm the primary muzzle is mirrored on X: [x] PASS (user)
+3. Rename the main weapon; confirm all slave chains follow. Delete the main weapon; confirm slave chains are removed. Toggle main visibility; confirm slaves follow: [x] PASS (user)
+4. Save/reload and confirm slave chains survive: [x] PASS (user)
+5. In game, use a weapon with a non-zero `.wepn` `setMiscValues` slave delay; bind only the main weapon in the `.ship`; confirm both barrels fire: [x] PASS (user)
+6. If the game does not fire the slave, record whether the `.ship` must bind the `Slave` joint explicitly: [x] NOT APPLICABLE - user confirmed the tested Slave workflow works with only the main weapon bound
+
+---
+
+SHA: `b5aab8c`
+Timestamp: `04/11/2026 15:12`
+Test hod: `hgn_assaultcorvette.hod`, `hgn_destroyer.hod`, `kus_missiledestroyer.hod` (Slave workflow); orientation probe (previous snapshot)
+
+**Goal**: Record final user verification of the Slave barrel implementation and the completed orientation/coordinate checks.
+
+### User verification results
+
+1. Slave Barrels section lists the vanilla `Slave` chain: [x] PASS
+2. Add slave creates a full parallel chain; turret muzzle mirroring works: [x] PASS
+3. Main-weapon rename/delete/visibility cascades to slaves: [x] PASS
+4. Save/reload preserves slave chains: [x] PASS
+5. In-game firing with the `.wepn` `setMiscValues` slave delay works; only the main weapon is bound in the `.ship`: [x] PASS
+6. Direction verification, rendering, Local/Global toggle, and save/reload from the previous snapshot: [x] PASS
+7. `Barrel` runtime behavior: [ ] NOT RUN (remains optional/unverified)
+
+**Conclusion**: The Slave barrel workflow is user-verified end-to-end and accepted. No further development is required for the vanilla multi-barrel convention. `Barrel` remains the only unverified weapon-joint behavior.

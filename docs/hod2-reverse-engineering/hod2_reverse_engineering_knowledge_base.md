@@ -195,6 +195,8 @@ Vanilla HWRM multi-barrel weapons use a **parallel weapon assembly** named `${ba
 
 **`_MuzzleN` note:** `${base}_Muzzle1`, `${base}_Muzzle2`, ... remain an editor extension for mods that bind several muzzles explicitly through multiple `StartShipWeaponConfig` calls. A full sweep found no `_MuzzleN` in vanilla HWRM ships; use Slave chains for the vanilla multi-barrel pattern.
 
+**User-verified 2026-11-04:** add/rename/delete/visibility cascades, save/reload, and in-game firing with only the main weapon bound all passed for the Slave workflow. `Barrel` remains unverified.
+
 ### 5. Barrel Joints Are Not Vanilla
 A full sweep of the 290 vanilla HWRM ship HODs and their 397 muzzle-bearing weapon assemblies found **zero** `_Barrel` joints. The standard animated-turret chain is `Position → Latitude → Muzzle` (plus `Direction`/`Rest` reference vectors). The editor therefore does **not** create `Barrel` by default and exposes it only through an explicit **+ Add Barrel (Unverified)** toggle. Its runtime behavior is unverified; do not require it in validation or document it as an engine feature until an in-game test proves what it does.
 
