@@ -7,7 +7,10 @@ This document describes the process for building and publishing a new release of
 1. Ensure all code is committed and pushed.
 2. Update the version number in:
    * `package.json`
+   * `package-lock.json`
    * `src-tauri/tauri.conf.json`
+   * `src-tauri/Cargo.toml`
+   * `src-tauri/Cargo.lock`
 3. Ensure your platform's Tauri prerequisites and any required build environment or container are available.
 
 ## 1. Building the Linux Release Bundles
