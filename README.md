@@ -68,7 +68,7 @@ This tool lets you inspect, edit, and save `.hod` files with a visual interface.
 - Per-node property editing for all 13 node types: Joint, Marker, NavLight, Dockpath, Collision, Mesh (LOD), Engine Glow, Engine Burn, Engine Shape, Weapon/Turret/Hardpoint/Capture/Repair/Salvage groups, Material, Keyframe
 - Collision hull: center, radius, extents, OBJ import/export, convex hull generation from visual mesh, box bounds calculation
 - Material editor: shader pipeline selector, per-shader texture slot mapping (15 shader types), texture dropdown with thumbnail preview, TGA import
-- Weapon assembly: group rename (cascading), structure completeness check, auto-repair missing joints, weapon-to-turret conversion
+- Weapon assembly: group rename (cascading), structure completeness check, auto-repair missing joints, weapon-to-turret conversion, vanilla `Slave` barrel chains with add/remove and main-weapon cascade
 
 **Animation Timeline**
 - Playback controls: rewind, play/pause, stop, loop, speed (0.25x/0.5x/1x/2x)

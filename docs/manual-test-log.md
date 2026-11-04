@@ -1153,3 +1153,53 @@ Static verification:
 4. Create a weapon assembly; add a 2nd/3rd muzzle; rename the assembly; confirm all muzzles follow; delete and confirm cleanup: [ ] NOT RUN
 5. Spawn/load `orientation_probe` in game and confirm the long axis is forward and `+Y` is up: [ ] NOT RUN
 6. If a test asset uses `_Barrel`, record the observed runtime behavior: [ ] NOT RUN
+
+---
+
+SHA: `(working tree - Slave barrel audit + implementation)`
+Timestamp: `04/11/2026 15:03`
+Test hod: `hgn_assaultcorvette.hod`, `hgn_destroyer.hod`, `kus_missiledestroyer.hod`; `HWCR/weapon/unh_ddmissile/unh_ddmissile.wepn`
+
+**Goal**: Follow up the user's note that vanilla multi-barrel weapons use a `Slave` suffix rather than extra `_MuzzleN` joints, audit the corpus, and add editor support.
+
+### 1. User-confirmed results from the previous snapshot
+
+1. Direction verification: [x] PASS (user)
+2. Correct rendering: [x] PASS (user)
+3. Local/Global toggle: [x] PASS (user)
+4. Saving/reloading: [x] PASS (user)
+5. Multi-muzzle rename/delete and Barrel runtime behavior: not reported (still open)
+
+### 2. Slave barrel corpus audit
+
+1. 290 vanilla HWRM ship HODs scanned; 45 slave assemblies across 16 weapon families: [x] CONFIRMED
+2. Naming: 24 `Slave`, 11 `Slave1`, 10 `Slave2`: [x] CONFIRMED
+3. Joint counts: 37 four-joint fixed chains, 8 five-joint turret chains: [x] CONFIRMED
+4. Every scanned slave assembly has its own `Position` and `Muzzle`: [x] CONFIRMED
+5. Examples:
+    - `hgn_assaultcorvette.hod`: `Weapon_TurretTop` / `Weapon_TurretTopSlave`; main muzzle `+X 1.637`, slave `-X 1.626`.
+    - `hgn_destroyer.hod`: `Weapon_Torpedo` / `Weapon_TorpedoSlave`; separate `Position` joints at `+X 9.328` and `-X 8.981`.
+    - `kus_missiledestroyer.hod`: `Weapon_GunV0` plus `Slave`, `Slave1`, `Slave2`.
+6. `.wepn` evidence: `setMiscValues(NewWeaponType, recoil, slaveDelay)`; vanilla `unh_ddmissile.wepn` comments call the second argument "Delay between inital firing and firing of slave barrels": [x] CONFIRMED
+7. `.ship` binds only the main weapon; no `Slave` references were found in the scanned `.ship` files: [x] CONFIRMED
+8. Conclusion: vanilla multi-barrel = parallel `${base}SlaveN` assembly; `_MuzzleN` is an editor extension for explicit multiple `StartShipWeaponConfig` bindings: [x] CONFIRMED
+
+### 3. Editor implementation
+
+1. `src/weapon_utils.ts` detects slave bases, selects the next free `SlaveN` name, identifies family joints, and maps family renames: [x] DONE
+2. `WeaponGroupInspector.tsx` lists slave assemblies, adds a cloned slave chain (turret chains mirror the primary muzzle on X), removes a slave chain, and links a slave row back to its parent: [x] DONE
+3. `HierarchyTree.tsx` labels slave rows, cascades main rename/delete/visibility to slaves, and warns when a slave is missing `Position`/`Muzzle`: [x] DONE
+4. Docs updated: `02`, `07`, `08`, `09`, knowledge base, `README.md`, `PROGRESS.md`: [x] DONE
+5. `npx tsc --noEmit`: [x] PASS
+6. Helper behavior test (`getSlaveBases` returns 3 bases, `nextSlaveBase` returns `Slave3`, `Slave1` renames correctly, non-slave names excluded, clone produces the parallel chain with the muzzle mirrored from `+1.637` to `-1.637`): [x] PASS
+7. `npm run build`: [x] PASS (TypeScript + Vite, 2.12s)
+8. `cargo test --manifest-path parser/Cargo.toml`: [x] PASS - 37 passed, 0 failed
+
+### 4. Manual checks for the user
+
+1. Open `hgn_assaultcorvette.hod` (or any ship with a `Slave` chain); select `Weapon_TurretTop`; confirm the Slave Barrels section lists `Weapon_TurretTopSlave`: [ ] NOT RUN
+2. Add a slave to a weapon; confirm a full parallel chain is created; for a turret, confirm the primary muzzle is mirrored on X: [ ] NOT RUN
+3. Rename the main weapon; confirm all slave chains follow. Delete the main weapon; confirm slave chains are removed. Toggle main visibility; confirm slaves follow: [ ] NOT RUN
+4. Save/reload and confirm slave chains survive: [ ] NOT RUN
+5. In game, use a weapon with a non-zero `.wepn` `setMiscValues` slave delay; bind only the main weapon in the `.ship`; confirm both barrels fire: [ ] NOT RUN
+6. If the game does not fire the slave, record whether the `.ship` must bind the `Slave` joint explicitly: [ ] NOT RUN

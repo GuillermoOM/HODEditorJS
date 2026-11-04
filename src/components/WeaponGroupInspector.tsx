@@ -10,6 +10,13 @@ import {
   matrixRotationToHodRadians,
 } from "../transform_utils";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  getSlaveBases,
+  nextSlaveBase,
+  isJointInWeaponBase,
+  cloneWeaponFamilyJoints,
+  renameWeaponFamilyName,
+} from "../weapon_utils";
 
 const MUZZLE_SUFFIX = "_Muzzle";
 
@@ -30,12 +37,14 @@ export function WeaponGroupInspector({
   selectedNode,
   onModelChange,
   onPositionChange,
+  onSelectedNodeChange,
   coordinateSpace = "local",
 }: {
   model: HODModel;
   selectedNode: { type: string; name: string };
   onModelChange?: (model: HODModel) => void;
   onPositionChange: (name: string, type: string, pos: { x: number; y: number; z: number }, localMatrix?: { m: number[][] }) => void;
+  onSelectedNodeChange?: (node: { type: string; name: string } | null) => void;
   coordinateSpace?: CoordinateSpace;
 }) {
   const [renameWeaponName, setRenameWeaponName] = useState(selectedNode.name);
@@ -55,6 +64,11 @@ export function WeaponGroupInspector({
   const muzzleJoints = model.joints
     .filter(j => muzzleIndex(j.name, baseName) >= 0)
     .sort((a, b) => muzzleIndex(a.name, baseName) - muzzleIndex(b.name, baseName));
+
+  const slaveBases = getSlaveBases(model, baseName);
+  const familyBases = [baseName, ...slaveBases];
+  const slaveMatch = baseName.match(/^(.*?)(Slave\d*)$/i);
+  const slaveParentBase = slaveMatch ? slaveMatch[1] : null;
 
   const hasDirection = !!dirJoint;
   const hasLatitude = !!latJoint;
@@ -156,39 +170,57 @@ export function WeaponGroupInspector({
     });
   };
 
+  const handleAddSlave = () => {
+    if (!model) return;
+
+    const slaveBase = nextSlaveBase(model, baseName);
+    const newJoints = cloneWeaponFamilyJoints(model, baseName, slaveBase);
+    if (newJoints.length === 0) return;
+
+    onModelChange?.({ ...model, joints: [...model.joints, ...newJoints] });
+    onSelectedNodeChange?.({ type: "weapon_group", name: slaveBase });
+    invoke("log_event", {
+      level: "INFO",
+      message: `Added slave barrel assembly ${slaveBase} to ${baseName}`,
+    }).catch(console.error);
+  };
+
+  const handleRemoveSlave = (slaveBase: string) => {
+    if (!model) return;
+    const names = new Set(
+      model.joints
+        .filter((j) => isJointInWeaponBase(j.name, slaveBase))
+        .map((j) => j.name)
+    );
+    onModelChange?.({
+      ...model,
+      joints: model.joints.filter((j) => !names.has(j.name)),
+    });
+    invoke("log_event", {
+      level: "INFO",
+      message: `Removed slave barrel assembly ${slaveBase} from ${baseName}`,
+    }).catch(console.error);
+  };
+
   const handleRenameWeaponGroup = () => {
     const nextName = renameWeaponName.trim();
     if (!nextName || nextName === baseName) return;
 
     const updatedJoints = model.joints.map((joint) => {
-      let updatedName = joint.name;
-      let updatedParent = joint.parent_name;
-
-      if (joint.name.toLowerCase() === baseName.toLowerCase()) {
-        updatedName = nextName;
-      } else if (joint.name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
-        const suffix = joint.name.substring(baseName.length + 1);
-        updatedName = `${nextName}_${suffix}`;
-      }
-      if (joint.parent_name && joint.parent_name.toLowerCase() === baseName.toLowerCase()) {
-        updatedParent = nextName;
-      } else if (joint.parent_name && joint.parent_name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
-        const suffix = joint.parent_name.substring(baseName.length + 1);
-        updatedParent = `${nextName}_${suffix}`;
-      }
-
-      return { ...joint, name: updatedName, parent_name: updatedParent };
+      return {
+        ...joint,
+        name: renameWeaponFamilyName(joint.name, familyBases, baseName, nextName),
+        parent_name: joint.parent_name
+          ? renameWeaponFamilyName(joint.parent_name, familyBases, baseName, nextName)
+          : joint.parent_name,
+      };
     });
 
     const updatedMeshes = model.meshes.map((mesh) => {
-      let updatedParent = mesh.parent_name;
-      if (mesh.parent_name.toLowerCase() === baseName.toLowerCase()) {
-        updatedParent = nextName;
-      } else if (mesh.parent_name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
-        const suffix = mesh.parent_name.substring(baseName.length + 1);
-        updatedParent = `${nextName}_${suffix}`;
-      }
-      return { ...mesh, parent_name: updatedParent };
+      return {
+        ...mesh,
+        parent_name: renameWeaponFamilyName(mesh.parent_name, familyBases, baseName, nextName),
+      };
     });
 
     onModelChange?.({
@@ -341,6 +373,68 @@ export function WeaponGroupInspector({
             Treat them as optional; the standard turret chain is Position → Latitude → Muzzle.
           </span>
         </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: "rgba(255,255,255,0.02)", padding: "12px", borderRadius: "4px", border: "1px solid var(--border-color)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--text-secondary)" }}>
+            {slaveParentBase ? "Slave Assembly" : `Slave Barrels (${slaveBases.length})`}
+          </span>
+          {!slaveParentBase && (
+            <button onClick={handleAddSlave} style={{ fontSize: "11px", padding: "4px 8px", display: "flex", alignItems: "center", gap: "4px" }}>
+              <Plus size={12} /> Add Slave Barrel
+            </button>
+          )}
+          {slaveParentBase && (
+            <button onClick={() => onSelectedNodeChange?.({ type: "weapon_group", name: slaveParentBase })} style={{ fontSize: "10px", padding: "3px 6px" }}>
+              Edit parent weapon
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", fontSize: "10px", color: "var(--text-muted)", lineHeight: "1.5" }}>
+          <Info size={12} style={{ flexShrink: 0, marginTop: "1px" }} />
+          <span>
+            {slaveParentBase ? (
+              <>
+                This is a slave assembly of <code>{slaveParentBase}</code>. Vanilla HWRM binds only the main weapon in the
+                <code>.ship</code>; the engine detects the <code>Slave</code> suffix, and the <code>.wepn</code>
+                <code>setMiscValues</code> slave delay fires it.
+              </>
+            ) : (
+              <>
+                Vanilla HWRM multi-barrel weapons use a parallel <code>{baseName}Slave</code> / <code>{baseName}Slave1</code> chain.
+                Only the main weapon is bound in the <code>.ship</code>; the <code>.wepn</code> <code>setMiscValues</code> slave delay fires it.
+                The <code>_MuzzleN</code> joints below are an editor extension for explicit multiple bindings.
+              </>
+            )}
+          </span>
+        </div>
+
+        {!slaveParentBase && slaveBases.length === 0 && (
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", fontStyle: "italic" }}>
+            No slave barrel assemblies. Add one to mirror the main weapon onto a second barrel.
+          </div>
+        )}
+
+        {slaveBases.map((slaveBase) => {
+          const slaveJoints = model.joints.filter((j) => isJointInWeaponBase(j.name, slaveBase));
+          return (
+            <div key={slaveBase} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", padding: "6px 8px", background: "rgba(0,0,0,0.15)", border: "1px solid var(--border-color)", borderRadius: "4px" }}>
+              <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--accent-cyan)" }}>
+                {slaveBase} <span style={{ color: "var(--text-muted)" }}>({slaveJoints.length} joints)</span>
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <button onClick={() => onSelectedNodeChange?.({ type: "weapon_group", name: slaveBase })} style={{ fontSize: "10px", padding: "3px 6px" }}>
+                  Edit
+                </button>
+                <button onClick={() => handleRemoveSlave(slaveBase)} title={`Remove ${slaveBase}`} style={{ padding: "2px 4px", background: "transparent", border: "none", color: "#f44", cursor: "pointer", display: "inline-flex" }}>
+                  <Trash2 size={12} />
+                </button>
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>

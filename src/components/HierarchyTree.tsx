@@ -4,6 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { HODModel, HODAnimation, HODDockpath } from "./Viewport";
 import { parseTextureGroups, KNOWN_TYPES, getExpectedTextureType } from "../texture_utils";
 import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2, Pencil } from "lucide-react";
+import {
+  getSlaveBases,
+  isJointInWeaponFamily,
+  nextSlaveBase,
+  cloneWeaponFamilyJoints,
+  renameWeaponFamilyName,
+} from "../weapon_utils";
 
 interface HierarchyTreeProps {
   model: HODModel | null;
@@ -1106,8 +1113,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type: string } | null>(null);
 
-  const handleAddMuzzleToGroup = (baseName: string) => {
-    if (!model) return;
+  const handleAddMuzzleToGroup = (baseName: string) => {    if (!model) return;
     const existing = model.joints
       .filter(j => /^_Muzzle\d*$/i.test(j.name.substring(baseName.length)) && j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_"))
       .map(j => {
@@ -1145,6 +1151,21 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       ],
     });
     invoke("log_event", { level: "INFO", message: `Added muzzle joint ${muzzleName} to ${baseName}` }).catch(console.error);
+  };
+
+  const handleAddSlaveToGroup = (baseName: string) => {
+    if (!model) return;
+    if (/Slave\d*$/i.test(baseName)) return;
+    const slaveBase = nextSlaveBase(model, baseName);
+    const newJoints = cloneWeaponFamilyJoints(model, baseName, slaveBase);
+    if (newJoints.length === 0) return;
+
+    onModelChange?.({ ...model, joints: [...model.joints, ...newJoints] });
+    setSelectedNode({ type: "weapon_group", name: slaveBase });
+    invoke("log_event", {
+      level: "INFO",
+      message: `Added slave barrel assembly ${slaveBase} to ${baseName}`,
+    }).catch(console.error);
   };
 
   const handleContextMenu = (e: React.MouseEvent, name: string, type: string) => {
@@ -1229,39 +1250,34 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     let updatedModel = { ...model };
 
     if (type.endsWith("_group")) {
-      const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(oldName.toLowerCase() + "_") || j.name.toLowerCase() === oldName.toLowerCase());
-      
-      for (const j of groupJoints) {
-         const renamed = j.name.replace(oldName, newName);
-         if (checkDuplicate(renamed)) {
+      const familyBases = [oldName, ...getSlaveBases(model, oldName)];
+      const familyJoints = model.joints.filter(j => isJointInWeaponFamily(j.name, familyBases));
+
+      for (const j of familyJoints) {
+         const renamed = renameWeaponFamilyName(j.name, familyBases, oldName, newName);
+         if (renamed !== j.name && checkDuplicate(renamed)) {
             window.alert(`Cannot rename weapon assembly: Subnode "${renamed}" would conflict with an existing node!`);
             return;
          }
       }
 
-      updatedModel.joints = model.joints.map(j => {
-        if (groupJoints.some(gj => gj.name === j.name)) {
-          // Only replace prefix/base string exactly if it matches
-          const nameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
-          const newJName = j.name.replace(nameRegex, (_match, suffix) => `${newName}${suffix || ""}`);
-          
-          const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
-          const newPName = j.parent_name ? j.parent_name.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) : "Root";
-          
-          return { ...j, name: newJName, parent_name: newPName };
-        }
-        
-        const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
-        return { ...j, parent_name: j.parent_name ? j.parent_name.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) : "Root" };
-      });
-      updatedModel.meshes = model.meshes.map(m => {
-         const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
-         return { ...m, parent_name: m.parent_name ? m.parent_name.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) : "Root" };
-      });
-      updatedModel.markers = model.markers.map(m => {
-         const pNameRegex = new RegExp(`^${oldName}(_.*)?$`, 'i');
-         return { ...m, parent_joint: m.parent_joint.replace(pNameRegex, (_match, suffix) => `${newName}${suffix || ""}`) };
-      });
+      updatedModel.joints = model.joints.map(j => ({
+        ...j,
+        name: isJointInWeaponFamily(j.name, familyBases)
+          ? renameWeaponFamilyName(j.name, familyBases, oldName, newName)
+          : j.name,
+        parent_name: j.parent_name
+          ? renameWeaponFamilyName(j.parent_name, familyBases, oldName, newName)
+          : j.parent_name,
+      }));
+      updatedModel.meshes = model.meshes.map(m => ({
+         ...m,
+         parent_name: renameWeaponFamilyName(m.parent_name, familyBases, oldName, newName),
+      }));
+      updatedModel.markers = model.markers.map(m => ({
+         ...m,
+         parent_joint: renameWeaponFamilyName(m.parent_joint, familyBases, oldName, newName),
+      }));
       
       onModelChange?.(updatedModel);
       if (selectedNode && selectedNode.name === oldName && selectedNode.type === type) {
@@ -1374,7 +1390,8 @@ const handleDeleteNode = (name: string, type: string) => {
       const deletedKind = type === "engine_nozzle" ? "engine nozzle" : "joint bone";
       invoke("log_event", { level: "INFO", message: `Deleted ${deletedKind}: ${name}. Children re-parented to: ${parentJointName}` }).catch(console.error);
     } else if (type.endsWith("_group")) {
-      const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(name.toLowerCase() + "_") || j.name.toLowerCase() === name.toLowerCase());
+      const familyBases = [name, ...getSlaveBases(model, name)];
+      const groupJoints = model.joints.filter(j => isJointInWeaponFamily(j.name, familyBases));
       const jointNames = groupJoints.map(j => j.name);
 
       updatedModel.joints = model.joints.filter(j => !jointNames.includes(j.name));
@@ -1583,7 +1600,8 @@ const handleDeleteNode = (name: string, type: string) => {
       // Propagate visibility for weapon groups recursively to all component joints and their attachments!
       if (nodeKey.startsWith("weapon_group:")) {
         const baseName = nodeKey.substring("weapon_group:".length);
-        const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_") || j.name.toLowerCase() === baseName.toLowerCase());
+        const familyBases = [baseName, ...getSlaveBases(model, baseName)];
+        const groupJoints = model.joints.filter(j => isJointInWeaponFamily(j.name, familyBases));
         groupJoints.forEach(wj => {
           updated[`joint:${wj.name}`] = nextVisibility;
           const descendants = getDescendantKeys(wj.name);
@@ -1929,6 +1947,21 @@ const handleDeleteNode = (name: string, type: string) => {
             type: "info",
             message: `Weapon group "${baseName}" contains a Barrel joint. Barrel behavior is unverified in HWRM; it is optional and not required by the standard turret chain.`
           });
+        }
+
+        const slaveBases = getSlaveBases(model, baseName);
+        for (const slaveBase of slaveBases) {
+          const slaveJoints = model.joints.filter(j => isJointInWeaponFamily(j.name, [slaveBase]));
+          const missing = ["_Position", "_Muzzle"].filter(suffix => {
+            const target = `${slaveBase}${suffix}`.toLowerCase();
+            return !slaveJoints.some(j => j.name.toLowerCase() === target);
+          });
+          if (missing.length > 0) {
+            warnings.push({
+              type: "warning",
+              message: `Slave barrel assembly "${slaveBase}" is missing required joints: ${missing.join(", ")}.`
+            });
+          }
         }
       }
     });
@@ -2492,6 +2525,7 @@ const handleDeleteNode = (name: string, type: string) => {
   const renderAssemblyNode = (baseName: string, depth: number): React.ReactNode => {
     const isSelected = selectedNode?.type === "weapon_group" && selectedNode.name === baseName;
     const isCollapsed = !!collapsedJoints[`weapon_group:${baseName}`];
+    const isSlaveAssembly = /Slave\d*$/i.test(baseName);
 
     // Find all joints belonging to this weapon group
     const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_") || j.name.toLowerCase() === baseName.toLowerCase());
@@ -2545,7 +2579,7 @@ const handleDeleteNode = (name: string, type: string) => {
               {(() => {
                 const info = getWeaponGroupInfo(baseName + "_Position") || getWeaponGroupInfo(baseName + "_Heading") || getWeaponGroupInfo(baseName);
                 const type = info?.type || "weapon_group";
-                if (type === "weapon_group") return "Weapon: " + baseName;
+                if (type === "weapon_group") return "Weapon: " + baseName + (isSlaveAssembly ? " (Slave)" : "");
                 if (type === "hardpoint_group") return "Hardpoint: " + baseName;
                 return "Point: " + baseName;
               })()}
@@ -4192,6 +4226,18 @@ const handleDeleteNode = (name: string, type: string) => {
                     }}
                   >
                     + Add Muzzle
+                  </div>
+                )}
+                {contextMenu.type === "weapon_group" && !/Slave\d*$/i.test(contextMenu.name) && (
+                  <div
+                    className="list-item"
+                    style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-primary)' }}
+                    onClick={() => {
+                       handleAddSlaveToGroup(contextMenu.name);
+                       setContextMenu(null);
+                    }}
+                  >
+                    + Add Slave Barrel
                   </div>
                 )}
                 {contextMenu.type !== "collision" && (

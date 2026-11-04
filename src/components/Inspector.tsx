@@ -1064,6 +1064,7 @@ export const Inspector: React.FC<InspectorProps> = ({
           selectedNode={selectedNode as {type: string, name: string}}
           onModelChange={onModelChange}
           onPositionChange={onPositionChange}
+          onSelectedNodeChange={onSelectedNodeChange}
           coordinateSpace={coordinateSpace}
         />
       );

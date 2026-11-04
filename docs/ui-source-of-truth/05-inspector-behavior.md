@@ -22,6 +22,8 @@ For assemblies, Inspector shows completion state, missing component rows, and a 
 
 Assembly rename behavior must preserve related joint references and avoid duplicate names.
 
+Weapon assemblies also expose their vanilla `${base}Slave`, `${base}Slave1`, ... barrel chains: the inspector lists them, can add a cloned slave chain (turret chains mirror the primary muzzle on X), and can remove one. Renaming/deleting/hiding the main assembly cascades to its slaves.
+
 ## Joint And Marker Editing
 
 Joint and marker editing updates transform-related fields through the model update callbacks. Transform edits should remain synchronized with viewport gizmo behavior.

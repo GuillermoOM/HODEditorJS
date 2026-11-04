@@ -181,13 +181,19 @@ When authoring these joints in a 3D package (like Blender/Maya), their spatial p
 *   **Latitude:** (Optional) The pitch pivot. If used, it is typically the parent of the Muzzle and is placed **+Y** (above) the Position node where the gun barrels hinge.
 *   **Rest:** (Optional) The yaw pivot. Typically placed **+Z** (forward) or exactly at the origin of the Position node.
 
-### 4. Multi-Barrel Turrets
-If a mod turret has multiple barrels (e.g., a dual-barrel flak cannon) that fire in sequence, they still share the same Base and Rest joints, but you create multiple Muzzle joints side-by-side as siblings of the Rest joint.
-**Scripting:** Call `StartShipWeaponConfig` twice, binding the same weapon script to the different muzzles. The engine handles the alternating firing sequence natively.
+### 4. Multi-Barrel Turrets (Slave Assemblies)
+Vanilla HWRM multi-barrel weapons use a **parallel weapon assembly** named `${base}Slave`, `${base}Slave1`, `${base}Slave2`, ...; they are not extra `_MuzzleN` joints on the main chain. Each slave has its own `Position` and `Muzzle` (and optional `Direction`/`Latitude`/`Rest`), just like a normal weapon assembly.
 
-**Corpus evidence:** a full sweep of the 290 vanilla HWRM ship HODs found 397 weapon assemblies with muzzles and **every one has exactly one `_Muzzle`**; there are no `_MuzzleN` names and no non-standard suffixes. Multi-muzzle is therefore an editor/mod extension, not a vanilla HWRM ship convention.
+**Corpus evidence:** a full sweep of the 290 vanilla HWRM ship HODs found 45 slave assemblies across 16 weapon families: 24 `Slave`, 11 `Slave1`, and 10 `Slave2`. Of those, 37 are four-joint fixed chains and 8 are five-joint turret chains. Examples:
+- `hgn_assaultcorvette.hod`: `Weapon_TurretTop` / `Weapon_TurretTopSlave`, both five-joint turret chains; main muzzle at `+X 1.637`, slave muzzle at `-X 1.626`.
+- `hgn_destroyer.hod`: `Weapon_Torpedo` / `Weapon_TorpedoSlave`, four-joint chains with separate `Position` joints at `+X 9.328` and `-X 8.981`.
+- `kus_missiledestroyer.hod`: `Weapon_GunV0` plus `Weapon_GunV0Slave`, `Slave1`, `Slave2`.
 
-**Editor naming convention:** the primary muzzle is `${base}_Muzzle`; additional muzzles are numbered contiguously `${base}_Muzzle1`, `${base}_Muzzle2`, ... and are parented to `${base}_Latitude` when a Latitude joint exists, otherwise to `${base}_Position`. Direct `Root` parenting is accepted too: vanilla `vgr_commandcorvette.hod` uses `Weapon_Gun_Muzzle` parented to `Root`. Do not leave gaps in the numbering or invent alternate suffixes (`_MuzzleA`, `_Muzzle_2`, ...); hierarchy diagnostics warn about both. Vanilla `kus_defender.hod` confirms the standard `_Latitude` chain with `Weapon_Gun0/1/2_Muzzle` at +Z ~7.639.
+**Scripting:** the `.ship` file normally binds only the main weapon (`StartShipWeaponConfig(..., "Weapon_TurretTop", ...)`); the engine detects the `Slave` suffix on the parallel chain. The `.wepn` `setMiscValues(NewWeaponType, recoil, slaveDelay)` second argument is documented in vanilla scripts as the delay between initial firing and slave barrels; a non-zero value is the observable slave-fire control. Example: `HWCR/weapon/unh_ddmissile/unh_ddmissile.wepn` line 49.
+
+**Editor behavior:** the weapon inspector lists related slave assemblies, can add a new slave chain (cloning the main chain; turret chains mirror the primary muzzle on X by default), and can remove a slave chain. Renaming, deleting, or hiding the main assembly cascades to its slaves.
+
+**`_MuzzleN` note:** `${base}_Muzzle1`, `${base}_Muzzle2`, ... remain an editor extension for mods that bind several muzzles explicitly through multiple `StartShipWeaponConfig` calls. A full sweep found no `_MuzzleN` in vanilla HWRM ships; use Slave chains for the vanilla multi-barrel pattern.
 
 ### 5. Barrel Joints Are Not Vanilla
 A full sweep of the 290 vanilla HWRM ship HODs and their 397 muzzle-bearing weapon assemblies found **zero** `_Barrel` joints. The standard animated-turret chain is `Position → Latitude → Muzzle` (plus `Direction`/`Rest` reference vectors). The editor therefore does **not** create `Barrel` by default and exposes it only through an explicit **+ Add Barrel (Unverified)** toggle. Its runtime behavior is unverified; do not require it in validation or document it as an engine feature until an in-game test proves what it does.

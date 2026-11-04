@@ -63,6 +63,8 @@ Current template families are:
 
 Agents must treat `handleAddNode` in `HierarchyTree.tsx` as canonical for exact joint names, offsets, parent names, and optional components.
 
+Slave barrel assemblies are not a separate Add Node template. They are created from the weapon assembly inspector as parallel `${base}Slave`, `${base}Slave1`, `${base}Slave2`, ... chains and follow the vanilla HWRM multi-barrel convention.
+
 UI Tree should show those structures as a main Assembly node (not specifically a HOD node) to represent the assembly subtree, with the position of the node in HOD and render being the main "*_Position" joint node. While they children nodes can be editable and can add other nodes inside as they are still joint nodes. The rules for renaming should be for all the nodes in the assembly, but can only rename via the assembly. The only way of deleting these set of nodes is by deleting the assembly, it should delete all child nodes.
 
 ## Node Identity

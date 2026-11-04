@@ -34,6 +34,19 @@ A full sweep of the 290 vanilla HWRM ship HODs found 397 weapon assemblies with 
 - Hierarchy diagnostics warn about non-standard muzzle names, missing primary `_Muzzle` numbering, numbering gaps, and muzzles parented outside the expected joint (Root excluded).
 - Weapon assembly validation requires `Position`, `Direction`, `Muzzle`, and `Rest`. At least one muzzle is required; extra muzzles are optional.
 
+### Slave Barrels (Vanilla Multi-Barrel)
+
+Vanilla HWRM multi-barrel weapons use a **parallel weapon assembly** named `${base}Slave`, `${base}Slave1`, `${base}Slave2`, ... rather than extra `_MuzzleN` joints on the main chain. A full vanilla sweep found 45 slave assemblies across 16 weapon families (24 `Slave`, 11 `Slave1`, 10 `Slave2`); 37 are four-joint fixed chains and 8 are five-joint turret chains.
+
+- Each slave chain has its own `Position` and `Muzzle` (and optional `Direction`/`Latitude`/`Rest`), just like a normal weapon assembly.
+- The `.ship` file normally binds only the main weapon. The engine detects the `Slave` suffix on the parallel chain.
+- The `.wepn` `setMiscValues(NewWeaponType, recoil, slaveDelay)` second argument is documented in vanilla scripts as the delay between initial firing and slave barrels. A non-zero value is the observable slave-fire control.
+- The weapon inspector and hierarchy context menu can add a new slave chain (cloning the main chain; turret chains mirror the primary muzzle on X by default), and the inspector can remove a slave chain.
+- Renaming or deleting the main assembly cascades to its slave assemblies. Visibility toggles on the main assembly also include its slaves.
+- Hierarchy diagnostics warn when a slave assembly is missing its `Position` or `Muzzle`.
+
+The `_MuzzleN` section above remains an editor extension for mods that bind several muzzles explicitly through multiple `StartShipWeaponConfig` calls; it is not the vanilla HWRM Slave mechanism.
+
 ## Turret Assemblies
 
 Turret templates are weapon-style assemblies with additional turret-related joints according to current template creation code. They share the weapon-group rendering and protected-subnode rules.
