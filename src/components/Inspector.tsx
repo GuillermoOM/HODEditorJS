@@ -1,16 +1,29 @@
 import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
-import { HODModel, Vector3D, HODNavLight, HODDockpoint } from "./Viewport";
+import { HODModel, Vector3D, HODNavLight, HODDockpoint, Matrix4D } from "./Viewport";
 import { parseTextureGroups, SHADER_SLOTS, KNOWN_TYPES, getExpectedSlots, findTextureForSlot } from "../texture_utils";
 import { parseMtl, resolveDiffuseTexture } from "../mtl_utils";
 import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2, FlipVertical } from "lucide-react";
 import { WeaponGroupInspector } from "./WeaponGroupInspector";
+import {
+  CoordinateSpace,
+  getDisplayTransform,
+  applyPositionEdit,
+  applyRotationEdit,
+  getEulerRotation,
+  updateMatrixRotation,
+  matrixRotationToHodRadians,
+} from "../transform_utils";
+
+export { getEulerRotation, updateMatrixRotation };
 
 interface InspectorProps {
   model: HODModel | null;
   selectedNode: { type: string; name: string } | null;
-  onPositionChange: (name: string, type: string, pos: Vector3D) => void;
+  onPositionChange: (name: string, type: string, pos: Vector3D, localMatrix?: Matrix4D) => void;
+  coordinateSpace?: CoordinateSpace;
+  setCoordinateSpace?: (space: CoordinateSpace) => void;
   onModelChange?: (updatedModel: HODModel) => void;
   onSelectedNodeChange?: (node: { type: string; name: string } | null) => void;
   selectedAnimIdx: number;
@@ -68,44 +81,8 @@ const handleNumericWheel = (e: React.WheelEvent<HTMLInputElement>, onChange: (va
 
 
 
-// Converts 4x4 matrix representation to Euler rotation in degrees (XYZ order)
-export const getEulerRotation = (m: number[][]): { x: number; y: number; z: number } => {
-  if (!m || m.length < 4 || m.some(row => !row || row.length < 4)) {
-    return { x: 0, y: 0, z: 0 };
-  }
-  const matrix = new THREE.Matrix4().set(
-    m[0][0], m[1][0], m[2][0], m[3][0],
-    m[0][1], m[1][1], m[2][1], m[3][1],
-    m[0][2], m[1][2], m[2][2], m[3][2],
-    m[0][3], m[1][3], m[2][3], m[3][3]
-  );
-  const euler = new THREE.Euler().setFromRotationMatrix(matrix, "XYZ");
-  return {
-    x: Math.round(THREE.MathUtils.radToDeg(euler.x) * 100) / 100,
-    y: Math.round(THREE.MathUtils.radToDeg(euler.y) * 100) / 100,
-    z: Math.round(THREE.MathUtils.radToDeg(euler.z) * 100) / 100,
-  };
-};
-
-// Builds a new 4x4 rotation matrix using new Euler angles in degrees and merges it with position
-export const updateMatrixRotation = (m: number[][], rot: { x: number; y: number; z: number }): number[][] => {
-  const radX = THREE.MathUtils.degToRad(rot.x);
-  const radY = THREE.MathUtils.degToRad(rot.y);
-  const radZ = THREE.MathUtils.degToRad(rot.z);
-  const euler = new THREE.Euler(radX, radY, radZ, "XYZ");
-  const rotationMatrix = new THREE.Matrix4().makeRotationFromEuler(euler);
-  const elements = rotationMatrix.elements;
-
-  // Copy elements (m is column-major in HOD matrix rows)
-  const next = m.map(row => [...row]);
-  
-  // Update basis vectors
-  next[0][0] = elements[0];  next[0][1] = elements[1];  next[0][2] = elements[2];
-  next[1][0] = elements[4];  next[1][1] = elements[5];  next[1][2] = elements[6];
-  next[2][0] = elements[8];  next[2][1] = elements[9];  next[2][2] = elements[10];
-
-  return next;
-};
+// Converts 4x4 matrix representation to Euler rotation in degrees (XYZ order).
+// Re-exported from transform_utils so existing inspector imports keep working.
 
 export interface NumericInputProps {
   value: number;
@@ -838,6 +815,8 @@ export const Inspector: React.FC<InspectorProps> = ({
   onToggleVisibility,
   setIsLoading,
   setStatusMsg,
+  coordinateSpace = "local",
+  setCoordinateSpace,
 }) => {
   const [pipelines, setPipelines] = useState<string[]>([]);
   const [renameWeaponName, setRenameWeaponName] = useState("");
@@ -901,10 +880,10 @@ export const Inspector: React.FC<InspectorProps> = ({
         const updatedPoints = dp.points.map((pt, idx) => {
           if (idx === ptIndex) {
             if (fieldName === "x" || fieldName === "y" || fieldName === "z") {
-              const newPos = { ...pt.position, [fieldName]: value };
+              const result = applyPositionEdit(model, "dockpoint", `${pathName}:${ptIndex}`, coordinateSpace, fieldName, value);
               // Report coordinates to position change to update gizmos too if needed
-              onPositionChange(`${pathName}:${ptIndex}`, "dockpoint", newPos);
-              return { ...pt, position: newPos };
+              onPositionChange(`${pathName}:${ptIndex}`, "dockpoint", result.position, result.matrix);
+              return { ...pt, position: result.position, rotation: result.matrix };
             } else {
               return { ...pt, [fieldName]: value };
             }
@@ -1085,6 +1064,7 @@ export const Inspector: React.FC<InspectorProps> = ({
           selectedNode={selectedNode as {type: string, name: string}}
           onModelChange={onModelChange}
           onPositionChange={onPositionChange}
+          coordinateSpace={coordinateSpace}
         />
       );
     }
@@ -1160,25 +1140,22 @@ export const Inspector: React.FC<InspectorProps> = ({
         const jointObj = model.joints.find(j => j.name === jointName);
         if (!jointObj) return;
 
-        const m = jointObj.local_transform.m;
-        const pos = {
-          x: (axis === "x") ? val : m[3][0],
-          y: (axis === "y") ? val : m[3][1],
-          z: (axis === "z") ? val : m[3][2],
-        };
-
-        onPositionChange(jointName, "joint", pos);
+        const result = applyPositionEdit(model, "joint", jointName, coordinateSpace, axis, val);
+        onPositionChange(jointName, "joint", result.position, result.matrix);
       };
 
-      const handleWeaponJointRotationChange = (jointName: string, m: number[][], rot: { x: number; y: number; z: number }, axis: "x" | "y" | "z", valStr: string) => {
+      const handleWeaponJointRotationChange = (jointName: string, axis: "x" | "y" | "z", valStr: string) => {
         const val = parseFloat(valStr);
         if (isNaN(val)) return;
-        const newRot = { ...rot, [axis]: val };
-        const nextMatrix = updateMatrixRotation(m, newRot);
-        
+        const result = applyRotationEdit(model, "joint", jointName, coordinateSpace, axis, val);
         const updatedJoints = model.joints.map((j) => {
           if (j.name === jointName) {
-            return { ...j, local_transform: { m: nextMatrix } };
+            return {
+              ...j,
+              local_transform: result.matrix,
+              position: result.position,
+              rotation: matrixRotationToHodRadians(result.matrix),
+            };
           }
           return j;
         });
@@ -1293,9 +1270,9 @@ export const Inspector: React.FC<InspectorProps> = ({
           );
         }
 
-        const m = jointObj.local_transform.m;
-        const pos = { x: m[3][0], y: m[3][1], z: m[3][2] };
-        const rot = getEulerRotation(m);
+        const display = getDisplayTransform(model, "joint", jointObj.name, coordinateSpace);
+        const pos = display.position;
+        const rot = display.rotation;
 
         return (
           <div style={{ background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", padding: "12px", borderRadius: "8px", display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -1326,8 +1303,8 @@ export const Inspector: React.FC<InspectorProps> = ({
                   <NumericInput
                     step="1"
                     value={rot[axis as "x" | "y" | "z"]}
-                    onChange={(val) => handleWeaponJointRotationChange(jointObj.name, m, rot, axis as "x" | "y" | "z", val)}
-                    onWheel={(e) => handleNumericWheel(e, (val) => handleWeaponJointRotationChange(jointObj.name, m, rot, axis as "x" | "y" | "z", val), 1.0)}
+                    onChange={(val) => handleWeaponJointRotationChange(jointObj.name, axis as "x" | "y" | "z", val)}
+                    onWheel={(e) => handleNumericWheel(e, (val) => handleWeaponJointRotationChange(jointObj.name, axis as "x" | "y" | "z", val), 1.0)}
                     style={{ height: "26px", fontSize: "11px", fontFamily: "var(--font-mono)", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", padding: "0 6px", width: "100%" }}
                   />
                 </div>
@@ -1394,9 +1371,9 @@ export const Inspector: React.FC<InspectorProps> = ({
       const isNozzle = selectedNode.type === "engine_nozzle";
       const joint = model.joints.find(j => j.name === selectedNode.name);
       if (!joint) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Joint not found</div>;
-      const m = joint.local_transform.m;
-      const pos = { x: m[3][0], y: m[3][1], z: m[3][2] };
-      const rot = getEulerRotation(m);
+      const display = getDisplayTransform(model, selectedNode.type, selectedNode.name, coordinateSpace);
+      const pos = display.position;
+      const rot = display.rotation;
       const parentName = joint.parent_name || "(None)";
       
       const hasBurn = model.engine_burns?.some(b => b.parent_name === joint.name);
@@ -1428,19 +1405,22 @@ export const Inspector: React.FC<InspectorProps> = ({
       const handleCoordChange = (axis: "x" | "y" | "z", valStr: string) => {
         const val = parseFloat(valStr);
         if (isNaN(val)) return;
-        onPositionChange(selectedNode.name, selectedNode.type, { ...pos, [axis]: val });
+        const result = applyPositionEdit(model, selectedNode.type, selectedNode.name, coordinateSpace, axis, val);
+        onPositionChange(selectedNode.name, selectedNode.type, result.position, result.matrix);
       };
 
       const handleRotationChange = (axis: "x" | "y" | "z", valStr: string) => {
         const val = parseFloat(valStr);
         if (isNaN(val)) return;
-        const newRot = { ...rot, [axis]: val };
-        const nextMatrix = updateMatrixRotation(m, newRot);
-        
-        // Update model state
+        const result = applyRotationEdit(model, selectedNode.type, selectedNode.name, coordinateSpace, axis, val);
         const updatedJoints = model.joints.map((j) => {
           if (j.name === joint.name) {
-            return { ...j, local_transform: { m: nextMatrix }, rotation: newRot };
+            return {
+              ...j,
+              local_transform: result.matrix,
+              position: result.position,
+              rotation: matrixRotationToHodRadians(result.matrix),
+            };
           }
           return j;
         });
@@ -1542,26 +1522,24 @@ export const Inspector: React.FC<InspectorProps> = ({
     if (selectedNode.type === "marker") {
       const marker = model.markers.find(m => m.name === selectedNode.name);
       if (!marker) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Marker not found</div>;
-      const pos = marker.position;
-      const m = marker.rotation.m;
-      const rot = getEulerRotation(m);
+      const display = getDisplayTransform(model, "marker", selectedNode.name, coordinateSpace);
+      const pos = display.position;
+      const rot = display.rotation;
 
       const handleCoordChange = (axis: "x" | "y" | "z", valStr: string) => {
         const val = parseFloat(valStr);
         if (isNaN(val)) return;
-        onPositionChange(selectedNode.name, selectedNode.type, { ...pos, [axis]: val });
+        const result = applyPositionEdit(model, "marker", selectedNode.name, coordinateSpace, axis, val);
+        onPositionChange(selectedNode.name, selectedNode.type, result.position, result.matrix);
       };
 
       const handleRotationChange = (axis: "x" | "y" | "z", valStr: string) => {
         const val = parseFloat(valStr);
         if (isNaN(val)) return;
-        const newRot = { ...rot, [axis]: val };
-        const nextMatrix = updateMatrixRotation(m, newRot);
-        
-        // Update model state
+        const result = applyRotationEdit(model, "marker", selectedNode.name, coordinateSpace, axis, val);
         const updatedMarkers = model.markers.map((mrk) => {
           if (mrk.name === marker.name) {
-            return { ...mrk, rotation: { m: nextMatrix } };
+            return { ...mrk, rotation: result.matrix };
           }
           return mrk;
         });
@@ -1645,46 +1623,50 @@ export const Inspector: React.FC<InspectorProps> = ({
       if (!nav) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>NavLight not found</div>;
 
       const underlyingJoint = model.joints.find(j => j.name.toLowerCase() === nav.name.toLowerCase());
-      const navPosition = underlyingJoint
-        ? {
-            x: underlyingJoint.position?.x ?? underlyingJoint.local_transform.m[3][0],
-            y: underlyingJoint.position?.y ?? underlyingJoint.local_transform.m[3][1],
-            z: underlyingJoint.position?.z ?? underlyingJoint.local_transform.m[3][2],
-          }
-        : { x: 0, y: 0, z: 0 };
+      const display = underlyingJoint
+        ? getDisplayTransform(model, "joint", underlyingJoint.name, coordinateSpace)
+        : { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } };
+      const navPosition = display.position;
 
       const updateNavLightPosition = (axis: "x" | "y" | "z", value: number) => {
-        const nextPosition = { ...navPosition, [axis]: value };
-        let foundJoint = false;
-        const newJoints = model.joints.map((joint) => {
-          if (joint.name.toLowerCase() !== nav.name.toLowerCase()) return joint;
-          foundJoint = true;
-          const m = joint.local_transform.m.map(row => [...row]);
-          m[3][0] = nextPosition.x;
-          m[3][1] = nextPosition.y;
-          m[3][2] = nextPosition.z;
-          return { ...joint, local_transform: { m }, position: nextPosition };
-        });
-
-        if (!foundJoint) {
-          newJoints.push({
-            name: nav.name,
-            parent_name: "Root",
-            position: nextPosition,
-            rotation: { x: 0, y: 0, z: 0 },
-            scale: { x: 0, y: 0, z: 0 },
-            local_transform: {
-              m: [
-                [1, 0, 0, 0],
-                [0, 1, 0, 0],
-                [0, 0, 1, 0],
-                [nextPosition.x, nextPosition.y, nextPosition.z, 1]
-              ]
-            }
+        if (underlyingJoint) {
+          const result = applyPositionEdit(model, "joint", underlyingJoint.name, coordinateSpace, axis, value);
+          const newJoints = model.joints.map((joint) => {
+            if (joint.name.toLowerCase() !== nav.name.toLowerCase()) return joint;
+            return {
+              ...joint,
+              local_transform: result.matrix,
+              position: result.position,
+              rotation: matrixRotationToHodRadians(result.matrix),
+            };
           });
+          onModelChange?.({ ...model, joints: newJoints });
+          return;
         }
 
-        onModelChange?.({ ...model, joints: newJoints });
+        // No backing joint: create one at Root (global and local are identical).
+        const nextPosition = { ...navPosition, [axis]: value };
+        onModelChange?.({
+          ...model,
+          joints: [
+            ...model.joints,
+            {
+              name: nav.name,
+              parent_name: "Root",
+              position: nextPosition,
+              rotation: { x: 0, y: 0, z: 0 },
+              scale: { x: 1, y: 1, z: 1 },
+              local_transform: {
+                m: [
+                  [1, 0, 0, 0],
+                  [0, 1, 0, 0],
+                  [0, 0, 1, 0],
+                  [nextPosition.x, nextPosition.y, nextPosition.z, 1]
+                ]
+              }
+            }
+          ]
+        });
       };
 
       return (
@@ -1851,6 +1833,8 @@ export const Inspector: React.FC<InspectorProps> = ({
       if (!path) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Dockpath not found</div>;
       const pt = path.points[ptIndex];
       if (!pt) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Dockpoint not found</div>;
+      const display = getDisplayTransform(model, "dockpoint", selectedNode.name, coordinateSpace);
+      const displayPos = display.position;
 
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1877,7 +1861,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                   <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>{axis.toUpperCase()}</label>
                   <NumericInput
                     step="1"
-                    value={pt.position[axis as "x" | "y" | "z"]}
+                    value={displayPos[axis as "x" | "y" | "z"]}
                     onChange={(val) => handleDockpointChange(pathName, ptIndex, axis as "x" | "y" | "z", parseFloat(val) || 0)}
                     style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
                   />
@@ -3193,11 +3177,14 @@ export const Inspector: React.FC<InspectorProps> = ({
             </div>
           </div>
 
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: "1.5", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "8px 10px" }}>
+            Keyframes store animation deltas relative to the joint's rest pose. They are always displayed in local/animation space and are not affected by the Local/Global toggle.
+          </div>
+
           <div className="card-bg" style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "12px", borderRadius: "6px", border: "1px solid var(--border-color)", background: "rgba(0,0,0,0.15)" }}>
             <div style={{ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent-cyan)" }}>
               Timeline Position
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            </div>            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               <span style={{ fontSize: "9px", color: "var(--text-muted)" }}>Time (seconds)</span>
               <NumericInput
                 step="0.05"
@@ -3302,7 +3289,27 @@ export const Inspector: React.FC<InspectorProps> = ({
 
   return (
     <div className="panel panel-right" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div className="panel-header">Inspector</div>
+      <div className="panel-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <span>Inspector</span>
+        {setCoordinateSpace && (
+          <div style={{ display: "flex", gap: "2px" }} title="Coordinate space for position/rotation fields">
+            <button
+              onClick={() => setCoordinateSpace("local")}
+              className={coordinateSpace === "local" ? "primary" : ""}
+              style={{ fontSize: "9px", height: "20px", padding: "0 6px" }}
+            >
+              Local
+            </button>
+            <button
+              onClick={() => setCoordinateSpace("global")}
+              className={coordinateSpace === "global" ? "primary" : ""}
+              style={{ fontSize: "9px", height: "20px", padding: "0 6px" }}
+            >
+              Global
+            </button>
+          </div>
+        )}
+      </div>
       <div className="panel-content" style={{ display: "flex", flexDirection: "column", gap: "16px", overflowY: "auto", flex: 1, padding: "15px" }}>
         {/* Selected element form details */}
         {renderSelectedContent()}

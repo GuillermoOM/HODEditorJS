@@ -22,9 +22,23 @@ Weapon subnodes are protected structural children:
 
 The assembly/group row itself remains editable through group rename/delete behavior.
 
+### Multi-Muzzle Weapon Assemblies
+
+Weapon assemblies support more than one muzzle. The primary muzzle is `${base}_Muzzle`; additional muzzles are numbered contiguously as `${base}_Muzzle1`, `${base}_Muzzle2`, and so on. This follows the vanilla HWRM multi-barrel convention and the multi-`StartShipWeaponConfig` binding pattern.
+
+- New muzzles are parented to `${base}_Latitude` when a Latitude joint exists, otherwise to `${base}_Position`.
+- Adding or removing `Latitude` reparents all existing muzzles between `Latitude` and `Position`.
+- The assembly inspector lists every muzzle joint and allows adding/removing them individually. Removing the primary muzzle does not renumber the remaining ones.
+- Hierarchy diagnostics warn about non-standard muzzle names, missing primary `_Muzzle` numbering, numbering gaps, and muzzles parented outside the expected joint.
+- Weapon assembly validation requires `Position`, `Direction`, `Muzzle`, and `Rest`. At least one muzzle is required; extra muzzles are optional.
+
 ## Turret Assemblies
 
 Turret templates are weapon-style assemblies with additional turret-related joints according to current template creation code. They share the weapon-group rendering and protected-subnode rules.
+
+The turret template creates five joints: `Position`, `Direction`, `Latitude`, `Muzzle`, and `Rest`. `Muzzle` is a child of `Latitude` at `+Z 7.64` (vanilla HWRM turret convention), `Direction` is a `+Y 5.0` child of `Position`, and `Rest` is a `+Z 10.0` child of `Position`.
+
+`Barrel` is **not** created by the template. No `_Barrel` joint exists in vanilla HWRM ship HODs, and its runtime behavior is unverified. The weapon assembly inspector exposes an optional **+ Add Barrel (Unverified)** toggle and documents this caveat; Barrel is never required by validation.
 
 ## Point Groups
 
@@ -39,7 +53,7 @@ Required components vary by assembly type. Inspector is the canonical source for
 Current Inspector-backed required component keys are:
 
 - Weapon group: `Position`, `Direction`, `Muzzle`, `Rest`.
-- Turret group: `Position`, `Direction`, `Latitude`, `Barrel`, `Muzzle`, `Rest`.
+- Turret group: `Position`, `Direction`, `Latitude`, `Muzzle`, `Rest`. `Barrel` is optional and unverified.
 - Hardpoint group: `Position`, `Direction`, `Rest`.
 - Capture point, repair point, and salvage point groups: `Base`, `Heading`, `Left`, `Up`.
 

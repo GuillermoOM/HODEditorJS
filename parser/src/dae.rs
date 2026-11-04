@@ -1127,6 +1127,41 @@ mod tests {
 </COLLADA>"##;
 
     #[test]
+    fn dae_top_level_export_transform_is_discarded_in_y_up_space() {
+        // Blender/Collada often wraps the scene in a Z_UP -> Y_UP rotation.
+        // HODEditorJS models in HWRM's native Y-up/+Z-forward space, so the
+        // wrapper transform must be dropped without rotating the ship.
+        let xml = r##"<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset><up_axis>Y_UP</up_axis></asset>
+  <library_visual_scenes>
+    <visual_scene id="test" name="test">
+      <node name="ROOT_LOD[0]" id="ROOT_LOD[0]">
+        <matrix sid="transform">1 0 0 0 0 0 1 0 0 -1 0 0 0 0 0 1</matrix>
+        <node name="JNT[TestJoint]" id="j1">
+          <translate sid="translate">0 0 10</translate>
+        </node>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene><instance_visual_scene url="#test"/></scene>
+</COLLADA>"##;
+
+        let model = parse_dae(xml).expect("DAE with top-level export transform must parse");
+        let joint = model.joints.iter().find(|j| j.name == "TestJoint").expect("TestJoint must exist");
+
+        // The +Z offset survives, and the wrapper's X-rotation is not applied.
+        assert!((joint.local_transform.m[3][0] - 0.0).abs() < 1e-5);
+        assert!((joint.local_transform.m[3][1] - 0.0).abs() < 1e-5);
+        assert!((joint.local_transform.m[3][2] - 10.0).abs() < 1e-5);
+        assert!((joint.local_transform.m[0][0] - 1.0).abs() < 1e-5);
+        assert!((joint.local_transform.m[1][1] - 1.0).abs() < 1e-5);
+        assert!((joint.local_transform.m[2][2] - 1.0).abs() < 1e-5);
+        assert!(joint.local_transform.m[1][2].abs() < 1e-5);
+        assert!(joint.local_transform.m[2][1].abs() < 1e-5);
+    }
+
+    #[test]
     fn dae_navlight_style_comes_from_type_not_flags() {
         let xml = r##"<?xml version="1.0" encoding="utf-8"?>
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">

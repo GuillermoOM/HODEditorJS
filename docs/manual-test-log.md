@@ -1046,3 +1046,41 @@ Editor manual test (load `testing/bst_mothership/bst_mothership.hod` in the app)
     - Collision mesh loaded: [x] PASS
     - All expected nodes loaded: [x] PASS
 2. In-game check of any exported file from this ship: [ ] NOT RUN (read-path-only fix; no output format changed)
+
+---
+
+SHA: `(working tree - coordinates, muzzles, barrels, orientation)`
+Timestamp: `04/11/2026 14:23`
+Test hod: `hgn_destroyer.hod`, `kus_defender.hod`, `hgn_battlecruiser.hod` (static audit); editor build verification
+
+**Goal**: Implement the shared Local/Global coordinate-space toggle, multi-muzzle weapon assemblies, optional/unverified Barrel handling, and confirm that editor HOD coordinates match the game.
+
+Static orientation audit:
+
+1. `hgn_destroyer.hod` weapon joints point +Z (weapon positions around Z=+192): [x] CONFIRMED
+2. `hgn_destroyer.hod` engine nozzle sits at -Z (around Z=-177): [x] CONFIRMED
+3. Conclusion: HWRM HODs are Y-up/+Z-forward, the viewport consumes HOD coordinates directly, and no parser/viewport axis remap is needed: [x] CONFIRMED
+4. DAE import intentionally discards the top-level export transform (Blender Z_UP→Y_UP wrapper); regression test `dae_top_level_export_transform_is_discarded_in_y_up_space` added: [x] PASS
+
+Weapon corpus audit:
+
+1. `kus_defender.hod` uses `Weapon_Gun0/1/2_Muzzle` under `_Latitude` at +Z ~7.64: [x] CONFIRMED
+2. `hgn_battlecruiser.hod` uses one `_Muzzle` per weapon: [x] CONFIRMED
+3. No `_Barrel` joints were found in the audited vanilla HWRM ship HODs; Barrel remains optional/unverified: [x] CONFIRMED
+
+Automated verification:
+
+1. `npx tsc --noEmit`: [x] PASS (no output)
+2. `npm run build`: [x] PASS (1776 modules transformed, built in 2.22s; existing chunk-size warnings only)
+3. `cargo test --manifest-path parser/Cargo.toml`: [x] PASS - 37 passed, 0 failed; includes the new DAE top-level transform regression test
+4. `cargo run --manifest-path parser/Cargo.toml --bin verify_lossless`: [x] PASS - exit 0; all four generated files re-parsed with identical structural counts (Pebble 2/1/0/0/0, Elysium 3/30/16/5/8, Fenris 7/51/4/11/4, Asteroid 3 3/4/0/0/0); expected regenerated-pool size deltas +136, -74546, -761130, -5336577 bytes; DAE fallback 140254 bytes
+
+Manual editor/in-game test (pending user):
+
+1. Open a HOD with a nested joint; toggle Local/Global; confirm the viewport gizmo axes and Inspector numbers change together: [ ] NOT RUN
+2. Edit position/rotation in Global, toggle back to Local, and confirm the local values and save round-trip: [ ] NOT RUN
+3. Create a weapon assembly; add a 2nd/3rd muzzle; rename the assembly; confirm all muzzles follow: [ ] NOT RUN
+4. Delete the assembly; confirm full muzzle cleanup: [ ] NOT RUN
+5. Save/reload; confirm muzzles persist: [ ] NOT RUN
+6. Load an exported ship in game; confirm orientation (Y-up, +Z forward) matches the editor: [ ] NOT RUN
+7. If a test asset uses `_Barrel`, record the observed runtime behavior before changing the optional/unverified ruling: [ ] NOT RUN

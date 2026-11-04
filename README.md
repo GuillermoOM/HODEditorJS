@@ -250,7 +250,7 @@ This feature is under active development. Complex DAE files with advanced featur
 | Dockpath | Docking path with tolerance and speed per point |
 | Collision | Collision hull with bounding box and mesh |
 | Weapon Template | Weapon assembly (Position/Direction/Rest/Muzzle) |
-| Turret Template | Turret assembly (Position/Direction/Rest/Latitude/Barrel/Muzzle) |
+| Turret Template | Turret assembly (Position/Direction/Latitude/Muzzle/Rest); Barrel optional/unverified |
 | Engine Nozzle | Engine nozzle with burn plume, glow, and shape sub-nodes |
 | Repair Point | Repair point assembly (Base/Heading/Left/Up) |
 | Capture Point | Capture point assembly (Base/Heading/Left/Up) |

@@ -640,9 +640,23 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     };
 
     let finalNodeName = name;
-    if (addNodeType === "weapon_template") finalNodeName = name.startsWith("Weapon_") || name.startsWith("weapon_") ? name : `Weapon_${name}`;
+    if (addNodeType === "weapon_template" || addNodeType === "turret_template") finalNodeName = name.startsWith("Weapon_") || name.startsWith("weapon_") ? name : `Weapon_${name}`;
     else if (addNodeType === "repair_point_template" || addNodeType === "capture_point_template" || addNodeType === "salvage_point_template") finalNodeName = name; // already computed autoName
     else if (addNodeType === "engine_nozzle") finalNodeName = name;
+
+    // Validate every generated template joint for name collisions before creating anything.
+    if (addNodeType === "weapon_template" || addNodeType === "turret_template") {
+      const suffixes = addNodeType === "turret_template"
+        ? ["_Position", "_Direction", "_Latitude", "_Muzzle", "_Rest"]
+        : ["_Position", "_Direction", "_Muzzle", "_Rest"];
+      const duplicate = suffixes
+        .map((suffix) => `${finalNodeName}${suffix}`)
+        .find((jointName) => checkDuplicate(jointName));
+      if (duplicate) {
+        window.alert(`A node with the name "${duplicate}" already exists! Please choose a unique base name.`);
+        return;
+      }
+    }
 
     if (checkDuplicate(finalNodeName)) {
       window.alert(`A node with the name "${finalNodeName}" already exists! Please choose a unique name.`);
@@ -751,24 +765,52 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       };
       updatedModel.dockpaths = [...model.dockpaths, newPath];
       invoke("log_event", { level: "INFO", message: `Added new dockpath: ${name} parented under ${parent}` }).catch(console.error);
-    } else if (addNodeType === "weapon_template") {
-      const base = name.startsWith("Weapon_") || name.startsWith("weapon_") ? name : `Weapon_${name}`;
-      const posName = `${base}_Position`;
+    } else if (addNodeType === "weapon_template" || addNodeType === "turret_template") {
+      const base = finalNodeName;
+      const isTurret = addNodeType === "turret_template";
+      const parentName = parent === "(None)" ? undefined : parent;
 
-      const templateJoint = {
-        name: posName,
-        parent_name: parent === "(None)" ? undefined : parent,
+      const makeJoint = (
+        suffix: string,
+        parentSuffix: string | null,
+        offset: { x: number; y: number; z: number }
+      ) => ({
+        name: `${base}${suffix}`,
+        parent_name: parentSuffix === null ? parentName : `${base}${parentSuffix}`,
         local_transform: {
           m: [
             [1, 0, 0, 0],
             [0, 1, 0, 0],
             [0, 0, 1, 0],
-            [0, 0, 0, 1]
+            [offset.x, offset.y, offset.z, 1]
           ]
-        }
-      };
-      updatedModel.joints = [...model.joints, templateJoint];
-      invoke("log_event", { level: "INFO", message: `Added new Weapon Assembly (Position only): ${base}` }).catch(console.error);
+        },
+        rotation: { x: 0, y: 0, z: 0 },
+      });
+
+      const templateJoints = isTurret
+        ? [
+            // Vanilla HWRM turret chain: Position -> Latitude -> Muzzle, with
+            // Direction/Rest used as up and idle vectors. Barrel is optional
+            // and unverified, so it is not created by default.
+            makeJoint("_Position", null, { x: 0, y: 0, z: 0 }),
+            makeJoint("_Direction", "_Position", { x: 0, y: 5.0, z: 0 }),
+            makeJoint("_Latitude", "_Position", { x: 0, y: 0, z: 0 }),
+            makeJoint("_Muzzle", "_Latitude", { x: 0, y: 0, z: 7.64 }),
+            makeJoint("_Rest", "_Position", { x: 0, y: 0, z: 10.0 }),
+          ]
+        : [
+            makeJoint("_Position", null, { x: 0, y: 0, z: 0 }),
+            makeJoint("_Direction", "_Position", { x: 0, y: 5.0, z: 0 }),
+            makeJoint("_Muzzle", "_Position", { x: 0, y: 0, z: 5.0 }),
+            makeJoint("_Rest", "_Position", { x: 0, y: 0, z: 5.0 }),
+          ];
+
+      updatedModel.joints = [...model.joints, ...templateJoints];
+      invoke("log_event", {
+        level: "INFO",
+        message: `Added new ${isTurret ? "Turret" : "Weapon"} Assembly: ${base} (${templateJoints.length} joints)`,
+      }).catch(console.error);
     } else if (addNodeType === "engine_nozzle") {
       const baseJointName = finalNodeName;
       const newJoint = {
@@ -1063,6 +1105,47 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
 
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type: string } | null>(null);
+
+  const handleAddMuzzleToGroup = (baseName: string) => {
+    if (!model) return;
+    const existing = model.joints
+      .filter(j => /^_Muzzle\d*$/i.test(j.name.substring(baseName.length)) && j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_"))
+      .map(j => {
+        const suffix = j.name.substring(baseName.length);
+        if (/^_Muzzle$/i.test(suffix)) return 0;
+        const match = suffix.match(/^_Muzzle(\d+)$/i);
+        return match ? parseInt(match[1], 10) : -1;
+      })
+      .filter(idx => idx >= 0);
+
+    let index = 0;
+    while (existing.includes(index)) index++;
+
+    const hasLatitude = model.joints.some(j => j.name.toLowerCase() === `${baseName}_Latitude`.toLowerCase());
+    const parentName = hasLatitude ? `${baseName}_Latitude` : `${baseName}_Position`;
+    const muzzleName = index === 0 ? `${baseName}_Muzzle` : `${baseName}_Muzzle${index}`;
+
+    onModelChange?.({
+      ...model,
+      joints: [
+        ...model.joints,
+        {
+          name: muzzleName,
+          parent_name: parentName,
+          local_transform: {
+            m: [
+              [1, 0, 0, 0],
+              [0, 1, 0, 0],
+              [0, 0, 1, 0],
+              [0, 0, hasLatitude ? 7.64 : 5.0, 1]
+            ]
+          },
+          rotation: { x: 0, y: 0, z: 0 },
+        },
+      ],
+    });
+    invoke("log_event", { level: "INFO", message: `Added muzzle joint ${muzzleName} to ${baseName}` }).catch(console.error);
+  };
 
   const handleContextMenu = (e: React.MouseEvent, name: string, type: string) => {
     if (type === "joint") {
@@ -1709,6 +1792,9 @@ const handleDeleteNode = (name: string, type: string) => {
         label: "Weapon group",
         required: [
           { key: "Position", suffix: "_Position" },
+          { key: "Direction", suffix: "_Direction" },
+          { key: "Muzzle", suffix: "_Muzzle" },
+          { key: "Rest", suffix: "_Rest" },
         ],
       },
       hardpoint_group: {
@@ -1789,6 +1875,56 @@ const handleDeleteNode = (name: string, type: string) => {
           warnings.push({
             type: "warning",
             message: `Weapon group "${baseName}" has a Latitude node, so it must also have a Muzzle node.`
+          });
+        }
+
+        const muzzleJoints = model.joints.filter(j =>
+          j.name.toLowerCase().startsWith(`${baseName}_Muzzle`.toLowerCase())
+        );
+        const invalidMuzzles = muzzleJoints.filter(j =>
+          !/^_Muzzle\d*$/i.test(j.name.substring(baseName.length))
+        );
+        if (invalidMuzzles.length > 0) {
+          warnings.push({
+            type: "warning",
+            message: `Weapon group "${baseName}" has muzzle joints with non-standard names (${invalidMuzzles.map(j => j.name).join(", ")}). Use ${baseName}_Muzzle, ${baseName}_Muzzle1, ${baseName}_Muzzle2, ...`
+          });
+        }
+
+        const indices = muzzleJoints
+          .map(j => {
+            const suffix = j.name.substring(baseName.length);
+            if (/^_Muzzle$/i.test(suffix)) return 0;
+            const match = suffix.match(/^_Muzzle(\d+)$/i);
+            return match ? parseInt(match[1], 10) : -1;
+          })
+          .filter(idx => idx >= 0)
+          .sort((a, b) => a - b);
+        const missingPrimary = indices.length > 0 && indices[0] !== 0;
+        const hasGap = indices.some((idx, pos) => idx !== pos);
+        if (missingPrimary || hasGap) {
+          warnings.push({
+            type: "warning",
+            message: `Weapon group "${baseName}" has non-contiguous muzzle numbering. Expected ${baseName}_Muzzle, then ${baseName}_Muzzle1, ${baseName}_Muzzle2, ...`
+          });
+        }
+
+        const expectedParent = hasLatitude ? `${baseName}_Latitude` : `${baseName}_Position`;
+        const misParented = muzzleJoints.filter(j =>
+          (j.parent_name || "").toLowerCase() !== expectedParent.toLowerCase()
+        );
+        if (misParented.length > 0) {
+          warnings.push({
+            type: "warning",
+            message: `Weapon group "${baseName}" has muzzle joints not parented to ${expectedParent}: ${misParented.map(j => j.name).join(", ")}.`
+          });
+        }
+
+        const barrelJoints = model.joints.filter(j => j.name.toLowerCase() === `${baseName}_Barrel`.toLowerCase());
+        if (barrelJoints.length > 0) {
+          warnings.push({
+            type: "info",
+            message: `Weapon group "${baseName}" contains a Barrel joint. Barrel behavior is unverified in HWRM; it is optional and not required by the standard turret chain.`
           });
         }
       }
@@ -3706,7 +3842,7 @@ const handleDeleteNode = (name: string, type: string) => {
                   />
                   {(addNodeType === "weapon_template" || addNodeType === "turret_template") && (
                     <div style={{ fontSize: "10px", color: "var(--accent-cyan)", marginTop: "4px" }}>
-                      ℹ️ This will auto-generate the complete compliant {addNodeType === "turret_template" ? "6-joint Turret" : "4-joint Weapon"} family!
+                      ℹ️ This will auto-generate the complete compliant {addNodeType === "turret_template" ? "5-joint Turret" : "4-joint Weapon"} family!
                     </div>
                   )}
                 </div>
@@ -4043,6 +4179,18 @@ const handleDeleteNode = (name: string, type: string) => {
               </>
             ) : (
               <>
+                {contextMenu.type === "weapon_group" && (
+                  <div
+                    className="list-item"
+                    style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-primary)' }}
+                    onClick={() => {
+                       handleAddMuzzleToGroup(contextMenu.name);
+                       setContextMenu(null);
+                    }}
+                  >
+                    + Add Muzzle
+                  </div>
+                )}
                 {contextMenu.type !== "collision" && (
                   <div 
                     className="list-item"

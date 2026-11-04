@@ -28,14 +28,15 @@ Joint and marker editing updates transform-related fields through the model upda
 
 Marker edits update marker position/rotation data and parent association according to current Inspector code.
 
-## Coordinate Space Toggle (Planned)
+## Coordinate Space Toggle
 
-The Inspector must share one app-level toggle with the viewport that switches transform fields between **Local** (parent-relative) and **Global** (world-space) coordinates.
+The Inspector shares one app-level toggle with the viewport that switches transform fields between **Local** (parent-relative) and **Global** (world-space) coordinates.
 
-- Applies to every position/rotation editor backed by a transform: joint and engine-nozzle, marker, NavLight backing joint, dockpoint, weapon assembly joint, and animation keyframe fields.
-- Local mode is the current behavior: values are the node's stored parent-relative transform.
-- Global mode displays the composed world transform and converts edits back to the node's local transform before calling the existing update callbacks. The HOD model must keep storing local transforms in both modes.
-- The toggle state is owned by `App.tsx` and shared with `Viewport.tsx`; Inspector must not add an independent coordinate-space control.
+- Applies to every position/rotation editor backed by a node transform: joint and engine-nozzle, marker, NavLight backing joint, dockpoint, weapon assembly joint, and point-group assembly joint. Animation keyframes are excluded: they store deltas relative to the joint rest pose and are always shown in animation/local space.
+- Local mode shows the node's stored parent-relative transform.
+- Global mode displays the composed world transform and converts edits back to the node's local transform before calling the existing update callbacks. The HOD model keeps storing local transforms in both modes.
+- The toggle state is owned by `App.tsx`. Both `Viewport.tsx` and the Inspector panel header render Local/Global buttons that read and write that shared state; neither component owns an independent toggle.
+- The keyframe editor displays a note that its values are animation deltas and are unaffected by the toggle.
 - Viewport gizmo behavior for the same toggle is specified in `06-viewport-interactions.md`.
 
 ## NavLight Editing

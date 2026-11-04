@@ -8,6 +8,7 @@ The primary objective of this effort was to evolve the tool into a fully functio
 ## 2. Key Discoveries & Technical Knowledge
 Throughout the reverse engineering process, several critical quirks regarding the HOD 2.0 architecture were identified and addressed:
 
+* **Coordinate System (HWRM HOD)**: Homeworld Remastered HOD models are **Y-up, +Z-forward**. Static audit of `hgn_destroyer.hod` confirms weapon joints point +Z (weapon positions around +192 on Z) while the engine nozzle sits at -Z (around -177). The editor viewport consumes HOD coordinates directly (no axis remap), and Three.js is also Y-up, so position/rotation helpers must not introduce an extra axis swap. DAE import intentionally discards the top-level visual-scene export transform because Blender's Collada exporter wraps the model in a Z_UP→Y_UP rotation; modders author in Y_UP natively, so applying that wrapper rotates the ship. `parser/src/dae.rs` pins this with `dae_top_level_export_transform_is_discarded_in_y_up_space`.
 * **Flat File Structure**: Unlike standard IFF files or HOD 1.0, HOD 2.0 files **are not** wrapped inside a top-level `FORM` container. The file consists of a flat, sequential list of base IFF chunks starting directly with `FORM ... VERS` and `FORM ... NAME`. Wrapping the file in a top-level `FORM HOD ` causes engine crashes.
 * **Endianness Inconsistencies**: 
   * Standard IFF chunk headers and sizes (e.g., `VERS`, `NAME`, `HVMD`) use **Big-Endian**.
@@ -183,6 +184,11 @@ When authoring these joints in a 3D package (like Blender/Maya), their spatial p
 ### 4. Multi-Barrel Turrets
 If a turret has multiple barrels (e.g., a dual-barrel flak cannon) that fire in sequence, they still share the same Base and Rest joints, but you create multiple Muzzle joints side-by-side as siblings of the Rest joint.
 **Scripting:** Call `StartShipWeaponConfig` twice, binding the same weapon script to the different muzzles. The engine handles the alternating firing sequence natively.
+
+**Editor naming convention:** the primary muzzle is `${base}_Muzzle`; additional muzzles are numbered contiguously `${base}_Muzzle1`, `${base}_Muzzle2`, ... and are parented to `${base}_Latitude` when a Latitude joint exists, otherwise to `${base}_Position`. Vanilla `kus_defender.hod` confirms `Weapon_Gun0/1/2_Muzzle` under `_Latitude` at +Z ~7.64. Do not leave gaps in the numbering or invent alternate suffixes (`_MuzzleA`, `_Muzzle_2`, ...); hierarchy diagnostics warn about both.
+
+### 5. Barrel Joints Are Not Vanilla
+No `_Barrel` joint exists in the vanilla HWRM ship HOD corpus audited for this project (`kus_defender.hod`, `hgn_battlecruiser.hod`, `hgn_destroyer.hod`, and the wider vanilla sweep). The standard animated-turret chain is `Position → Latitude → Muzzle` (plus `Direction`/`Rest` reference vectors). The editor therefore does **not** create `Barrel` by default and exposes it only through an explicit **+ Add Barrel (Unverified)** toggle. Its runtime behavior is unverified; do not require it in validation or document it as an engine feature until an in-game test proves what it does.
 
 ### Important Gotchas
 *   **LoadModel Order:** As with all hardpoints and weapons, `LoadModel()` **MUST** be called in the `.ship` file before `StartShipWeaponConfig`. If the engine tries to attach a weapon to a joint before the HOD is loaded into memory, the game will crash.

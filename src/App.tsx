@@ -8,6 +8,7 @@ import { AnimationDock } from "./components/AnimationDock";
 import { SetupWizard } from "./components/SetupWizard";
 import { SettingsModal } from "./components/SettingsModal";
 import { updateDynamicShaderSlots } from "./texture_utils";
+import { CoordinateSpace, matrixRotationToHodRadians } from "./transform_utils";
 import { Info, AlertTriangle, FolderOpen, FilePlus } from "lucide-react";
 import "./App.css";
 
@@ -43,6 +44,7 @@ function App() {
   const [filePath, setFilePath] = useState("");
   const [selectedNode, setSelectedNode] = useState<{ type: string; name: string } | null>(null);
   const [transformMode, setTransformMode] = useState<"translate" | "rotate" | "scale">("translate");
+  const [coordinateSpace, setCoordinateSpace] = useState<CoordinateSpace>("local");
   const [isSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -684,7 +686,12 @@ function App() {
             m[3][1] = pos.y;
             m[3][2] = pos.z;
           }
-          return { ...joint, local_transform: { m }, position: pos };
+          return {
+            ...joint,
+            local_transform: { m },
+            position: pos,
+            rotation: matrixRotationToHodRadians({ m }),
+          };
         }
         return joint;
       });
@@ -709,7 +716,12 @@ function App() {
             m[3][1] = pos.y;
             m[3][2] = pos.z;
           }
-          return { ...joint, local_transform: { m }, position: pos };
+          return {
+            ...joint,
+            local_transform: { m },
+            position: pos,
+            rotation: matrixRotationToHodRadians({ m }),
+          };
         }
         return joint;
       });
@@ -740,7 +752,12 @@ function App() {
             m[3][1] = pos.y;
             m[3][2] = pos.z;
           }
-          return { ...joint, local_transform: { m }, position: pos };
+          return {
+            ...joint,
+            local_transform: { m },
+            position: pos,
+            rotation: matrixRotationToHodRadians({ m }),
+          };
         }
         return joint;
       });
@@ -752,7 +769,11 @@ function App() {
         if (dp.name === pathName) {
           const updatedPoints = dp.points.map((pt, idx) => {
             if (idx === ptIdx) {
-              return { ...pt, position: pos };
+              return {
+                ...pt,
+                position: pos,
+                rotation: localMatrix || pt.rotation,
+              };
             }
             return pt;
           });
@@ -1203,6 +1224,8 @@ function App() {
                 setSelectedNode={setSelectedNode}
                 transformMode={transformMode}
                 setTransformMode={setTransformMode}
+                coordinateSpace={coordinateSpace}
+                setCoordinateSpace={setCoordinateSpace}
                 onNodeTransform={handleNodeTransform}
                 visibleMeshes={visibleMeshes}
                 showBoneLines={showBoneLines}
@@ -1408,6 +1431,8 @@ function App() {
           model={model}
           selectedNode={selectedNode}
           onPositionChange={handleNodeTransform}
+          coordinateSpace={coordinateSpace}
+          setCoordinateSpace={setCoordinateSpace}
           onModelChange={setModel}
           onSelectedNodeChange={setSelectedNode}
           selectedAnimIdx={selectedAnimIdx}

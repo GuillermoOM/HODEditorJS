@@ -197,6 +197,8 @@ interface ViewportProps {
   setSelectedNode: (node: { type: string; name: string } | null) => void;
   transformMode: "translate" | "rotate" | "scale";
   setTransformMode: (mode: "translate" | "rotate" | "scale") => void;
+  coordinateSpace: "local" | "global";
+  setCoordinateSpace: (space: "local" | "global") => void;
   onNodeTransform: (name: string, type: string, position: Vector3D, localMatrix?: Matrix4D, localQuat?: { x: number, y: number, z: number, w: number }, localEuler?: Vector3D) => void;
   visibleMeshes: Record<string, boolean>;
   showBoneLines: boolean;
@@ -221,6 +223,8 @@ export const Viewport: React.FC<ViewportProps> = ({
   setSelectedNode: _setSelectedNode,
   transformMode,
   setTransformMode,
+  coordinateSpace,
+  setCoordinateSpace,
   onNodeTransform,
   visibleMeshes,
   showBoneLines,
@@ -1155,6 +1159,13 @@ export const Viewport: React.FC<ViewportProps> = ({
       transformControlsRef.current.setMode(transformMode);
     }
   }, [transformMode]);
+
+  // Update gizmo coordinate space (local = node axes, global = world axes)
+  useEffect(() => {
+    if (transformControlsRef.current) {
+      transformControlsRef.current.setSpace(coordinateSpace === "global" ? "world" : "local");
+    }
+  }, [coordinateSpace]);
 
   // Update Scene when new model is loaded or visibility settings change
   useEffect(() => {
@@ -2434,6 +2445,21 @@ export const Viewport: React.FC<ViewportProps> = ({
           title="Rotate Gizmo"
         >
           Rotate
+        </button>
+        <div style={{ width: "1px", background: "rgba(255,255,255,0.15)", margin: "2px 2px" }} />
+        <button
+          className={coordinateSpace === "local" ? "primary" : ""}
+          onClick={() => setCoordinateSpace("local")}
+          title="Gizmo axes follow the selected node's local orientation"
+        >
+          Local
+        </button>
+        <button
+          className={coordinateSpace === "global" ? "primary" : ""}
+          onClick={() => setCoordinateSpace("global")}
+          title="Gizmo axes stay aligned with world axes"
+        >
+          Global
         </button>
       </div>
 
