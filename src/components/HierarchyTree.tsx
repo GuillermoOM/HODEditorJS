@@ -10,6 +10,9 @@ import {
   nextSlaveBase,
   cloneWeaponFamilyJoints,
   renameWeaponFamilyName,
+  muzzleIndex,
+  muzzleName,
+  nextMuzzleIndex,
 } from "../weapon_utils";
 
 interface HierarchyTreeProps {
@@ -1113,30 +1116,20 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type: string } | null>(null);
 
-  const handleAddMuzzleToGroup = (baseName: string) => {    if (!model) return;
-    const existing = model.joints
-      .filter(j => /^_Muzzle\d*$/i.test(j.name.substring(baseName.length)) && j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_"))
-      .map(j => {
-        const suffix = j.name.substring(baseName.length);
-        if (/^_Muzzle$/i.test(suffix)) return 0;
-        const match = suffix.match(/^_Muzzle(\d+)$/i);
-        return match ? parseInt(match[1], 10) : -1;
-      })
-      .filter(idx => idx >= 0);
-
-    let index = 0;
-    while (existing.includes(index)) index++;
+  const handleAddMuzzleToGroup = (baseName: string) => {
+    if (!model) return;
+    const index = nextMuzzleIndex(model, baseName);
+    const newMuzzleName = muzzleName(baseName, index);
 
     const hasLatitude = model.joints.some(j => j.name.toLowerCase() === `${baseName}_Latitude`.toLowerCase());
     const parentName = hasLatitude ? `${baseName}_Latitude` : `${baseName}_Position`;
-    const muzzleName = index === 0 ? `${baseName}_Muzzle` : `${baseName}_Muzzle${index}`;
 
     onModelChange?.({
       ...model,
       joints: [
         ...model.joints,
         {
-          name: muzzleName,
+          name: newMuzzleName,
           parent_name: parentName,
           local_transform: {
             m: [
@@ -1150,7 +1143,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
         },
       ],
     });
-    invoke("log_event", { level: "INFO", message: `Added muzzle joint ${muzzleName} to ${baseName}` }).catch(console.error);
+    invoke("log_event", { level: "INFO", message: `Added muzzle joint ${newMuzzleName} to ${baseName}` }).catch(console.error);
   };
 
   const handleAddSlaveToGroup = (baseName: string) => {
@@ -1869,6 +1862,9 @@ const handleDeleteNode = (name: string, type: string) => {
         const hasJoint = model.joints.some(j => {
           const nameLower = j.name.toLowerCase();
           const targetLower = `${baseName}${suffix}`.toLowerCase();
+          if (key === "Muzzle" && groupInfo.type === "weapon_group") {
+            return muzzleIndex(j.name, baseName) >= 0;
+          }
           if (allowPrefix) {
             return nameLower.startsWith(targetLower);
           }
@@ -1905,25 +1901,7 @@ const handleDeleteNode = (name: string, type: string) => {
         if (invalidMuzzles.length > 0) {
           warnings.push({
             type: "warning",
-            message: `Weapon group "${baseName}" has muzzle joints with non-standard names (${invalidMuzzles.map(j => j.name).join(", ")}). Use ${baseName}_Muzzle, ${baseName}_Muzzle1, ${baseName}_Muzzle2, ...`
-          });
-        }
-
-        const indices = muzzleJoints
-          .map(j => {
-            const suffix = j.name.substring(baseName.length);
-            if (/^_Muzzle$/i.test(suffix)) return 0;
-            const match = suffix.match(/^_Muzzle(\d+)$/i);
-            return match ? parseInt(match[1], 10) : -1;
-          })
-          .filter(idx => idx >= 0)
-          .sort((a, b) => a - b);
-        const missingPrimary = indices.length > 0 && indices[0] !== 0;
-        const hasGap = indices.some((idx, pos) => idx !== pos);
-        if (missingPrimary || hasGap) {
-          warnings.push({
-            type: "warning",
-            message: `Weapon group "${baseName}" has non-contiguous muzzle numbering. Expected ${baseName}_Muzzle, then ${baseName}_Muzzle1, ${baseName}_Muzzle2, ...`
+            message: `Weapon group "${baseName}" has muzzle joints with non-standard names (${invalidMuzzles.map(j => j.name).join(", ")}). Use ${baseName}_Muzzle or ${baseName}_MuzzleN; authored numbering may be non-contiguous.`
           });
         }
 

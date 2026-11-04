@@ -17,7 +17,7 @@ Primary sources:
 Current warning/info categories include:
 
 - Supported assembly group missing required joints. `HierarchyTree.tsx#getWarnings()` should use the same required-component keys as the Inspector assembly repair UI for weapon, turret, hardpoint, capture point, repair point, and salvage point groups.
-- Weapon assembly muzzle diagnostics: non-standard names (must be `_Muzzle`, `_Muzzle1`, `_Muzzle2`, ...), missing primary `_Muzzle`, numbering gaps, and muzzles parented outside the expected `${base}_Latitude`/`${base}_Position` (direct `Root` parenting is accepted because vanilla `vgr_commandcorvette.hod` uses it).
+- Weapon assembly muzzle diagnostics: non-standard names (must be `_Muzzle` or `_MuzzleN`; numbering may be non-contiguous) and muzzles parented outside the expected `${base}_Latitude`/`${base}_Position` (direct `Root` parenting is accepted because vanilla `vgr_commandcorvette.hod` uses it).
 - Weapon assembly contains a `Barrel` joint: reported as **info** only, because Barrel is optional and its runtime behavior is unverified.
 - Slave barrel assembly (`${main}SlaveN`) is missing its `Position` or `Muzzle`.
 - Engine burn count at or above the current warning threshold.

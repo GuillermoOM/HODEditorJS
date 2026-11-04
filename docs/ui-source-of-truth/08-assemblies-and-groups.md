@@ -24,15 +24,16 @@ The assembly/group row itself remains editable through group rename/delete behav
 
 ### Multi-Muzzle Weapon Assemblies
 
-Weapon assemblies support more than one muzzle. The primary muzzle is `${base}_Muzzle`; additional muzzles are numbered contiguously as `${base}_Muzzle1`, `${base}_Muzzle2`, and so on.
-
-A full sweep of the 290 vanilla HWRM ship HODs found 397 weapon assemblies with muzzles: every one uses exactly one `_Muzzle`, with no `_MuzzleN`, no non-standard suffixes, and no `_Barrel` joints. Numbered multi-muzzle names are therefore an editor extension for mods that bind several muzzles through multiple `StartShipWeaponConfig` calls, not a vanilla HWRM convention.
+Weapon assemblies can have more than one muzzle. The primary muzzle is `${base}_Muzzle`; additional muzzles use `${base}_MuzzleN` (for example `${base}_Muzzle2`). Numbering is authored and **may be non-contiguous**: a full scan of all 870 vanilla HWRM HODs found 158 muzzle-bearing assemblies, with `_MuzzleN` used by two specialized subsystem launchers (`vgr_heavyfusionmissilelauncherturret.hod` and its left variant) on `Weapon_MissileRight` / `Weapon_MissileLeft` as indices `0, 2, 3`, all parented to `_Latitude`.
 
 - New muzzles are parented to `${base}_Latitude` when a Latitude joint exists, otherwise to `${base}_Position`. A direct `Root` parent is also accepted (vanilla `vgr_commandcorvette.hod` uses it for a fixed weapon).
+- Adding a muzzle uses `max(existing index) + 1`, so an authored `0, 2, 3` chain gets `4` rather than filling index `1`.
 - Adding or removing `Latitude` reparents all existing muzzles between `Latitude` and `Position`.
 - The assembly inspector lists every muzzle joint and allows adding/removing them individually. Removing the primary muzzle does not renumber the remaining ones.
-- Hierarchy diagnostics warn about non-standard muzzle names, missing primary `_Muzzle` numbering, numbering gaps, and muzzles parented outside the expected joint (Root excluded).
-- Weapon assembly validation requires `Position`, `Direction`, `Muzzle`, and `Rest`. At least one muzzle is required; extra muzzles are optional.
+- Hierarchy diagnostics warn about non-standard muzzle names and muzzles parented outside the expected joint (Root excluded). They do **not** require a primary index or contiguous numbering, because vanilla uses gaps.
+- Weapon assembly validation requires `Position`, `Direction`, at least one `Muzzle`/`_MuzzleN`, and `Rest`. Extra muzzles are optional.
+
+The other vanilla multi-barrel mechanism is the parallel `Slave` assembly described below; most ship weapons use that convention.
 
 ### Slave Barrels (Vanilla Multi-Barrel)
 

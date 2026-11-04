@@ -1224,3 +1224,39 @@ Test hod: `hgn_assaultcorvette.hod`, `hgn_destroyer.hod`, `kus_missiledestroyer.
 7. `Barrel` runtime behavior: [ ] NOT RUN (remains optional/unverified)
 
 **Conclusion**: The Slave barrel workflow is user-verified end-to-end and accepted. No further development is required for the vanilla multi-barrel convention. `Barrel` remains the only unverified weapon-joint behavior.
+
+---
+
+SHA: `(working tree - multi-muzzle audit correction)`
+Timestamp: `04/11/2026 15:33`
+Test hod: `vgr_heavyfusionmissilelauncherturret.hod`, `vgr_heavyfusionmissilelauncherturretleft.hod`, `kus_defender.hod`; full HWRM root
+
+**Goal**: Check whether `_MuzzleN` has real vanilla usage before removing the multi-muzzle feature.
+
+### Full HWRM root scan
+
+1. Files scanned: 870 HODs (`ship`, `subsystem`, `resource`, and other HWRM roots), parse failures: 0.
+2. Files with muzzle joints: 135.
+3. Muzzle-bearing assemblies: 158.
+4. Files with `_MuzzleN` (N > 0): **2**.
+5. Index pattern: `[0, 2, 3]` in both files.
+6. Exact users:
+    - `subsystem/vgr_heavyfusionmissilelauncherturret/vgr_heavyfusionmissilelauncherturret.hod` — `Weapon_MissileRight_Muzzle`, `_Muzzle2`, `_Muzzle3`, all parented to `_Latitude`.
+    - `subsystem/vgr_heavyfusionmissilelauncherturretleft/vgr_heavyfusionmissilelauncherturretleft.hod` — `Weapon_MissileLeft_Muzzle`, `_Muzzle2`, `_Muzzle3`, all parented to `_Latitude`.
+7. `kus_defender.hod` contains the string `Weapon_Gun2_Muzzle1`, but it is not present in the HIER joint list; not a real weapon joint.
+8. Conclusion: `_MuzzleN` is real but rare; the earlier "zero `_MuzzleN`" claim came from the ship-only sweep. The multi-muzzle feature is retained.
+
+### Code correction
+
+1. `getWarnings` no longer warns about missing primary `_Muzzle` or non-contiguous numbering: [x] DONE
+2. Required `Muzzle` check accepts any `_MuzzleN`: [x] DONE
+3. Add Muzzle uses `max(existing index) + 1`, so `0,2,3` adds `4`: [x] DONE
+4. Non-standard suffix and parenting warnings remain (Root allowed): [x] DONE
+5. `npx tsc --noEmit`: [x] PASS
+6. Helper test (`muzzleIndex` returns `0,2,3`; `nextMuzzleIndex` returns `4`; `muzzleName` returns `_Muzzle4`): [x] PASS
+
+### Manual checks for the user
+
+1. Open `vgr_heavyfusionmissilelauncherturret.hod`; confirm the weapon inspector lists `Muzzle`, `Muzzle2`, `Muzzle3` and no gap warning: [ ] NOT RUN
+2. Add a muzzle to that chain; confirm it creates `_Muzzle4`: [ ] NOT RUN
+3. Save/reload; confirm numbering survives: [ ] NOT RUN

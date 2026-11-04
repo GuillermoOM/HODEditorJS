@@ -193,7 +193,7 @@ Vanilla HWRM multi-barrel weapons use a **parallel weapon assembly** named `${ba
 
 **Editor behavior:** the weapon inspector lists related slave assemblies, can add a new slave chain (cloning the main chain; turret chains mirror the primary muzzle on X by default), and can remove a slave chain. Renaming, deleting, or hiding the main assembly cascades to its slaves.
 
-**`_MuzzleN` note:** `${base}_Muzzle1`, `${base}_Muzzle2`, ... remain an editor extension for mods that bind several muzzles explicitly through multiple `StartShipWeaponConfig` calls. A full sweep found no `_MuzzleN` in vanilla HWRM ships; use Slave chains for the vanilla multi-barrel pattern.
+**`_MuzzleN` note:** `${base}_Muzzle2`, `${base}_Muzzle3`, ... also occur in vanilla, though rarely. A full scan of all 870 HWRM HODs found 158 muzzle-bearing assemblies and exactly two `_MuzzleN` users: `vgr_heavyfusionmissilelauncherturret.hod` and its left variant, each with `Weapon_MissileRight`/`Weapon_MissileLeft` indices `0, 2, 3` parented to `_Latitude`. Numbering can be non-contiguous; preserve authored indices, and the editor adds the next muzzle at `max(index) + 1`. `Slave` chains remain the dominant vanilla multi-barrel convention.
 
 **User-verified 2026-11-04:** add/rename/delete/visibility cascades, save/reload, and in-game firing with only the main weapon bound all passed for the Slave workflow. `Barrel` remains unverified.
 

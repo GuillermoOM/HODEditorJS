@@ -16,21 +16,10 @@ import {
   isJointInWeaponBase,
   cloneWeaponFamilyJoints,
   renameWeaponFamilyName,
+  muzzleIndex,
+  muzzleName,
+  nextMuzzleIndex,
 } from "../weapon_utils";
-
-const MUZZLE_SUFFIX = "_Muzzle";
-
-function muzzleIndex(jointName: string, baseName: string): number {
-  if (!jointName.toLowerCase().startsWith(baseName.toLowerCase())) return -1;
-  const suffix = jointName.substring(baseName.length).toLowerCase();
-  if (suffix === MUZZLE_SUFFIX.toLowerCase()) return 0;
-  const match = suffix.match(/^_muzzle(\d+)$/);
-  return match ? parseInt(match[1], 10) : -1;
-}
-
-function muzzleName(baseName: string, index: number): string {
-  return index === 0 ? `${baseName}${MUZZLE_SUFFIX}` : `${baseName}${MUZZLE_SUFFIX}${index}`;
-}
 
 export function WeaponGroupInspector({
   model,
@@ -137,9 +126,7 @@ export function WeaponGroupInspector({
 
   const handleAddMuzzle = () => {
     if (!model) return;
-    let index = 0;
-    while (muzzleJoints.some(j => muzzleIndex(j.name, baseName) === index)) index++;
-
+    const index = nextMuzzleIndex(model, baseName);
     const name = muzzleName(baseName, index);
     onModelChange?.({
       ...model,
@@ -405,7 +392,7 @@ export function WeaponGroupInspector({
               <>
                 Vanilla HWRM multi-barrel weapons use a parallel <code>{baseName}Slave</code> / <code>{baseName}Slave1</code> chain.
                 Only the main weapon is bound in the <code>.ship</code>; the <code>.wepn</code> <code>setMiscValues</code> slave delay fires it.
-                The <code>_MuzzleN</code> joints below are an editor extension for explicit multiple bindings.
+                A few vanilla subsystem launchers also use <code>_MuzzleN</code> joints (observed indices 0, 2, 3), so keep the authored numbering.
               </>
             )}
           </span>

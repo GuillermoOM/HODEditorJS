@@ -54,7 +54,7 @@ Template node types create multi-joint structures with standard offsets and pare
 
 Current template families are:
 
-- Weapon assembly: `${base}_Position`, `${base}_Direction`, `${base}_Muzzle`, `${base}_Rest`. Additional muzzles use `${base}_Muzzle1`, `${base}_Muzzle2`, ... and are parented to `${base}_Latitude` when present, otherwise `${base}_Position`.
+- Weapon assembly: `${base}_Position`, `${base}_Direction`, `${base}_Muzzle`, `${base}_Rest`. Additional muzzles use `${base}_MuzzleN` (numbering may be non-contiguous) and are parented to `${base}_Latitude` when present, otherwise `${base}_Position`.
 - Turret assembly: `${base}_Position`, `${base}_Direction`, `${base}_Latitude`, `${base}_Muzzle` (child of `Latitude`), `${base}_Rest`. `Barrel` is optional/unverified and is not created by the template.
 - Hardpoint.
 - Capture point.

@@ -1,9 +1,38 @@
 import type { HODModel, HODJoint } from "./components/Viewport";
 
+const MUZZLE_SUFFIX = "_Muzzle";
+
+/** Returns the muzzle index for `${baseName}_Muzzle`, `_Muzzle2`, ... or -1. */
+export function muzzleIndex(jointName: string, baseName: string): number {
+  if (!jointName.toLowerCase().startsWith(baseName.toLowerCase())) return -1;
+  const suffix = jointName.substring(baseName.length).toLowerCase();
+  if (suffix === MUZZLE_SUFFIX.toLowerCase()) return 0;
+  const match = suffix.match(/^_muzzle(\d+)$/);
+  return match ? parseInt(match[1], 10) : -1;
+}
+
+/** Canonical muzzle name for an index: 0 -> `_Muzzle`, 2 -> `_Muzzle2`. */
+export function muzzleName(baseName: string, index: number): string {
+  return index === 0 ? `${baseName}${MUZZLE_SUFFIX}` : `${baseName}${MUZZLE_SUFFIX}${index}`;
+}
+
+/**
+ * Next muzzle index for a new joint. Preserves authored numbering by taking
+ * max(existing) + 1; vanilla subsystem launchers use non-contiguous 0,2,3.
+ */
+export function nextMuzzleIndex(model: HODModel, baseName: string): number {
+  let max = -1;
+  for (const joint of model.joints) {
+    const idx = muzzleIndex(joint.name, baseName);
+    if (idx > max) max = idx;
+  }
+  return max < 0 ? 0 : max + 1;
+}
+
 /**
  * Returns every `${baseName}Slave`, `${baseName}Slave1`, ... assembly base that
- * exists in the model. Vanilla HWRM multi-barrel weapons use these parallel
- * chains instead of extra `_MuzzleN` joints.
+ * exists in the model. Vanilla HWRM multi-barrel weapons primarily use these
+ * parallel chains; a few subsystem launchers also use `_MuzzleN` joints.
  */
 export function getSlaveBases(model: HODModel, baseName: string): string[] {
   const prefix = baseName.toLowerCase();

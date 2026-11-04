@@ -81,7 +81,7 @@ Offsets are listed as local transform translation `[x, y, z]`. If `HierarchyTree
 Current hierarchy diagnostics cover only these checks:
 
 - Assemblies are incomplete and not following the related templates (missing nodes).
-- Weapon assembly muzzle naming is non-standard, missing the primary `${base}_Muzzle`, has numbering gaps, or is parented outside `${base}_Latitude`/`${base}_Position` (direct `Root` parenting is accepted).
+- Weapon assembly muzzle naming is non-standard (not `_Muzzle`/`_MuzzleN`) or is parented outside `${base}_Latitude`/`${base}_Position` (direct `Root` parenting is accepted). Numbering may be non-contiguous.
 - A slave barrel assembly (`${main}SlaveN`) is missing its `Position` or `Muzzle`.
 - A `Barrel` joint is present in a weapon assembly (reported as info: optional and unverified).
 - Engine burn count at or above `12`.
