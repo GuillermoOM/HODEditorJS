@@ -1260,3 +1260,32 @@ Test hod: `vgr_heavyfusionmissilelauncherturret.hod`, `vgr_heavyfusionmissilelau
 1. Open `vgr_heavyfusionmissilelauncherturret.hod`; confirm the weapon inspector lists `Muzzle`, `Muzzle2`, `Muzzle3` and no gap warning: [ ] NOT RUN
 2. Add a muzzle to that chain; confirm it creates `_Muzzle4`: [ ] NOT RUN
 3. Save/reload; confirm numbering survives: [ ] NOT RUN
+
+---
+
+SHA: `98b6658`
+Timestamp: `04/11/2026 16:25`
+Test hod: `testing/acolyte/smt_fta_acolyte.hod` (material `page022`, shader `thruster`, five bound slots) or `testing/bst_mothership/bst_mothership.hod` (material `Bst_Mothership_Thruster`); vanilla `missile/tai_missile/tai_missile.hod` (material `Tai_Missile_Engine`) has all six slots for the full alias check
+
+**Goal**: Verify that thruster STAT texture aliases survive a save and that the engine nozzle no longer falls back to white diffuse / black glow or a fake bump from the normal slot.
+
+### Automated pre-verification (agent)
+
+1. `cargo test --lib --manifest-path parser/Cargo.toml`: [x] PASS (43 tests, including canonical-alias, shared-binding, compact-layout, and auto-assign regression tests)
+2. `cargo run --bin verify_lossless`: [x] PASS (all four fixtures reparse with identical structural counts; generated pebble_0/asteroid_3 bytes identical to the pre-change baseline; expected size deltas `136/-74546/-761130/-5336577`)
+3. Vanilla `tai_missile.hod` load → `auto_assign_and_resize_textures` → save → reparse keeps the `thruster` material as `$diffuseOn,$diffuseOff,$glowOn,$glowOff,$team,$normal` with the matching `_DIFF/_DIFX/_GLOW/_GLOX/_TEAM/_NORM` values: [x] PASS
+4. `testing/acolyte/smt_fta_acolyte.hod` load → auto-assign → save → reparse keeps all five aliases `$diffuseOn,$diffuseOff,$glowOn,$glowOff,$team` and preserves the intentionally shared DIFF/DIFX textures in GlowOff/Team instead of dropping them: [x] PASS
+
+### Manual editor checks
+
+1. Open `smt_fta_acolyte.hod`; Inspector → material `page022` shows the five slots the file actually binds (Diffuse On, Diffuse Off, Glow On, Glow Off, Team) with the expected textures; open vanilla `tai_missile.hod` to also see Normal: [ ] NOT RUN
+2. Save as `*_from_2.0_to_2.0.hod`; reopen the saved file and confirm the bound slots are unchanged and no slot gained another slot's texture: [ ] NOT RUN
+3. Inspect the saved STAT entries (`cargo run --bin dump_pool -- <saved.hod>`). For `smt_fta_acolyte.hod` the aliases must be `$diffuseOn`, `$diffuseOff`, `$glowOn`, `$glowOff`, `$team`; for vanilla `tai_missile.hod` they must be `$diffuseOn`, `$diffuseOff`, `$glowOn`, `$glowOff`, `$team`, `$normal`. No `$diffuse`, no under-`$glow`/`$normal` shifts, Team not dropped: [ ] NOT RUN
+
+### Manual in-game checks
+
+1. Load the saved HOD in game; thruster on-state diffuse matches the authored texture (not `default_white`): [ ] NOT RUN
+2. Thruster glow on-state uses the authored glow map (not `default_black`): [ ] NOT RUN
+3. Off-state diffuse/glow (`_DIFX`/`_GLOX`) appear when the engine is inactive: [ ] NOT RUN
+4. For the six-slot vanilla test HOD, the Normal slot shows the authored normal map, with no fake bump from the glow texture: [ ] NOT RUN
+5. No crash on load and the ship renders normally: [ ] NOT RUN
