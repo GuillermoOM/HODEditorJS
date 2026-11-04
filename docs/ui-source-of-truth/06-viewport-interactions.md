@@ -18,6 +18,15 @@ Transform mode supports translate and rotate modes as exposed by current UI butt
 
 Root joint transform editing is excluded where current code prevents it.
 
+## Coordinate Space Toggle (Planned)
+
+A single app-level toggle must switch the viewport transform gizmo between **Global** (world-aligned) and **Local** (node-aligned) axes, for both translate and rotate modes.
+
+- Global mode aligns the gizmo with world axes; Local mode aligns it with the selected node's orientation.
+- The toggle is shared with the Inspector position/rotation fields (see `05-inspector-behavior.md`), so both surfaces always show the same coordinate space.
+- Transform commits continue to convert the gizmo result back into the node's parent-relative local transform before calling `onNodeTransform`; changing the display space must not change the stored HOD data format.
+- The toggle state is owned by `App.tsx`, not by `Viewport.tsx` or `Inspector.tsx` independently.
+
 ## Selection Coupling
 
 Viewport behavior follows `selectedNode` from app state. Selecting a tree row or viewport target should keep Inspector and Viewport synchronized.

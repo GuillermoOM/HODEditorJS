@@ -28,6 +28,16 @@ Joint and marker editing updates transform-related fields through the model upda
 
 Marker edits update marker position/rotation data and parent association according to current Inspector code.
 
+## Coordinate Space Toggle (Planned)
+
+The Inspector must share one app-level toggle with the viewport that switches transform fields between **Local** (parent-relative) and **Global** (world-space) coordinates.
+
+- Applies to every position/rotation editor backed by a transform: joint and engine-nozzle, marker, NavLight backing joint, dockpoint, weapon assembly joint, and animation keyframe fields.
+- Local mode is the current behavior: values are the node's stored parent-relative transform.
+- Global mode displays the composed world transform and converts edits back to the node's local transform before calling the existing update callbacks. The HOD model must keep storing local transforms in both modes.
+- The toggle state is owned by `App.tsx` and shared with `Viewport.tsx`; Inspector must not add an independent coordinate-space control.
+- Viewport gizmo behavior for the same toggle is specified in `06-viewport-interactions.md`.
+
 ## NavLight Editing
 
 NavLight editor fields include size, phase, frequency, style, distance, color, and enabled/toggle fields currently implemented in `Inspector.tsx`.
