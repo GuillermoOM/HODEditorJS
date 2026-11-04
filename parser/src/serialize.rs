@@ -896,27 +896,23 @@ fn guess_texture_param_name(tex_key: &str) -> Option<String> {
 fn shader_texture_param_name(shader_name: &str, texture_name: &str, slot_index: usize) -> String {
     let tex_key = texture_name_key(texture_name);
     let shader_key = shader_name.to_lowercase();
-    let guessed = guess_texture_param_name(&tex_key);
 
     match shader_slot_table(&shader_key) {
-        Some(table) => {
-            // Prefer the name implied by the texture file, but only when it
-            // is a real slot of this shader (a _SPEC file on `ship` must not
-            // invent a phantom slot: SPEC is a channel of $glow there).
-            if let Some(name) = guessed {
-                if table.contains(&name.as_str()) {
-                    return name;
-                }
-            }
+        Some(table) if !table.is_empty() => {
+            // Known shaders are slot-addressed: the Inspector displays
+            // texture_maps[i] under canonical slot i. The writer decides
+            // separately whether to keep the parsed param names (when they
+            // form a valid slot sequence, e.g. compact 3-param ship or
+            // 5-param thruster); the fallback here is always the slot alias.
             table
                 .get(slot_index)
                 .copied()
                 .unwrap_or("$diffuse")
                 .to_string()
         }
-        None => {
+        _ => {
             // Unknown (mod) shader: keep the legacy name-guess behaviour.
-            if let Some(name) = guessed {
+            if let Some(name) = guess_texture_param_name(&tex_key) {
                 return name;
             }
             const DEFAULT_SLOTS: [&str; 4] = ["$diffuse", "$glow", "$team", "$normal"];
@@ -929,68 +925,114 @@ fn shader_texture_param_name(shader_name: &str, texture_name: &str, slot_index: 
     }
 }
 
+/// True when the material's type-5 parameter names are all valid aliases for
+/// this shader and appear in canonical slot order (not necessarily contiguous:
+/// compact files may omit TEAM or a trailing NORMAL). Such names describe the
+/// material's real layout and must be preserved. Stale names from a previous
+/// shader, or names the shader does not recognize, fail this check and get
+/// regenerated from the canonical slot order instead.
+fn params_form_valid_slot_subsequence(
+    table: &[&str],
+    params: &[HODMaterialParam],
+) -> bool {
+    let mut previous_index: Option<usize> = None;
+    let mut count = 0usize;
+    for param in params.iter().filter(|param| param.param_type == 5) {
+        count += 1;
+        if param.name.is_empty() {
+            return false;
+        }
+        let Some(index) = table.iter().position(|alias| *alias == param.name) else {
+            return false;
+        };
+        if previous_index.map_or(false, |previous| index <= previous) {
+            return false;
+        }
+        previous_index = Some(index);
+    }
+    count > 0
+}
+
 fn write_stat_texture_params<W: Write>(
     writer: &mut W,
     mat: &HODMaterial,
     textures: &[HODTexture],
 ) -> Result<(), String> {
-    // Resolve the current texture bindings (slot order) to pool indices.
-    let mut texture_indices = Vec::new();
+    // Resolve each texture slot independently. Keeping the slot index for
+    // every binding (instead of compacting the list) is essential: clearing
+    // or losing one texture must not shift the remaining values under the
+    // previous slot's alias.
+    let shader_key = mat.shader_name.to_lowercase();
+    let slot_table = shader_slot_table(&shader_key);
+    let known_shader = slot_table.map_or(false, |table| !table.is_empty());
+    let preserve_existing_names = slot_table
+        .map_or(false, |table| params_form_valid_slot_subsequence(table, &mat.params));
+    let mut slot_textures: Vec<Option<(u32, String)>> = Vec::with_capacity(mat.texture_maps.len());
     for (slot_index, tex_name) in mat.texture_maps.iter().enumerate() {
         let tex_key = texture_name_key(tex_name);
-        if let Some(index) = textures
-            .iter()
-            .position(|t| texture_name_key(&t.name) == tex_key)
-        {
-            let param_name = shader_texture_param_name(&mat.shader_name, tex_name, slot_index);
-            texture_indices.push((index as u32, param_name));
-        }
+        let resolved = if tex_key.is_empty() {
+            None
+        } else {
+            textures
+                .iter()
+                .position(|t| texture_name_key(&t.name) == tex_key)
+                .map(|index| {
+                    (
+                        index as u32,
+                        shader_texture_param_name(&mat.shader_name, tex_name, slot_index),
+                    )
+                })
+        };
+        slot_textures.push(resolved);
     }
 
     // Rebuild the generic parameter list: keep every non-texture parameter
     // (colours, scalars, ...) verbatim so classic HW2 materials survive a
     // load/save round-trip, and refresh the texture parameters from the
-    // current bindings while preserving their original slot names ($mask, ...).
+    // current bindings. A known shader keeps its parsed aliases only when
+    // they form a valid compact/canonical slot sequence for that shader;
+    // stale names from a previous shader or an older export are regenerated.
     let mut records: Vec<HODMaterialParam> = Vec::new();
-    let mut pending_textures = texture_indices.iter();
+    let mut next_slot = 0usize;
 
-    if mat.params.is_empty() {
-        for (texture_index, param_name) in texture_indices.iter() {
-            records.push(HODMaterialParam {
-                param_type: 5,
-                value: texture_index.to_le_bytes().to_vec(),
-                name: param_name.clone(),
-            });
-        }
-    } else {
-        for param in &mat.params {
-            if param.param_type == 5 {
-                let Some((texture_index, fallback_name)) = pending_textures.next() else {
-                    // Slot was cleared in the editor: drop the stale binding.
-                    continue;
-                };
-                let name = if param.name.is_empty() {
-                    fallback_name.clone()
-                } else {
+    for param in &mat.params {
+        if param.param_type == 5 {
+            let slot_index = next_slot;
+            next_slot += 1;
+            let Some(Some((texture_index, canonical_name))) = slot_textures.get(slot_index) else {
+                // Slot was cleared in the editor or its texture is gone from
+                // the pool: drop only this binding, never the later ones.
+                continue;
+            };
+            let name = if known_shader {
+                if preserve_existing_names {
                     param.name.clone()
-                };
-                records.push(HODMaterialParam {
-                    param_type: 5,
-                    value: texture_index.to_le_bytes().to_vec(),
-                    name,
-                });
+                } else {
+                    canonical_name.clone()
+                }
+            } else if param.name.is_empty() {
+                canonical_name.clone()
             } else {
-                records.push(param.clone());
-            }
-        }
-        // Textures added in the editor beyond the original texture slots.
-        for (texture_index, param_name) in pending_textures {
+                // Unknown (mod) shader: preserve the original slot alias
+                // ($mask, $noise, custom uniforms, ...).
+                param.name.clone()
+            };
             records.push(HODMaterialParam {
                 param_type: 5,
                 value: texture_index.to_le_bytes().to_vec(),
-                name: param_name.clone(),
+                name,
             });
+        } else {
+            records.push(param.clone());
         }
+    }
+    // Textures added in the editor beyond the original texture slots.
+    for (texture_index, param_name) in slot_textures.iter().skip(next_slot).flatten() {
+        records.push(HODMaterialParam {
+            param_type: 5,
+            value: texture_index.to_le_bytes().to_vec(),
+            name: param_name.clone(),
+        });
     }
 
     writer
@@ -2987,6 +3029,263 @@ mod tests {
             assert_eq!(actual.param_type, expected.param_type);
             assert_eq!(actual.value, expected.value);
             assert_eq!(actual.name, expected.name);
+        }
+    }
+
+    #[test]
+    fn thruster_texture_params_use_canonical_aliases() {
+        // Regression: the Inspector showed the canonical thruster slots but
+        // the exporter reused stale `param.name` values from the parsed file,
+        // producing `$diffuse`, `$glow`, ... and shifting DiffuseOff/GlowOn
+        // onto the wrong aliases. Slot index must win for known shaders.
+        let names = [
+            "Engine_DIFF.dds",
+            "Engine_DIFX.dds",
+            "Engine_GLOW.dds",
+            "Engine_GLOX.dds",
+            "Engine_TEAM.dds",
+            "Engine_NORM.dds",
+        ];
+        let textures: Vec<HODTexture> = names
+            .iter()
+            .map(|name| HODTexture {
+                name: name.to_string(),
+                width: 1,
+                height: 1,
+                format: "DXT1".to_string(),
+                png_preview: None,
+                png_data: None,
+                source_path: None,
+            })
+            .collect();
+        let stale_names = [
+            "$diffuse",
+            "$glow",
+            "$normal",
+            "$glowOff",
+            "$team",
+            "$normal",
+        ];
+        let material = HODMaterial {
+            name: "Engine".to_string(),
+            shader_name: "thruster".to_string(),
+            texture_maps: names.iter().map(|name| name.to_string()).collect(),
+            parameters: Vec::new(),
+            params: stale_names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| HODMaterialParam {
+                    param_type: 5,
+                    value: (index as u32).to_le_bytes().to_vec(),
+                    name: name.to_string(),
+                })
+                .collect(),
+        };
+
+        let mut bytes = Vec::new();
+        write_stat_texture_params(&mut bytes, &material, &textures).unwrap();
+        let count = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+        let (parsed, end) = parse_stat_params(&bytes, 4, count, true).unwrap();
+        assert_eq!(end, bytes.len());
+
+        let expected_names = [
+            "$diffuseOn",
+            "$diffuseOff",
+            "$glowOn",
+            "$glowOff",
+            "$team",
+            "$normal",
+        ];
+        assert_eq!(parsed.len(), expected_names.len());
+        for (index, (param, expected_name)) in
+            parsed.iter().zip(expected_names.iter()).enumerate()
+        {
+            assert_eq!(param.param_type, 5);
+            assert_eq!(param.name, *expected_name, "slot {index} alias");
+            assert_eq!(
+                u32::from_le_bytes(param.value[..4].try_into().unwrap()),
+                index as u32,
+                "slot {index} value"
+            );
+        }
+    }
+
+    #[test]
+    fn thruster_missing_texture_does_not_shift_later_aliases() {
+        // A cleared/missing Team texture must not push Normal's value onto
+        // `$team` (or drop it); every slot keeps its own canonical alias.
+        let names = [
+            "Engine_DIFF.dds",
+            "Engine_DIFX.dds",
+            "Engine_GLOW.dds",
+            "Engine_GLOX.dds",
+            "Engine_TEAM.dds",
+            "Engine_NORM.dds",
+        ];
+        let textures: Vec<HODTexture> = names
+            .iter()
+            .filter(|name| **name != "Engine_TEAM.dds")
+            .map(|name| HODTexture {
+                name: name.to_string(),
+                width: 1,
+                height: 1,
+                format: "DXT1".to_string(),
+                png_preview: None,
+                png_data: None,
+                source_path: None,
+            })
+            .collect();
+        let material = HODMaterial {
+            name: "Engine".to_string(),
+            shader_name: "thruster".to_string(),
+            texture_maps: names.iter().map(|name| name.to_string()).collect(),
+            parameters: Vec::new(),
+            params: [0u32, 1, 2, 3, 4, 5]
+                .iter()
+                .map(|index| HODMaterialParam {
+                    param_type: 5,
+                    value: index.to_le_bytes().to_vec(),
+                    name: "$stale".to_string(),
+                })
+                .collect(),
+        };
+
+        let mut bytes = Vec::new();
+        write_stat_texture_params(&mut bytes, &material, &textures).unwrap();
+        let count = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+        let (parsed, _) = parse_stat_params(&bytes, 4, count, true).unwrap();
+
+        let expected = [
+            ("$diffuseOn", 0u32),
+            ("$diffuseOff", 1),
+            ("$glowOn", 2),
+            ("$glowOff", 3),
+            // TEAM is absent from the pool: the slot is dropped, but NORM
+            // still resolves to pool index 4 and keeps its own alias.
+            ("$normal", 4),
+        ];
+        assert_eq!(parsed.len(), expected.len());
+        for (param, (name, value)) in parsed.iter().zip(expected.iter()) {
+            assert_eq!(param.name, *name);
+            assert_eq!(
+                u32::from_le_bytes(param.value[..4].try_into().unwrap()),
+                *value
+            );
+        }
+    }
+
+    #[test]
+    fn thruster_valid_shared_bindings_keep_their_aliases() {
+        // Team may intentionally reuse the DIFX texture. A valid parsed alias
+        // sequence is authoritative even when a filename heuristic would say
+        // the texture is `$diffuseOff`; otherwise Team is dropped/duplicated.
+        let textures: Vec<HODTexture> = ["Engine_DIFF", "Engine_DIFX", "Engine_GLOW"]
+            .iter()
+            .map(|name| HODTexture {
+                name: format!("{name}.dds"),
+                width: 1,
+                height: 1,
+                format: "DXT1".to_string(),
+                png_preview: None,
+                png_data: None,
+                source_path: None,
+            })
+            .collect();
+        let maps = [
+            "Engine_DIFF.dds",
+            "Engine_DIFX.dds",
+            "Engine_GLOW.dds",
+            "Engine_DIFF.dds",
+            "Engine_DIFX.dds",
+        ];
+        let names = [
+            "$diffuseOn",
+            "$diffuseOff",
+            "$glowOn",
+            "$glowOff",
+            "$team",
+        ];
+        let values = [0u32, 1, 2, 0, 1];
+        let material = HODMaterial {
+            name: "Engine".to_string(),
+            shader_name: "thruster".to_string(),
+            texture_maps: maps.iter().map(|name| name.to_string()).collect(),
+            parameters: Vec::new(),
+            params: names
+                .iter()
+                .zip(values.iter())
+                .map(|(name, value)| HODMaterialParam {
+                    param_type: 5,
+                    value: value.to_le_bytes().to_vec(),
+                    name: name.to_string(),
+                })
+                .collect(),
+        };
+
+        let mut bytes = Vec::new();
+        write_stat_texture_params(&mut bytes, &material, &textures).unwrap();
+        let count = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+        let (parsed, _) = parse_stat_params(&bytes, 4, count, true).unwrap();
+
+        assert_eq!(parsed.len(), names.len());
+        for (param, (name, value)) in parsed.iter().zip(names.iter().zip(values.iter())) {
+            assert_eq!(param.name, *name);
+            assert_eq!(
+                u32::from_le_bytes(param.value[..4].try_into().unwrap()),
+                *value
+            );
+        }
+    }
+
+    #[test]
+    fn compact_valid_ship_aliases_are_preserved() {
+        // A 3-param ship material omits TEAM; its third slot is really NORMAL.
+        // Re-labelling by table index alone would wrongly turn it into $team.
+        let textures: Vec<HODTexture> = ["Pebble_DIFF", "Pebble_GLOW", "Pebble_NORM"]
+            .iter()
+            .map(|name| HODTexture {
+                name: format!("{name}.dds"),
+                width: 1,
+                height: 1,
+                format: "DXT1".to_string(),
+                png_preview: None,
+                png_data: None,
+                source_path: None,
+            })
+            .collect();
+        let names = ["$diffuse", "$glow", "$normal"];
+        let material = HODMaterial {
+            name: "Pebble".to_string(),
+            shader_name: "ship".to_string(),
+            texture_maps: vec![
+                "Pebble_DIFF.dds".to_string(),
+                "Pebble_GLOW.dds".to_string(),
+                "Pebble_NORM.dds".to_string(),
+            ],
+            parameters: Vec::new(),
+            params: names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| HODMaterialParam {
+                    param_type: 5,
+                    value: (index as u32).to_le_bytes().to_vec(),
+                    name: name.to_string(),
+                })
+                .collect(),
+        };
+
+        let mut bytes = Vec::new();
+        write_stat_texture_params(&mut bytes, &material, &textures).unwrap();
+        let count = u32::from_le_bytes(bytes[..4].try_into().unwrap()) as usize;
+        let (parsed, _) = parse_stat_params(&bytes, 4, count, true).unwrap();
+
+        assert_eq!(parsed.len(), names.len());
+        for (index, (param, expected_name)) in parsed.iter().zip(names.iter()).enumerate() {
+            assert_eq!(param.name, *expected_name);
+            assert_eq!(
+                u32::from_le_bytes(param.value[..4].try_into().unwrap()),
+                index as u32
+            );
         }
     }
 

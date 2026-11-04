@@ -1,6 +1,49 @@
 use crate::math::*;
 use crate::types::*;
 
+const THRUSTER_SLOT_ALIASES: [&str; 6] = [
+    "$diffuseOn",
+    "$diffuseOff",
+    "$glowOn",
+    "$glowOff",
+    "$team",
+    "$normal",
+];
+
+/// Rebuild a thruster material's texture slots from its parsed type-5 aliases.
+/// The STAT alias order is authoritative even when two slots intentionally
+/// share one texture (e.g. Team reusing the DIFX map). Returns None when the
+/// names are stale/invalid or the texture list does not line up, in which case
+/// the caller falls back to filename-role matching.
+fn canonical_thruster_texture_maps(mat: &HODMaterial) -> Option<Vec<String>> {
+    let parameter_names: Vec<&str> = mat
+        .params
+        .iter()
+        .filter(|param| param.param_type == 5)
+        .map(|param| param.name.as_str())
+        .collect();
+    if parameter_names.is_empty() || parameter_names.len() != mat.texture_maps.len() {
+        return None;
+    }
+
+    let mut mapped = vec![String::new(); THRUSTER_SLOT_ALIASES.len()];
+    let mut previous_index: Option<usize> = None;
+    for (name, texture_name) in parameter_names
+        .iter()
+        .zip(mat.texture_maps.iter())
+    {
+        let index = THRUSTER_SLOT_ALIASES
+            .iter()
+            .position(|alias| alias == name)?;
+        if previous_index.map_or(false, |previous| index <= previous) {
+            return None;
+        }
+        previous_index = Some(index);
+        mapped[index] = texture_name.clone();
+    }
+    Some(mapped)
+}
+
 pub fn normalize_collision_meshes(model: &mut HODModel) {
     if model.collision_meshes.is_empty() {
         return;
@@ -420,13 +463,18 @@ impl HODModel {
             } else if shader.contains("badgeglow") {
                 expected_slots = vec!["Badge Diffuse Map (DIFF)", "Glow Map (GLOW)"];
             } else if shader.contains("thruster") {
+                // Canonical STAT slot order: on-state diffuse, off-state
+                // diffuse, on-state glow, off-state glow, team, normal.
+                // Keep this aligned with `SHADER_SLOTS.thruster` in
+                // `src/texture_utils.ts`; the Inspector indexes texture_maps
+                // by this order and the exporter names by the same index.
                 expected_slots = vec![
                     "Diffuse On (DIFF)",
+                    "Diffuse Off (DIFX)",
                     "Glow On (GLOW)",
+                    "Glow Off (GLOX)",
                     "Team Paint Map (TEAM)",
                     "Normal Map (NORM)",
-                    "Diffuse Off (DIFF_OFF)",
-                    "Glow Off (GLOW_OFF)",
                 ];
             } else if shader.contains("ship") {
                 expected_slots = vec![
@@ -453,12 +501,22 @@ impl HODModel {
                 ];
             }
 
+            let canonical_thruster_maps = if shader.contains("thruster") {
+                canonical_thruster_texture_maps(mat)
+            } else {
+                None
+            };
+
             let mut mapped = Vec::new();
             let mut base_width = 0;
             let mut base_height = 0;
 
             for (idx, slot) in expected_slots.iter().enumerate() {
-                let mut best_match = String::new();
+                let mut best_match = canonical_thruster_maps
+                    .as_ref()
+                    .and_then(|canonical| canonical.get(idx))
+                    .cloned()
+                    .unwrap_or_default();
 
                 let is_match = |t_name: &str, s_name: &str| -> bool {
                     let mut tn = t_name.to_lowercase();
@@ -472,7 +530,34 @@ impl HODModel {
                         tn.truncate(tn.len() - 4);
                     }
 
-                    if s_name.contains("GLOW") && (tn.contains("_glow") || tn.contains("glow")) {
+                    // Off-state thruster roles must be matched before the
+                    // generic DIFF/GLOW roles, otherwise `_DIFX`/`_GLOX`
+                    // textures are never selected and the on-state texture
+                    // is assigned twice.
+                    if s_name.contains("DIFX")
+                        && (tn.contains("_difx")
+                            || tn.contains("difx")
+                            || tn.contains("diff_off")
+                            || tn.contains("diffoff"))
+                    {
+                        return true;
+                    }
+                    if s_name.contains("GLOX")
+                        && (tn.contains("_glox")
+                            || tn.contains("glox")
+                            || tn.contains("glow_off")
+                            || tn.contains("glowoff")
+                            || tn.contains("glowx"))
+                    {
+                        return true;
+                    }
+                    if s_name.contains("GLOW")
+                        && !tn.contains("glox")
+                        && !tn.contains("glow_off")
+                        && !tn.contains("glowoff")
+                        && !tn.contains("glowx")
+                        && (tn.contains("_glow") || tn.contains("glow"))
+                    {
                         return true;
                     }
                     if s_name.contains("TEAM") && (tn.contains("_team") || tn.contains("team")) {
@@ -485,6 +570,9 @@ impl HODModel {
                         return true;
                     }
                     if s_name.contains("DIFF")
+                        && !tn.contains("difx")
+                        && !tn.contains("diff_off")
+                        && !tn.contains("diffoff")
                         && !tn.contains("glow")
                         && !tn.contains("team")
                         && !tn.contains("norm")
@@ -495,15 +583,23 @@ impl HODModel {
                     false
                 };
 
-                for t_name in &mat.texture_maps {
-                    if is_match(t_name, slot) {
-                        best_match = t_name.clone();
-                        break;
+                if canonical_thruster_maps.is_none() {
+                    for t_name in &mat.texture_maps {
+                        if is_match(t_name, slot) {
+                            best_match = t_name.clone();
+                            break;
+                        }
                     }
                 }
 
-                if best_match.is_empty() {
+                if canonical_thruster_maps.is_none() && best_match.is_empty() {
                     let mut expected_suffix = "";
+                    if slot.contains("DIFX") {
+                        expected_suffix = "_difx";
+                    }
+                    if slot.contains("GLOX") {
+                        expected_suffix = "_glox";
+                    }
                     if slot.contains("GLOW") {
                         expected_suffix = "_glow";
                     }
@@ -702,5 +798,122 @@ mod tests {
         model.clean_hierarchy();
 
         assert_eq!(model.joints[2].parent_name.as_deref(), Some("Root"));
+    }
+
+    #[test]
+    fn auto_assign_preserves_canonical_thruster_slot_order() {
+        // The loader runs auto_assign on every HOD open. Thruster materials
+        // must come back in STAT order (DIFF, DIFX, GLOW, GLOX, TEAM, NORM);
+        // the old table duplicated DIFF/GLOW and dropped the off-state maps,
+        // which then made the exporter pair values with the wrong aliases.
+        let names = [
+            "Engine_DIFF",
+            "Engine_DIFX",
+            "Engine_GLOW",
+            "Engine_GLOX",
+            "Engine_TEAM",
+            "Engine_NORM",
+        ];
+        let mut model = HODModel::new();
+        model.textures = names
+            .iter()
+            .map(|name| HODTexture {
+                name: name.to_string(),
+                width: 1,
+                height: 1,
+                format: "DXT1".to_string(),
+                png_preview: None,
+                png_data: None,
+                source_path: None,
+            })
+            .collect();
+        model.materials = vec![HODMaterial {
+            name: "Engine".to_string(),
+            shader_name: "thruster".to_string(),
+            // Deliberately scrambled input: role matching, not input order,
+            // must produce the canonical layout.
+            texture_maps: vec![
+                "Engine_NORM".to_string(),
+                "Engine_DIFF".to_string(),
+                "Engine_GLOX".to_string(),
+                "Engine_TEAM".to_string(),
+                "Engine_DIFX".to_string(),
+                "Engine_GLOW".to_string(),
+            ],
+            parameters: Vec::new(),
+            params: Vec::new(),
+        }];
+
+        model.auto_assign_and_resize_textures();
+
+        assert_eq!(
+            model.materials[0].texture_maps,
+            names.iter().map(|name| name.to_string()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn auto_assign_preserves_shared_thruster_bindings() {
+        // Some thruster materials intentionally point Team at the DIFX map
+        // and GlowOff at the DIFF map. The canonical alias order still tells
+        // us which slot each texture belongs to, so auto_assign must not
+        // drop the duplicate bindings nor reorder them by filename role.
+        let texture_names = ["Engine_DIFF", "Engine_DIFX", "Engine_GLOW"];
+        let slot_names = [
+            "$diffuseOn",
+            "$diffuseOff",
+            "$glowOn",
+            "$glowOff",
+            "$team",
+        ];
+        let slot_values = [0u32, 1, 2, 0, 1];
+        let mut model = HODModel::new();
+        model.textures = texture_names
+            .iter()
+            .map(|name| HODTexture {
+                name: name.to_string(),
+                width: 1,
+                height: 1,
+                format: "DXT1".to_string(),
+                png_preview: None,
+                png_data: None,
+                source_path: None,
+            })
+            .collect();
+        model.materials = vec![HODMaterial {
+            name: "Engine".to_string(),
+            shader_name: "thruster".to_string(),
+            texture_maps: vec![
+                "Engine_DIFF".to_string(),
+                "Engine_DIFX".to_string(),
+                "Engine_GLOW".to_string(),
+                "Engine_DIFF".to_string(),
+                "Engine_DIFX".to_string(),
+            ],
+            parameters: Vec::new(),
+            params: slot_names
+                .iter()
+                .zip(slot_values.iter())
+                .map(|(name, value)| HODMaterialParam {
+                    param_type: 5,
+                    value: value.to_le_bytes().to_vec(),
+                    name: name.to_string(),
+                })
+                .collect(),
+        }];
+
+        model.auto_assign_and_resize_textures();
+
+        assert_eq!(
+            model.materials[0].texture_maps,
+            vec![
+                "Engine_DIFF".to_string(),
+                "Engine_DIFX".to_string(),
+                "Engine_GLOW".to_string(),
+                "Engine_DIFF".to_string(),
+                "Engine_DIFX".to_string(),
+                String::new(),
+            ]
+        );
     }
 }
