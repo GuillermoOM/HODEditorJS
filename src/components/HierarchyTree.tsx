@@ -1910,13 +1910,16 @@ const handleDeleteNode = (name: string, type: string) => {
         }
 
         const expectedParent = hasLatitude ? `${baseName}_Latitude` : `${baseName}_Position`;
-        const misParented = muzzleJoints.filter(j =>
-          (j.parent_name || "").toLowerCase() !== expectedParent.toLowerCase()
-        );
+        const misParented = muzzleJoints.filter(j => {
+          const parent = (j.parent_name || "").toLowerCase();
+          // Root is a legitimate direct-to-hull attachment; vanilla
+          // vgr_commandcorvette uses it for a fixed weapon muzzle.
+          return parent !== expectedParent.toLowerCase() && parent !== "root";
+        });
         if (misParented.length > 0) {
           warnings.push({
             type: "warning",
-            message: `Weapon group "${baseName}" has muzzle joints not parented to ${expectedParent}: ${misParented.map(j => j.name).join(", ")}.`
+            message: `Weapon group "${baseName}" has muzzle joints not parented to ${expectedParent} (or Root): ${misParented.map(j => j.name).join(", ")}.`
           });
         }
 

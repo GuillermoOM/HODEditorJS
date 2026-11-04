@@ -182,13 +182,28 @@ When authoring these joints in a 3D package (like Blender/Maya), their spatial p
 *   **Rest:** (Optional) The yaw pivot. Typically placed **+Z** (forward) or exactly at the origin of the Position node.
 
 ### 4. Multi-Barrel Turrets
-If a turret has multiple barrels (e.g., a dual-barrel flak cannon) that fire in sequence, they still share the same Base and Rest joints, but you create multiple Muzzle joints side-by-side as siblings of the Rest joint.
+If a mod turret has multiple barrels (e.g., a dual-barrel flak cannon) that fire in sequence, they still share the same Base and Rest joints, but you create multiple Muzzle joints side-by-side as siblings of the Rest joint.
 **Scripting:** Call `StartShipWeaponConfig` twice, binding the same weapon script to the different muzzles. The engine handles the alternating firing sequence natively.
 
-**Editor naming convention:** the primary muzzle is `${base}_Muzzle`; additional muzzles are numbered contiguously `${base}_Muzzle1`, `${base}_Muzzle2`, ... and are parented to `${base}_Latitude` when a Latitude joint exists, otherwise to `${base}_Position`. Vanilla `kus_defender.hod` confirms `Weapon_Gun0/1/2_Muzzle` under `_Latitude` at +Z ~7.64. Do not leave gaps in the numbering or invent alternate suffixes (`_MuzzleA`, `_Muzzle_2`, ...); hierarchy diagnostics warn about both.
+**Corpus evidence:** a full sweep of the 290 vanilla HWRM ship HODs found 397 weapon assemblies with muzzles and **every one has exactly one `_Muzzle`**; there are no `_MuzzleN` names and no non-standard suffixes. Multi-muzzle is therefore an editor/mod extension, not a vanilla HWRM ship convention.
+
+**Editor naming convention:** the primary muzzle is `${base}_Muzzle`; additional muzzles are numbered contiguously `${base}_Muzzle1`, `${base}_Muzzle2`, ... and are parented to `${base}_Latitude` when a Latitude joint exists, otherwise to `${base}_Position`. Direct `Root` parenting is accepted too: vanilla `vgr_commandcorvette.hod` uses `Weapon_Gun_Muzzle` parented to `Root`. Do not leave gaps in the numbering or invent alternate suffixes (`_MuzzleA`, `_Muzzle_2`, ...); hierarchy diagnostics warn about both. Vanilla `kus_defender.hod` confirms the standard `_Latitude` chain with `Weapon_Gun0/1/2_Muzzle` at +Z ~7.639.
 
 ### 5. Barrel Joints Are Not Vanilla
-No `_Barrel` joint exists in the vanilla HWRM ship HOD corpus audited for this project (`kus_defender.hod`, `hgn_battlecruiser.hod`, `hgn_destroyer.hod`, and the wider vanilla sweep). The standard animated-turret chain is `Position → Latitude → Muzzle` (plus `Direction`/`Rest` reference vectors). The editor therefore does **not** create `Barrel` by default and exposes it only through an explicit **+ Add Barrel (Unverified)** toggle. Its runtime behavior is unverified; do not require it in validation or document it as an engine feature until an in-game test proves what it does.
+A full sweep of the 290 vanilla HWRM ship HODs and their 397 muzzle-bearing weapon assemblies found **zero** `_Barrel` joints. The standard animated-turret chain is `Position → Latitude → Muzzle` (plus `Direction`/`Rest` reference vectors). The editor therefore does **not** create `Barrel` by default and exposes it only through an explicit **+ Add Barrel (Unverified)** toggle. Its runtime behavior is unverified; do not require it in validation or document it as an engine feature until an in-game test proves what it does.
+
+### Editor Turret Template vs Vanilla Reference
+The editor's turret template was compared against vanilla `kus_defender.hod` `Weapon_Gun0`:
+
+| Joint | Parent | Vanilla `kus_defender` | Editor template |
+|---|---|---|---|
+| `Position` | hull / none | `(-0.070, 0.000, -0.382)` on `HeavyDefenderArm.0` | `(0,0,0)` at the chosen parent |
+| `Direction` | `Position` | `(0, 10.000, 0)` | `(0, 5.000, 0)` |
+| `Latitude` | `Position` | `(0,0,0)` | `(0,0,0)` |
+| `Muzzle` | `Latitude` | `(0,0,7.639)` | `(0,0,7.640)` |
+| `Rest` | `Position` | `(0,0,10.117)` | `(0,0,10.000)` |
+
+The five-joint chain and parenting match exactly. `Direction` and `Rest` offsets are per-ship authoring values, not engine constants; the editor values are reasonable defaults, not canonical replacements. `HODOR.exe` was not runnable on this host (no Wine), so official vanilla HWRM assets from the HODOR pipeline were used as the reference instead of a freshly converted DAE.
 
 ### Important Gotchas
 *   **LoadModel Order:** As with all hardpoints and weapons, `LoadModel()` **MUST** be called in the `.ship` file before `StartShipWeaponConfig`. If the engine tries to attach a weapon to a joint before the HOD is loaded into memory, the game will crash.

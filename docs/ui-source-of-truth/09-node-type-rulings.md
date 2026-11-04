@@ -68,7 +68,7 @@ Offsets are listed as local transform translation `[x, y, z]`. If `HierarchyTree
 | Template | Children Created By Add Node | Creation Offsets | Inspector Repair Offsets | Ruling Status |
 |---|---|---|---|---|
 | Weapon assembly | `${base}_Position`, `${base}_Direction`, `${base}_Muzzle`, `${base}_Rest` | Position `[0,0,0]`; Direction `[0,5,0]` (child of Position); Muzzle `[0,0,5]` (child of Position); Rest `[0,0,5]` (child of Position). Extra muzzles are parented to `${base}_Latitude` when present, otherwise Position. | Same as creation | Consistent. |
-| Turret assembly | `${base}_Position`, `${base}_Direction`, `${base}_Latitude`, `${base}_Muzzle`, `${base}_Rest`; `Barrel` only when the user enables it | Position `[0,0,0]`; Direction `[0,5,0]` (child of Position); Latitude `[0,0,0]` (child of Position); Muzzle `[0,0,7.64]` (child of Latitude); Rest `[0,0,10]` (child of Position). Optional Barrel `[0,0,0]` (child of Latitude). | No separate turret repair template; missing joints are added through the weapon assembly inspector. | Consistent for creation. Barrel is optional and its runtime behavior is unverified. |
+| Turret assembly | `${base}_Position`, `${base}_Direction`, `${base}_Latitude`, `${base}_Muzzle`, `${base}_Rest`; `Barrel` only when the user enables it | Position `[0,0,0]`; Direction `[0,5,0]` (child of Position); Latitude `[0,0,0]` (child of Position); Muzzle `[0,0,7.64]` (child of Latitude); Rest `[0,0,10]` (child of Position). Optional Barrel `[0,0,0]` (child of Latitude). | No separate turret repair template; missing joints are added through the weapon assembly inspector. | Consistent for creation. Vanilla `Direction`/`Rest` offsets vary per ship (e.g. `kus_defender.hod` uses `[0,10,0]` and `[0,0,10.117]`); the editor values are defaults, not canonical replacements. Barrel is optional and its runtime behavior is unverified. |
 | Hardpoint | `${base}_Position`, `${base}_Direction`, `${base}_Rest` | Position `[0,0,0]`; Direction `[0,5,0]`; Rest `[0,0,5]` | Same as creation | Consistent. |
 | Capture point | `${base}`, `${base}_Heading`, `${base}_Left`, `${base}_Up` | Base `[0,0,0]`; Heading `[0,0,5]`; Left `[5,0,0]`; Up `[0,5,0]` | Same as creation | Consistent. |
 | Repair point | `${base}`, `${base}_Heading`, `${base}_Left`, `${base}_Up` | Base `[0,0,0]`; Heading `[0,0,5]`; Left `[5,0,0]`; Up `[0,5,0]` | Same as creation | Consistent. |
@@ -80,7 +80,7 @@ Offsets are listed as local transform translation `[x, y, z]`. If `HierarchyTree
 Current hierarchy diagnostics cover only these checks:
 
 - Assemblies are incomplete and not following the related templates (missing nodes).
-- Weapon assembly muzzle naming is non-standard, missing the primary `${base}_Muzzle`, has numbering gaps, or is parented outside `${base}_Latitude`/`${base}_Position`.
+- Weapon assembly muzzle naming is non-standard, missing the primary `${base}_Muzzle`, has numbering gaps, or is parented outside `${base}_Latitude`/`${base}_Position` (direct `Root` parenting is accepted).
 - A `Barrel` joint is present in a weapon assembly (reported as info: optional and unverified).
 - Engine burn count at or above `12`.
 - No collision meshes if mesh available.
