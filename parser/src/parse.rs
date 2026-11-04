@@ -115,7 +115,7 @@ pub(crate) fn parse_texture(chunk: &IffChunk, context: &mut ParsingContext) -> R
             cur_h = std::cmp::max(1, cur_h / 2);
         }
 
-        let mut buf = vec![0u8; expected_size.min(1024 * 1024 * 8)]; // clamp to safe limits
+        let mut buf = vec![0u8; expected_size.min(1024 * 1024 * 64)]; // large DXT5 planets exceed 8 MiB
         if let Ok(_) = context.texture_pool.read_exact(&mut buf) {
             let pool_pos_after = context.texture_pool.position();
             println!(

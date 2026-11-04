@@ -7,6 +7,7 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 ---
 
 ## Current Status
+- ✅ **2026-11-03: Fixed Large-DXT5 Texture Truncation (8 MiB Pool Clamp)**: HOD 2.0 texture-pool reads were capped at `1024*1024*8` bytes, so a 4096x4096 DXT5 mip0 (16 MiB) only half-decoded; worse, the truncated read advanced the sequential pool by only 8 MiB, corrupting every later texture in the same HOD (this is why the smaller DXT1 Kharak layers also looked wrong). Raised the cap to 64 MiB in `parser/src/parse.rs`; `m02` HiigaraSmall now decodes as the Earth-like planet, the Kharak sand layers render correctly, `cargo test --release` passes, and `verify_lossless` passes.
 - ✅ **2026-10-25: Released v1.2.11 — Editable Animation Duration**: Built inside `mesa-dev` and published GitHub release `v1.2.11` (`https://github.com/GuillermoOM/HODEditorJS/releases/tag/v1.2.11`) with the four standard assets: `HODEditorJS_1.2.11_amd64.deb` (7,214,184 B), `HODEditorJS-1.2.11-1.x86_64.rpm` (7,213,994 B), `HODEditorJS_1.2.11_amd64.AppImage` (112,536,056 B), and `HODEditorJS_1.2.11_x64-setup.exe` (12,203,929 B). Ships click-to-edit animation duration with stranded-keyframe confirm-and-clamp, plus the badge visibility/bigger-controls pass. Version metadata bumped 1.2.10 → 1.2.11 across the five version files; annotated tag `v1.2.11` pushed. All bundles built on the first attempt.
 - ✅ **2026-10-25: Editable Animation Duration with Stranded-Keyframe Handling**: The animation duration was set-once at creation. The duration badge in the HierarchyTree animations list is now click-to-edit (Enter/blur commits, Esc cancels, min 0.1s mirroring the create dialog). Shortening past placed keyframes asks for confirmation and clamps them to the new duration with keyframes re-sorted; lengthening leaves keyframes untouched; invalid input alerts and reverts. Safe by construction: playback clamps `currTime` at duration, the dock playhead guards `duration > 0`, the keyframe editor's max bound follows the new duration, and viewport interpolation guards zero-length spans. Verification: `npm run build` PASS.
 - ✅ **2026-10-25: Released v1.2.10 — DAE Crash Fixes (Dockpaths, VERS, COLD, Navlight Style)**: Built inside `mesa-dev` and published GitHub release `v1.2.10` (`https://github.com/GuillermoOM/HODEditorJS/releases/tag/v1.2.10`) with the four standard assets: `HODEditorJS_1.2.10_amd64.deb` (7,215,216 B), `HODEditorJS-1.2.10-1.x86_64.rpm` (7,215,143 B), `HODEditorJS_1.2.10_amd64.AppImage` (112,531,960 B), and `HODEditorJS_1.2.10_x64-setup.exe` (12,203,969 B). Ships the DAE dockpath parser, the VERS-512 fix, always-compress mesh/tex pools, the HODOR-exact COLD writer, the `_Type` navlight style fix, and the `validate_hod` binary — the full chain behind the user-verified match-start AV resolution on re-imported DAE files. Version metadata bumped 1.2.9 → 1.2.10 across `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`; annotated tag `v1.2.10` pushed. Linux bundles built in `mesa-dev` (`env NO_STRIP=1 ...`); Windows NSIS built with `CARGO_TARGET_DIR=/tmp/cargo_target`. All bundles built on the first attempt.
@@ -907,3 +908,19 @@ This document tracks all progress in the HOD 2.0 reverse engineering project. **
 * **Root Cause**: The `Viewport.tsx` animation evaluation loop runs every frame. When a keyframe is active, `evaluateAnimation` forces all joint meshes to match the interpolated transform derived from the raw binary model. This meant that immediately after `TransformControls` moved a mesh, `evaluateAnimation` would instantly teleport it back to the keyframe's original position, fighting the gizmo. Furthermore, `getAnimatedJointGlobalMatrix` returned the global matrix calculated from the outdated model state rather than the live drag state, so child joints could not follow the cursor.
 * **Fix**: Added `isBeingDragged` checks inside `evaluateAnimation` and `updateGroupChildren` to entirely skip overwriting the transforms of any `joint`, `marker`, or `navlight` that is currently actively targeted by `TransformControls`. Additionally, updated `getAnimatedJointGlobalMatrix` to intercept and return the live `matrix.clone()` of the `TransformControls.object` when dragging, completely bypassing keyframe evaluation for the dragged node. This allows the dragged node's children to seamlessly inherit the live drag coordinates.
 * **Verification**: Gizmos can now freely drag keyframed joints; they smoothly follow the mouse without jitter, and all children follow perfectly during the drag.
+
+## 2026-11-03: Large DXT5 texture preview truncation (8 MiB clamp)
+
+* **What failed**: background planet DXT5 textures (`m02` HiigaraSmall /
+  BKGAngelMoon, `m15` HiigaraLarge) decoded as noise/bands/half-black;
+  Kharak DXT1 textures looked correct.
+* **Root cause**: `parse_texture`'s HOD 2.0 pool read buffer was clamped
+  to `1024*1024*8` bytes. A 4096x4096 DXT5 mip0 is 16 MiB, so half the
+  blocks never reached the decoder. The clamped read also advanced the
+  sequential pool by only 8 MiB, desynchronizing every later texture in
+  the same HOD (the smaller DXT1 Kharak layers inherited the corruption).
+* **Fix**: raise the clamp to 64 MiB (`parser/src/parse.rs`). No decoder
+  change; the existing DXT5 decoder is correct with the full mip0.
+* **Verification**: `m02` HiigaraSmall now decodes to the Earth-like
+  Hiigara surface; `cargo test --release` and
+  `cargo run --release --bin verify_lossless` pass.
