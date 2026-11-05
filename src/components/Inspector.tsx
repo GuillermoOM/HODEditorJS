@@ -251,15 +251,19 @@ const GlowLODInspector: React.FC<GlowLODInspectorProps> = ({ model, baseName, on
   const handleImportEngineGlowOBJ = async () => {
     if (!selectedLodGlow) return;
     try {
-      const selectedPath = await invoke<string | null>("open_file_dialog", {
-        title: "Select OBJ File for Engine Glow",
+      // Use the registered `load_text_file` command (single file-picker +
+      // content read). The previous `open_file_dialog` / `read_text_file`
+      // commands were never registered in the Tauri `invoke_handler`, so the
+      // first invoke always rejected and the picker never opened.
+      // Do not reintroduce the two-step invoke without registering both
+      // commands in `src-tauri/src/lib.rs`.
+      const fileContents = await invoke<string | null>("load_text_file", {
         filters: ["obj"]
       });
-      if (!selectedPath) return;
+      if (!fileContents) return;
 
       setIsLoading?.(true);
       setStatusMsg?.("Parsing Engine Glow OBJ...");
-      const fileContents = await invoke<string>("read_text_file", { path: selectedPath });
 
       const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
       const loader = new OBJLoader();

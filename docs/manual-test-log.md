@@ -1291,3 +1291,35 @@ Test hod: `testing/acolyte/smt_fta_acolyte.hod` (material `page022`, shader `thr
 5. No crash on load and the ship renders normally: [x] PASS (user)
 
 **User verification**: PASS — user reported the thruster fix works fine.
+
+---
+
+SHA: `(working tree - engine glow save + glow OBJ dialog)`
+Timestamp: `05/11/2026 13:22`
+Test hod: `kus_destroyer` (6 EngineGlows), `kus_targetdrone` (2 EngineShapes + 2 EngineBurns), `hgn_destroyer.hod` (thruster `main_engine`, 5-param)
+
+**Goal**: Verify that saving no longer deletes Engine Glow containers/mesh streams or Engine Shapes, that the Engine Glow OBJ import picker opens, and that thruster aliases stay canonical.
+
+### Automated pre-verification (agent)
+
+1. `cargo test --lib --manifest-path parser/Cargo.toml`: [x] PASS (43 tests)
+2. `npm run build`: [x] PASS (Vite chunk-size warnings only)
+3. `cargo run --bin verify_lossless`: [x] PASS (all reparse checks pass; size deltas byte-identical to baseline `136/-74546/-761130/-5336577`, so glow-less fixtures are unaffected)
+4. `kus_destroyer.hod` load → `generate_v2_from_model` → reparse keeps 6/6 `engine_glows` with 6 `FORM GLOW` in DTRM (was 0/6 before fix): [x] PASS
+5. `kus_targetdrone.hod` load → save → reparse keeps 2/2 `engine_shapes` (`ETSH`) + 2/2 `engine_burns`: [x] PASS
+6. `hgn_destroyer.hod` (`main_engine` on-disk `$diffuse/$glow/$normal/$glowOff/$normal`) saves as `$diffuseOn/$diffuseOff/$glowOn/$glowOff/$normal`; 6-slot `kus_targetdrone` keeps `$team`: [x] PASS (issue #5 already fixed by `98b6658`)
+7. `validate_hod` on regenerated glow output: [x] PASS (0 errors)
+8. PR checks: PR #3 (global face-index offset) rejected — 150-file sweep zero OOB, `kus_destroyer` Part 1 local `[0..]` would spike-ball under the proposal; PR #4 (DOCK names) not merged — unverified semantics: [x] DONE
+
+### Manual editor checks
+
+1. Open `kus_destroyer.hod`; Hierarchy lists 6 Engine Glows; save, reload, confirm all 6 glows and their meshes survive: [ ] NOT RUN (user)
+2. Open `kus_targetdrone.hod`; confirm Engine Shapes/Burns survive save/reload: [ ] NOT RUN (user)
+3. Engine Glow inspector → Import OBJ; confirm the file picker opens (was `Failed to import Engine Glow OBJ` before the `load_text_file` fix): [ ] NOT RUN (user)
+4. Open `hgn_destroyer.hod`; thruster material shows Diffuse On/Off, Glow On/Off, Normal with correct textures; save, reopen, confirm no slot shift: [ ] NOT RUN (user)
+
+### Manual in-game checks
+
+1. Load saved `kus_destroyer` in game; engine glow renders (not missing): [ ] NOT RUN (user)
+2. Load saved thruster HOD; nozzle uses on/off diffuse/glow maps (no white/black fallback, no fake bump): [ ] NOT RUN (user)
+3. No crash on load: [ ] NOT RUN (user)

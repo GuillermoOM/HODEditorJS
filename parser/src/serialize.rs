@@ -1311,6 +1311,142 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     )
     .map_err(|e| e.to_string())?;
 
+    // Engine Glow meshes live in the POOL mesh/face streams (after the HVMD
+    // meshes, in DTRM GLOW order) and are referenced by the FORM GLOW BMSH
+    // headers emitted below. Without this append + the GLOW chunks, an
+    // unedited save silently drops all engine glows (mesh streams shrink back
+    // to the no-glow length and DTRM loses its GLOW containers).
+    // Do not route glows through `compile_model_meshes`/`generate_mult_chunks`:
+    // they are DTRM children, not HVMD MULTs. Order matters: glows must precede
+    // the collision append below so re-parse (HVMD then GLOW) consumes the
+    // correct pool offsets; collision data (when regenerated) trails glows and
+    // is left as pool leftover on re-parse, matching vanilla validation.
+    if !model.engine_glows.is_empty() {
+        let mut pool_cursor = Cursor::new(&mut pool_data);
+        let _pool_type = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())?;
+        let comp_tex_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let decomp_tex_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let mut comp_tex = vec![0u8; comp_tex_len];
+        pool_cursor
+            .read_exact(&mut comp_tex)
+            .map_err(|e| e.to_string())?;
+        let comp_mesh_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let decomp_mesh_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let mut comp_mesh = vec![0u8; comp_mesh_len];
+        pool_cursor
+            .read_exact(&mut comp_mesh)
+            .map_err(|e| e.to_string())?;
+        let mut decomp_mesh = if comp_mesh_len == decomp_mesh_len {
+            comp_mesh.clone()
+        } else {
+            xpress::decompress(&comp_mesh, decomp_mesh_len)?
+        };
+        let comp_face_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let decomp_face_len = pool_cursor
+            .read_u32::<LittleEndian>()
+            .map_err(|e| e.to_string())? as usize;
+        let mut comp_face = vec![0u8; comp_face_len];
+        pool_cursor
+            .read_exact(&mut comp_face)
+            .map_err(|e| e.to_string())?;
+        let mut decomp_face = if comp_face_len == decomp_face_len {
+            comp_face.clone()
+        } else {
+            xpress::decompress(&comp_face, decomp_face_len)?
+        };
+
+        for glow in &model.engine_glows {
+            for part in &glow.mesh.parts {
+                let mut vertex_stride = 0u32;
+                if (part.vertex_mask & 0x01) != 0 {
+                    vertex_stride += 16;
+                }
+                if (part.vertex_mask & 0x02) != 0 {
+                    vertex_stride += 16;
+                }
+                if (part.vertex_mask & 0x04) != 0 {
+                    vertex_stride += 4;
+                }
+                if (part.vertex_mask & 0x08) != 0 {
+                    vertex_stride += 8;
+                }
+                if (part.vertex_mask & 0x2000) != 0 {
+                    vertex_stride += 12;
+                }
+                if (part.vertex_mask & 0x4000) != 0 {
+                    vertex_stride += 12;
+                }
+                if vertex_stride == 0 {
+                    vertex_stride = 1;
+                }
+                for v in &part.vertices {
+                    let _ = write_vertex(
+                        &mut decomp_mesh,
+                        v,
+                        part.vertex_mask,
+                        1401,
+                        vertex_stride,
+                    );
+                }
+                if decomp_face.len() % 2 != 0 {
+                    decomp_face.push(0);
+                }
+                for &idx in &part.indices {
+                    let _ = decomp_face.write_u16::<LittleEndian>(idx);
+                }
+            }
+        }
+
+        // Mesh stream must be real XPress output (vanilla never ships a raw
+        // mesh stream); face keeps raw bytes like the collision append path.
+        let new_comp_mesh = if decomp_mesh.is_empty() {
+            Vec::new()
+        } else {
+            xpress::compress(&decomp_mesh)
+        };
+        let new_comp_face = decomp_face.clone();
+
+        let mut new_pool = Vec::new();
+        new_pool
+            .write_u32::<LittleEndian>(_pool_type)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(comp_tex.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(decomp_tex_len as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool.extend_from_slice(&comp_tex);
+        new_pool
+            .write_u32::<LittleEndian>(new_comp_mesh.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(decomp_mesh.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool.extend_from_slice(&new_comp_mesh);
+        new_pool
+            .write_u32::<LittleEndian>(new_comp_face.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool
+            .write_u32::<LittleEndian>(decomp_face.len() as u32)
+            .map_err(|e| e.to_string())?;
+        new_pool.extend_from_slice(&new_comp_face);
+
+        pool_data = new_pool;
+    }
+
     let has_preserved_collision_chunks = model.preserved_chunks.iter().any(|chunk| {
         chunk.id == "KDOP"
             || chunk.id == "COLD"
@@ -1840,9 +1976,103 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         });
     }
 
+    // Engine Glows: FORM GLOW with INFO (name/parent/lod, NRML v1000) + BMSH
+    // (NRML v1401, lod from the parsed mesh — vanilla uses -1 — plus per-part
+    // headers; vertices/indices live in the POOL streams appended above).
+    // Previously no code wrote these back, so every save dropped all GLOW
+    // containers and their POOL streams.
+    for glow in &model.engine_glows {
+        let mut info_data = Vec::new();
+        write_len_string(&mut info_data, &glow.name)?;
+        write_len_string(&mut info_data, &glow.parent_name)?;
+        info_data
+            .write_i32::<LittleEndian>(glow.lod)
+            .map_err(|e| e.to_string())?;
+        let info_chunk = IffChunk {
+            id: "INFO".to_string(),
+            chunk_type: ChunkType::Normal,
+            version: 1000,
+            data: info_data,
+            children: Vec::new(),
+        };
+
+        let mut bmsh_data = Vec::new();
+        bmsh_data
+            .write_i32::<LittleEndian>(glow.mesh.lod)
+            .map_err(|e| e.to_string())?;
+        bmsh_data
+            .write_i32::<LittleEndian>(glow.mesh.parts.len() as i32)
+            .map_err(|e| e.to_string())?;
+        for part in &glow.mesh.parts {
+            bmsh_data
+                .write_i32::<LittleEndian>(part.material_index as i32)
+                .map_err(|e| e.to_string())?;
+            bmsh_data
+                .write_u32::<LittleEndian>(part.vertex_mask)
+                .map_err(|e| e.to_string())?;
+            bmsh_data
+                .write_i32::<LittleEndian>(part.vertices.len() as i32)
+                .map_err(|e| e.to_string())?;
+            bmsh_data
+                .write_i16::<LittleEndian>(-1)
+                .map_err(|e| e.to_string())?;
+            bmsh_data
+                .write_i32::<LittleEndian>(part.indices.len() as i32)
+                .map_err(|e| e.to_string())?;
+        }
+        let bmsh_chunk = IffChunk {
+            id: "BMSH".to_string(),
+            chunk_type: ChunkType::Normal,
+            version: 1401,
+            data: bmsh_data,
+            children: Vec::new(),
+        };
+
+        dtrm_children.push(IffChunk {
+            id: "GLOW".to_string(),
+            chunk_type: ChunkType::Form,
+            version: 0,
+            data: Vec::new(),
+            children: vec![info_chunk, bmsh_chunk],
+        });
+    }
+
+    // Engine Shapes: DEFAULT ETSH with inline name/parent/count/vertices
+    // (no POOL involvement, matching the parser). Previously never written.
+    for shape in &model.engine_shapes {
+        let mut etsh_data = Vec::new();
+        write_len_string(&mut etsh_data, &shape.name)?;
+        write_len_string(&mut etsh_data, &shape.parent_name)?;
+        let (vert_count, verts) = match shape.mesh.parts.first() {
+            Some(part) => (part.vertices.len() as i32, part.vertices.clone()),
+            None => (0, Vec::new()),
+        };
+        etsh_data
+            .write_i32::<LittleEndian>(vert_count)
+            .map_err(|e| e.to_string())?;
+        for v in &verts {
+            etsh_data
+                .write_f32::<LittleEndian>(v.position.x)
+                .map_err(|e| e.to_string())?;
+            etsh_data
+                .write_f32::<LittleEndian>(v.position.y)
+                .map_err(|e| e.to_string())?;
+            etsh_data
+                .write_f32::<LittleEndian>(v.position.z)
+                .map_err(|e| e.to_string())?;
+        }
+        dtrm_children.push(IffChunk {
+            id: "ETSH".to_string(),
+            chunk_type: ChunkType::Default,
+            version: 0,
+            data: etsh_data,
+            children: Vec::new(),
+        });
+    }
+
     let dtrm_sub_chunk_ids = [
         "HIER", "MRKR", "BURN", "NAVL", "MRKS", "DOCK", "COLD", "KDOP", "SCAR", "BNDV", "ETSH",
-        "BSRM", "PATH", "PNTS", "MAD",
+        "BSRM", "PATH", "PNTS", "MAD", "GLOW",
     ];
     if let Some(dtrm) = model.preserved_chunks.iter().find(|c| c.id == "DTRM") {
         for child in &dtrm.children {
