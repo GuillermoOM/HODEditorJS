@@ -1,4 +1,4 @@
-use crate::hod::{HODCollisionMesh, HODMesh, HODMeshPart, HODVertex, Vector3};
+use crate::hod::{HODCollisionMesh, HODJoint, HODMesh, HODMeshPart, HODVertex, Vector3};
 
 /// LOD quality levels: (LOD level, target ratio relative to LOD 0)
 const LOD_LEVELS: &[(i32, f32)] = &[
@@ -60,6 +60,49 @@ pub fn decimate_mesh(
 // 3D Convex Hull (Gift Wrapping Algorithm)
 // ============================================================================
 
+fn push_unique_point(sampled: &mut Vec<[f32; 3]>, p: [f32; 3], eps: f32) {
+    if !sampled.iter().any(|s| {
+        (s[0] - p[0]).abs() < eps && (s[1] - p[1]).abs() < eps && (s[2] - p[2]).abs() < eps
+    }) {
+        sampled.push(p);
+    }
+}
+
+fn push_aabb_extremes(sampled: &mut Vec<[f32; 3]>, points: &[[f32; 3]], eps: f32) {
+    if points.is_empty() {
+        return;
+    }
+    let extremes: [[f32; 3]; 6] = [
+        *points
+            .iter()
+            .min_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap(),
+        *points
+            .iter()
+            .max_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap(),
+        *points
+            .iter()
+            .min_by(|a, b| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap(),
+        *points
+            .iter()
+            .max_by(|a, b| a[1].partial_cmp(&b[1]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap(),
+        *points
+            .iter()
+            .min_by(|a, b| a[2].partial_cmp(&b[2]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap(),
+        *points
+            .iter()
+            .max_by(|a, b| a[2].partial_cmp(&b[2]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap(),
+    ];
+    for p in extremes {
+        push_unique_point(sampled, p, eps);
+    }
+}
+
 /// Sample points for convex hull computation.
 /// Always keeps the 6 AABB extreme points (min/max on each axis) to preserve shape,
 /// then uniformly samples the rest to reach the target count.
@@ -72,39 +115,7 @@ fn sample_points_for_hull(points: &[[f32; 3]], target: usize) -> Vec<[f32; 3]> {
     let mut sampled: Vec<[f32; 3]> = Vec::new();
 
     // Always include the 6 AABB extreme points
-    let extremes: [[f32; 3]; 6] = [
-        *points
-            .iter()
-            .min_by(|a, b| a[0].partial_cmp(&b[0]).unwrap())
-            .unwrap(),
-        *points
-            .iter()
-            .max_by(|a, b| a[0].partial_cmp(&b[0]).unwrap())
-            .unwrap(),
-        *points
-            .iter()
-            .min_by(|a, b| a[1].partial_cmp(&b[1]).unwrap())
-            .unwrap(),
-        *points
-            .iter()
-            .max_by(|a, b| a[1].partial_cmp(&b[1]).unwrap())
-            .unwrap(),
-        *points
-            .iter()
-            .min_by(|a, b| a[2].partial_cmp(&b[2]).unwrap())
-            .unwrap(),
-        *points
-            .iter()
-            .max_by(|a, b| a[2].partial_cmp(&b[2]).unwrap())
-            .unwrap(),
-    ];
-    for p in &extremes {
-        if !sampled.iter().any(|s| {
-            (s[0] - p[0]).abs() < eps && (s[1] - p[1]).abs() < eps && (s[2] - p[2]).abs() < eps
-        }) {
-            sampled.push(*p);
-        }
-    }
+    push_aabb_extremes(&mut sampled, points, eps);
 
     // Uniformly sample remaining points
     let remaining = target.saturating_sub(sampled.len());
@@ -113,16 +124,161 @@ fn sample_points_for_hull(points: &[[f32; 3]], target: usize) -> Vec<[f32; 3]> {
         for i in 0..remaining {
             let idx = ((i as f32) * step) as usize;
             let idx = idx.min(points.len() - 1);
-            let p = &points[idx];
-            if !sampled.iter().any(|s| {
-                (s[0] - p[0]).abs() < eps && (s[1] - p[1]).abs() < eps && (s[2] - p[2]).abs() < eps
-            }) {
-                sampled.push(*p);
-            }
+            push_unique_point(&mut sampled, points[idx], eps);
         }
     }
 
     sampled
+}
+
+/// Sample points across multiple meshes for convex hull computation.
+/// Preserves the 6 AABB extreme points of each included mesh as well as the global extremes,
+/// then uniformly samples the remaining budget.
+fn sample_mesh_sets_for_hull(
+    mesh_point_sets: &[Vec<[f32; 3]>],
+    all_positions: &[[f32; 3]],
+    target: usize,
+) -> Vec<[f32; 3]> {
+    if all_positions.len() <= target {
+        return all_positions.to_vec();
+    }
+    if mesh_point_sets.len() <= 1 {
+        return sample_points_for_hull(all_positions, target);
+    }
+
+    let eps = 1e-3;
+    let mut sampled: Vec<[f32; 3]> = Vec::new();
+
+    push_aabb_extremes(&mut sampled, all_positions, eps);
+    for set in mesh_point_sets {
+        push_aabb_extremes(&mut sampled, set, eps);
+    }
+
+    let remaining = target.saturating_sub(sampled.len());
+    if remaining > 0 {
+        let step = (all_positions.len() as f32) / (remaining as f32);
+        for i in 0..remaining {
+            let idx = ((i as f32) * step) as usize;
+            let idx = idx.min(all_positions.len() - 1);
+            push_unique_point(&mut sampled, all_positions[idx], eps);
+        }
+    }
+
+    sampled
+}
+
+fn strip_lod_suffix(name: &str) -> &str {
+    let lower = name.to_ascii_lowercase();
+    for marker in ["_lod_", "_lod"] {
+        if let Some(pos) = lower.rfind(marker) {
+            let digits = &name[pos + marker.len()..];
+            if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
+                return &name[..pos];
+            }
+        }
+    }
+    name
+}
+
+fn sanitize_local_transform(m: &[[f32; 4]; 4]) -> [[f32; 4]; 4] {
+    let mut out = *m;
+    let s0 = (m[0][0] * m[0][0] + m[0][1] * m[0][1] + m[0][2] * m[0][2]).sqrt();
+    let s1 = (m[1][0] * m[1][0] + m[1][1] * m[1][1] + m[1][2] * m[1][2]).sqrt();
+    let s2 = (m[2][0] * m[2][0] + m[2][1] * m[2][1] + m[2][2] * m[2][2]).sqrt();
+    if s0 < 0.0001 {
+        out[0][0] = 1.0;
+        out[0][1] = 0.0;
+        out[0][2] = 0.0;
+    }
+    if s1 < 0.0001 {
+        out[1][0] = 0.0;
+        out[1][1] = 1.0;
+        out[1][2] = 0.0;
+    }
+    if s2 < 0.0001 {
+        out[2][0] = 0.0;
+        out[2][1] = 0.0;
+        out[2][2] = 1.0;
+    }
+    out
+}
+
+fn transform_point_to_root(mut p: [f32; 3], parent_name: &str, joints: &[HODJoint]) -> [f32; 3] {
+    let mut current = parent_name;
+    let mut visited: Vec<String> = Vec::new();
+    while !current.is_empty() && !current.eq_ignore_ascii_case("root") {
+        let key = current.to_ascii_lowercase();
+        if visited.contains(&key) {
+            break;
+        }
+        visited.push(key);
+        let Some(joint) = joints.iter().find(|j| j.name.eq_ignore_ascii_case(current)) else {
+            break;
+        };
+        let m = sanitize_local_transform(&joint.local_transform.m);
+        p = [
+            p[0] * m[0][0] + p[1] * m[1][0] + p[2] * m[2][0] + m[3][0],
+            p[0] * m[0][1] + p[1] * m[1][1] + p[2] * m[2][1] + m[3][1],
+            p[0] * m[0][2] + p[1] * m[1][2] + p[2] * m[2][2] + m[3][2],
+        ];
+        match joint.parent_name.as_deref() {
+            Some(next) if !next.eq_ignore_ascii_case(current) => current = next,
+            _ => break,
+        }
+    }
+    p
+}
+
+fn select_target_meshes<'a>(
+    visible_meshes: &'a [HODMesh],
+    mesh_names: &[String],
+) -> Vec<&'a HODMesh> {
+    let has_verts = |m: &HODMesh| m.parts.iter().any(|p| !p.vertices.is_empty());
+
+    if mesh_names.is_empty() {
+        if let Some(m) = visible_meshes
+            .iter()
+            .find(|m| m.lod == 0 && has_verts(m))
+            .or_else(|| visible_meshes.iter().find(|m| m.lod == 0))
+        {
+            return vec![m];
+        }
+        return Vec::new();
+    }
+
+    let mut selected: Vec<&'a HODMesh> = Vec::new();
+    for raw_name in mesh_names {
+        let req = raw_name.trim();
+        if req.is_empty() {
+            continue;
+        }
+        let req_base = strip_lod_suffix(req);
+
+        // 1. Check exact "<name>_lod_<lod>" match first
+        let exact_lod_match = visible_meshes.iter().find(|m| {
+            has_verts(m) && format!("{}_lod_{}", m.name, m.lod).eq_ignore_ascii_case(req)
+        });
+
+        // 2. Otherwise pick the lowest-LOD mesh matching the name or base name
+        let chosen = exact_lod_match.or_else(|| {
+            visible_meshes
+                .iter()
+                .filter(|m| {
+                    has_verts(m)
+                        && (m.name.eq_ignore_ascii_case(req)
+                            || strip_lod_suffix(&m.name).eq_ignore_ascii_case(req_base))
+                })
+                .min_by_key(|m| m.lod)
+        });
+
+        if let Some(mesh) = chosen {
+            if !selected.iter().any(|existing| std::ptr::eq(*existing, mesh)) {
+                selected.push(mesh);
+            }
+        }
+    }
+
+    selected
 }
 
 fn cross(a: &[f32; 3], b: &[f32; 3]) -> [f32; 3] {
@@ -308,29 +464,54 @@ pub fn convex_hull_3d(points: &[[f32; 3]]) -> (Vec<[f32; 3]>, Vec<[u16; 3]>) {
     (hull_vertices, hull_triangles)
 }
 
-/// Generate a collision mesh from visible mesh data.
-/// Computes a convex hull from the LOD-0 visible mesh vertices,
-/// then inflates it outward by an auto-calculated margin (4% of bounding box diagonal).
-/// The result is a "bubble" that fully encloses the source mesh.
+/// Generate a collision mesh from a single visible mesh (or default LOD-0 mesh).
+/// Computes a convex hull from the mesh vertices, then inflates it outward
+/// by an auto-calculated margin (4% of bounding box diagonal).
 pub fn generate_collision_from_visible_mesh(
     visible_meshes: &[HODMesh],
     mesh_name: Option<&str>,
 ) -> Option<HODCollisionMesh> {
-    // Find the target mesh: by name if specified, otherwise LOD-0
-    let target_mesh = if let Some(name) = mesh_name {
-        visible_meshes.iter().find(|m| m.name == name)
-    } else {
-        visible_meshes.iter().find(|m| m.lod == 0)
-    }?;
-    if target_mesh.parts.is_empty() {
+    let names: Vec<String> = mesh_name.map(|n| vec![n.to_string()]).unwrap_or_default();
+    generate_collision_from_model_meshes(visible_meshes, &[], &names)
+}
+
+/// Generate a collision mesh from a list of visible mesh names.
+pub fn generate_collision_from_visible_meshes(
+    visible_meshes: &[HODMesh],
+    mesh_names: &[String],
+) -> Option<HODCollisionMesh> {
+    generate_collision_from_model_meshes(visible_meshes, &[], mesh_names)
+}
+
+/// Generate a single collision mesh enclosing one or more visible meshes.
+/// Vertices from each selected mesh are transformed into Root space via `joints`,
+/// combined into a unified point cloud (preserving per-mesh AABB extremes),
+/// wrapped in a 3D convex hull, and inflated outward by 4% of the combined AABB diagonal.
+pub fn generate_collision_from_model_meshes(
+    visible_meshes: &[HODMesh],
+    joints: &[HODJoint],
+    mesh_names: &[String],
+) -> Option<HODCollisionMesh> {
+    let target_meshes = select_target_meshes(visible_meshes, mesh_names);
+    if target_meshes.is_empty() {
         return None;
     }
 
-    // Collect all vertex positions from the target mesh
+    // Collect vertex positions from all selected meshes in Root space
+    let mut mesh_point_sets: Vec<Vec<[f32; 3]>> = Vec::with_capacity(target_meshes.len());
     let mut all_positions: Vec<[f32; 3]> = Vec::new();
-    for part in &target_mesh.parts {
-        for v in &part.vertices {
-            all_positions.push([v.position.x, v.position.y, v.position.z]);
+    for target_mesh in &target_meshes {
+        let mut mesh_positions: Vec<[f32; 3]> = Vec::new();
+        for part in &target_mesh.parts {
+            for v in &part.vertices {
+                let raw = [v.position.x, v.position.y, v.position.z];
+                let transformed = transform_point_to_root(raw, &target_mesh.parent_name, joints);
+                mesh_positions.push(transformed);
+            }
+        }
+        if !mesh_positions.is_empty() {
+            all_positions.extend_from_slice(&mesh_positions);
+            mesh_point_sets.push(mesh_positions);
         }
     }
 
@@ -354,11 +535,7 @@ pub fn generate_collision_from_visible_mesh(
     // Pre-sample points for convex hull computation.
     // Gift wrapping is O(n²) but robust. 500 points → ~250000 operations, instant.
     // More points = better silhouette following.
-    let hull_input = if all_positions.len() > 500 {
-        sample_points_for_hull(&all_positions, 500)
-    } else {
-        all_positions.clone()
-    };
+    let hull_input = sample_mesh_sets_for_hull(&mesh_point_sets, &all_positions, 500);
 
     // Compute 3D convex hull
     let (hull_verts, hull_faces) = convex_hull_3d(&hull_input);
@@ -796,5 +973,99 @@ mod tests {
         }
         assert_eq!(verts.len(), 4, "Tetrahedron hull should have 4 vertices");
         assert_eq!(faces.len(), 4, "Tetrahedron hull should have 4 faces");
+    }
+
+    fn make_box_mesh(name: &str, parent_name: &str, min: [f32; 3], max: [f32; 3]) -> HODMesh {
+        let corners = [
+            [min[0], min[1], min[2]],
+            [max[0], min[1], min[2]],
+            [max[0], max[1], min[2]],
+            [min[0], max[1], min[2]],
+            [min[0], min[1], max[2]],
+            [max[0], min[1], max[2]],
+            [max[0], max[1], max[2]],
+            [min[0], max[1], max[2]],
+        ];
+        let vertices = corners
+            .iter()
+            .map(|c| HODVertex {
+                position: Vector3 {
+                    x: c[0],
+                    y: c[1],
+                    z: c[2],
+                },
+                normal: None,
+                color: None,
+                uv: None,
+                tangent: None,
+                binormal: None,
+                skinning_data: None,
+            })
+            .collect();
+        HODMesh {
+            name: name.to_string(),
+            parent_name: parent_name.to_string(),
+            lod: 0,
+            has_mult_tags: false,
+            parts: vec![HODMeshPart {
+                material_index: 0,
+                vertex_mask: 0x01,
+                vertices,
+                indices: vec![0, 1, 2, 0, 2, 3],
+            }],
+        }
+    }
+
+    #[test]
+    fn test_generate_collision_from_multiple_meshes() {
+        let front = make_box_mesh("HullFront", "Root", [-5.0, -5.0, 10.0], [5.0, 5.0, 30.0]);
+        let rear = make_box_mesh("HullRear", "Root", [-8.0, -4.0, -35.0], [8.0, 4.0, -10.0]);
+        let turret = make_box_mesh("TurretTop", "Root", [-1.0, 5.0, 0.0], [1.0, 50.0, 2.0]);
+        let meshes = vec![front, rear, turret];
+
+        let selected = vec!["HullFront".to_string(), "HullRear".to_string()];
+        let col = generate_collision_from_model_meshes(&meshes, &[], &selected)
+            .expect("Combined collision mesh should be generated");
+
+        // Combined hull must span both HullFront (z up to 30) and HullRear (z down to -35),
+        // and must NOT include unselected TurretTop (y up to 50).
+        assert!(col.min_extents.z <= -35.0);
+        assert!(col.max_extents.z >= 30.0);
+        assert!(col.min_extents.x <= -8.0);
+        assert!(col.max_extents.x >= 8.0);
+        assert!(col.max_extents.y < 15.0, "Unselected mesh should not inflate Y bounds");
+        assert!(!col.mesh.parts[0].vertices.is_empty());
+        assert!(!col.mesh.parts[0].indices.is_empty());
+    }
+
+    #[test]
+    fn test_generate_collision_applies_joint_transform_to_root() {
+        use crate::hod::Matrix4;
+
+        let front = make_box_mesh("SectionA", "Root", [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+        // SectionB vertices are local [-5..5], but parented to JointB at z = +40
+        let rear = make_box_mesh("SectionB", "JointB", [-5.0, -5.0, -5.0], [5.0, 5.0, 5.0]);
+        let joints = vec![HODJoint {
+            name: "JointB".to_string(),
+            parent_name: Some("Root".to_string()),
+            local_transform: Matrix4 {
+                m: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 40.0, 1.0],
+                ],
+            },
+            position: None,
+            rotation: None,
+            scale: None,
+        }];
+
+        let selected = vec!["SectionA".to_string(), "SectionB".to_string()];
+        let col = generate_collision_from_model_meshes(&[front, rear], &joints, &selected)
+            .expect("Combined collision mesh with joint offset should be generated");
+
+        assert!(col.min_extents.z <= -5.0);
+        assert!(col.max_extents.z >= 45.0);
     }
 }

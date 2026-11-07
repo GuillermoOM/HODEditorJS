@@ -9,6 +9,7 @@ import { WeaponGroupInspector } from "./WeaponGroupInspector";
 import {
   CoordinateSpace,
   getDisplayTransform,
+  getJointGlobalMatrix,
   applyPositionEdit,
   applyRotationEdit,
   getEulerRotation,
@@ -824,7 +825,33 @@ export const Inspector: React.FC<InspectorProps> = ({
 }) => {
   const [pipelines, setPipelines] = useState<string[]>([]);
   const [renameWeaponName, setRenameWeaponName] = useState("");
-  const [sourceMeshName, setSourceMeshName] = useState("");
+  const [selectedSourceMeshes, setSelectedSourceMeshes] = useState<string[]>([]);
+
+  const collisionSourceMeshOptions = (() => {
+    if (!model?.meshes) return [];
+    const grouped = new Map<string, typeof model.meshes>();
+    for (const mesh of model.meshes) {
+      const baseName = mesh.name.replace(/_lod_\d+$/i, "").replace(/_LOD\d+$/i, "");
+      if (!grouped.has(baseName)) grouped.set(baseName, []);
+      grouped.get(baseName)!.push(mesh);
+    }
+    return Array.from(grouped.entries()).map(([baseName, lods]) => {
+      const sorted = [...lods].sort((a, b) => a.lod - b.lod);
+      const primaryMesh =
+        sorted.find((m) => m.parts.some((p) => p.vertices.length > 0)) || sorted[0];
+      const vertexCount = primaryMesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
+      return {
+        baseName,
+        mesh: primaryMesh,
+        vertexCount,
+        parentName: primaryMesh.parent_name || "Root",
+      };
+    });
+  })();
+
+  const activeSelectedSourceMeshes = selectedSourceMeshes.filter((name) =>
+    collisionSourceMeshOptions.some((opt) => opt.baseName === name)
+  );
 
   const loadPipelines = async () => {
     try {
@@ -931,42 +958,50 @@ export const Inspector: React.FC<InspectorProps> = ({
     }
   };
 
-  const handleGenerateCollisionFromMesh = async () => {
-    if (!model || !selectedNode || selectedNode.type !== "collision" || !sourceMeshName) return;
-    
-    // sourceMeshName is in the format "meshName_lod_0"
-    const parts = sourceMeshName.split("_lod_");
-    const mName = parts[0];
+  const handleGenerateCollisionFromMesh = () => {
+    if (!model || !selectedNode || selectedNode.type !== "collision" || activeSelectedSourceMeshes.length === 0) return;
 
-    try {
-      const updatedModel = await invoke<any>("auto_generate_collision_from_mesh", {
-        model,
-        collisionMeshName: selectedNode.name,
-        sourceMeshName: mName
-      });
-      
-      onModelChange?.(updatedModel);
-      
-      await invoke("log_event", {
-        level: "INFO",
-        message: `Successfully generated convex hull collision mesh for ${selectedNode.name} from visual mesh ${mName}`
-      });
-      
-      alert(`Collision convex hull mesh successfully generated for "${selectedNode.name}"!`);
-    } catch (e: any) {
-      console.error(e);
-      alert(`Failed to generate collision mesh: ${e}`);
-    }
+    const meshNames = [...activeSelectedSourceMeshes];
+    const colName = selectedNode.name;
+
+    setIsLoading?.(true);
+    setStatusMsg?.("Generating Collision Convex Hull...");
+    // TRAP COMMENT: Do not remove this setTimeout! Tauri IPC serializes the entire HODModel
+    // synchronously on the main thread. Without this 50ms yield, React cannot paint the loading
+    // spinner overlay before the UI thread blocks during convex hull generation.
+    setTimeout(async () => {
+      try {
+        const updatedModel = await invoke<any>("auto_generate_collision_from_mesh", {
+          model,
+          collisionMeshName: colName,
+          sourceMeshNames: meshNames,
+        });
+
+        onModelChange?.(updatedModel);
+
+        await invoke("log_event", {
+          level: "INFO",
+          message: `Successfully generated convex hull collision mesh for ${colName} from visual meshes: ${meshNames.join(", ")}`,
+        });
+
+        setIsLoading?.(false);
+        alert(`Collision convex hull mesh successfully generated for "${colName}" from ${meshNames.length} mesh(es) (${meshNames.join(", ")})!`);
+      } catch (e: any) {
+        console.error(e);
+        setIsLoading?.(false);
+        alert(`Failed to generate collision mesh: ${e}`);
+      }
+    }, 50);
   };
 
   const handleAutoCalculateCollision = () => {
-    if (!model || !selectedNode || selectedNode.type !== "collision" || !sourceMeshName) return;
-    const parts = sourceMeshName.split("_lod_");
-    const mName = parts[0];
-    const mLod = parseInt(parts[1], 10);
-    const targetMesh = model.meshes.find(m => m.name === mName && m.lod === mLod);
-    if (!targetMesh) {
-      alert("Selected mesh not found in model!");
+    if (!model || !selectedNode || selectedNode.type !== "collision" || activeSelectedSourceMeshes.length === 0) return;
+
+    const selectedEntries = collisionSourceMeshOptions.filter((opt) =>
+      activeSelectedSourceMeshes.includes(opt.baseName)
+    );
+    if (selectedEntries.length === 0) {
+      alert("Selected mesh(es) not found in model!");
       return;
     }
 
@@ -976,48 +1011,52 @@ export const Inspector: React.FC<InspectorProps> = ({
     let maxX = -Infinity;
     let maxY = -Infinity;
     let maxZ = -Infinity;
-    let hasVertices = false;
+    const transformedPoints: THREE.Vector3[] = [];
 
-    targetMesh.parts.forEach((part) => {
-      part.vertices.forEach((v) => {
-        const x = v.position.x;
-        const y = v.position.y;
-        const z = v.position.z;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-        if (z < minZ) minZ = z;
-        if (z > maxZ) maxZ = z;
-        hasVertices = true;
+    selectedEntries.forEach(({ mesh }) => {
+      const parentName = mesh.parent_name || "Root";
+      const jointMatrix =
+        parentName.toLowerCase() === "root"
+          ? new THREE.Matrix4()
+          : getJointGlobalMatrix(model, parentName);
+
+      mesh.parts.forEach((part) => {
+        part.vertices.forEach((v) => {
+          const pt = new THREE.Vector3(v.position.x, v.position.y, v.position.z).applyMatrix4(jointMatrix);
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+          if (pt.z < minZ) minZ = pt.z;
+          if (pt.z > maxZ) maxZ = pt.z;
+          transformedPoints.push(pt);
+        });
       });
     });
 
-    if (!hasVertices) {
-      alert("The selected mesh has no vertices to calculate collision bounds from.");
+    if (transformedPoints.length === 0) {
+      alert("The selected mesh(es) have no vertices to calculate collision bounds from.");
       return;
     }
 
     const center = {
       x: (minX + maxX) / 2,
       y: (minY + maxY) / 2,
-      z: (minZ + maxZ) / 2
+      z: (minZ + maxZ) / 2,
     };
 
     const min_extents = { x: minX, y: minY, z: minZ };
     const max_extents = { x: maxX, y: maxY, z: maxZ };
 
     let maxDistSq = 0;
-    targetMesh.parts.forEach((part) => {
-      part.vertices.forEach((v) => {
-        const dx = v.position.x - center.x;
-        const dy = v.position.y - center.y;
-        const dz = v.position.z - center.z;
-        const distSq = dx * dx + dy * dy + dz * dz;
-        if (distSq > maxDistSq) {
-          maxDistSq = distSq;
-        }
-      });
+    transformedPoints.forEach((pt) => {
+      const dx = pt.x - center.x;
+      const dy = pt.y - center.y;
+      const dz = pt.z - center.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (distSq > maxDistSq) {
+        maxDistSq = distSq;
+      }
     });
     const radius = Math.sqrt(maxDistSq);
 
@@ -1028,19 +1067,20 @@ export const Inspector: React.FC<InspectorProps> = ({
           min_extents,
           max_extents,
           center,
-          radius
+          radius,
         };
       }
       return col;
     });
 
     onModelChange?.({ ...model, collision_meshes: updatedCols });
+    const meshSummary = selectedEntries.map((e) => `${e.baseName} (LOD ${e.mesh.lod})`).join(", ");
     invoke("log_event", {
       level: "INFO",
-      message: `Auto-calculated collision bounds for ${selectedNode.name} from visual mesh ${mName}_lod_${mLod}`
+      message: `Auto-calculated collision bounds for ${selectedNode.name} from visual meshes: ${meshSummary}`,
     }).catch(console.error);
 
-    alert(`Collision bounds for "${selectedNode.name}" successfully calculated!\n\nCenter: [${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)}]\nRadius: ${radius.toFixed(3)}\nMin Extents: [${min_extents.x.toFixed(3)}, ${min_extents.y.toFixed(3)}, ${min_extents.z.toFixed(3)}]\nMax Extents: [${max_extents.x.toFixed(3)}, ${max_extents.y.toFixed(3)}, ${max_extents.z.toFixed(3)}]`);
+    alert(`Collision bounds for "${selectedNode.name}" successfully calculated from ${selectedEntries.length} mesh(es)!\n\nCenter: [${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)}]\nRadius: ${radius.toFixed(3)}\nMin Extents: [${min_extents.x.toFixed(3)}, ${min_extents.y.toFixed(3)}, ${min_extents.z.toFixed(3)}]\nMax Extents: [${max_extents.x.toFixed(3)}, ${max_extents.y.toFixed(3)}, ${max_extents.z.toFixed(3)}]`);
   };
 
   const renderSelectedContent = () => {
@@ -2115,30 +2155,111 @@ export const Inspector: React.FC<InspectorProps> = ({
               <Wrench size={14} style={{ color: "var(--accent-cyan)" }} />
               <span>Auto-Calculate Bounds</span>
             </div>
-            {model.meshes && model.meshes.length > 0 ? (
+            {collisionSourceMeshOptions.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "11px", color: "var(--text-muted)", marginBottom: "4px" }}>Source Visual Mesh</label>
-                  <select
-                    value={sourceMeshName}
-                    onChange={(e) => setSourceMeshName(e.target.value)}
-                    style={{ width: "100%", height: "32px", fontSize: "12px", background: "#050a12", border: "1px solid var(--border-color)", color: "#fff", borderRadius: "4px", padding: "0 8px" }}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                    <label style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      Included Visual Meshes ({activeSelectedSourceMeshes.length}/{collisionSourceMeshOptions.length})
+                    </label>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSourceMeshes(collisionSourceMeshOptions.map((o) => o.baseName))}
+                        style={{ height: "22px", fontSize: "10px", padding: "0 6px" }}
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSourceMeshes([])}
+                        disabled={activeSelectedSourceMeshes.length === 0}
+                        style={{
+                          height: "22px",
+                          fontSize: "10px",
+                          padding: "0 6px",
+                          opacity: activeSelectedSourceMeshes.length > 0 ? 1 : 0.5,
+                          cursor: activeSelectedSourceMeshes.length > 0 ? "pointer" : "not-allowed",
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "4px",
+                      background: "rgba(0,0,0,0.15)",
+                      padding: "6px",
+                      borderRadius: "4px",
+                      border: "1px solid var(--border-color)",
+                      maxHeight: "180px",
+                      overflowY: "auto",
+                    }}
                   >
-                    <option value="">-- Choose a Mesh --</option>
-                    {model.meshes.map((m) => {
-                      const optVal = `${m.name}_lod_${m.lod}`;
+                    {collisionSourceMeshOptions.map((opt) => {
+                      const isChecked = activeSelectedSourceMeshes.includes(opt.baseName);
+                      const toggleMesh = () => {
+                        setSelectedSourceMeshes((prev) => {
+                          const validPrev = prev.filter((name) =>
+                            collisionSourceMeshOptions.some((o) => o.baseName === name)
+                          );
+                          return validPrev.includes(opt.baseName)
+                            ? validPrev.filter((name) => name !== opt.baseName)
+                            : [...validPrev, opt.baseName];
+                        });
+                      };
                       return (
-                        <option key={optVal} value={optVal}>
-                          {m.name} (LOD {m.lod})
-                        </option>
+                        <div
+                          key={opt.baseName}
+                          onClick={toggleMesh}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "8px",
+                            padding: "6px 8px",
+                            borderRadius: "3px",
+                            cursor: "pointer",
+                            background: isChecked ? "rgba(22, 160, 255, 0.15)" : "transparent",
+                            border: isChecked ? "1px solid rgba(22, 160, 255, 0.3)" : "1px solid transparent",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden", flex: 1 }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={toggleMesh}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ cursor: "pointer", margin: 0 }}
+                            />
+                            <span
+                              style={{
+                                fontSize: "12px",
+                                color: isChecked ? "var(--accent-cyan)" : "var(--text-primary)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                              title={opt.baseName}
+                            >
+                              {opt.baseName}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: "10px", color: "var(--text-muted)", flexShrink: 0 }}>
+                            LOD {opt.mesh.lod} ({opt.vertexCount} verts)
+                          </span>
+                        </div>
                       );
                     })}
-                  </select>
+                  </div>
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button
                     onClick={handleGenerateCollisionFromMesh}
-                    disabled={!sourceMeshName}
+                    disabled={activeSelectedSourceMeshes.length === 0}
                     style={{
                       height: "32px",
                       fontSize: "12px",
@@ -2149,8 +2270,8 @@ export const Inspector: React.FC<InspectorProps> = ({
                       flex: 1,
                       background: "var(--accent-danger)",
                       color: "#fff",
-                      opacity: sourceMeshName ? 1 : 0.5,
-                      cursor: sourceMeshName ? "pointer" : "not-allowed"
+                      opacity: activeSelectedSourceMeshes.length > 0 ? 1 : 0.5,
+                      cursor: activeSelectedSourceMeshes.length > 0 ? "pointer" : "not-allowed",
                     }}
                   >
                     <Box size={14} />
@@ -2158,7 +2279,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                   </button>
                   <button
                     onClick={handleAutoCalculateCollision}
-                    disabled={!sourceMeshName}
+                    disabled={activeSelectedSourceMeshes.length === 0}
                     style={{
                       height: "32px",
                       fontSize: "12px",
@@ -2167,8 +2288,8 @@ export const Inspector: React.FC<InspectorProps> = ({
                       justifyContent: "center",
                       gap: "6px",
                       flex: 1,
-                      opacity: sourceMeshName ? 1 : 0.5,
-                      cursor: sourceMeshName ? "pointer" : "not-allowed"
+                      opacity: activeSelectedSourceMeshes.length > 0 ? 1 : 0.5,
+                      cursor: activeSelectedSourceMeshes.length > 0 ? "pointer" : "not-allowed",
                     }}
                   >
                     <RefreshCw size={14} style={{ color: "var(--accent-cyan)" }} />

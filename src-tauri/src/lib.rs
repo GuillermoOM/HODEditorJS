@@ -843,23 +843,72 @@ fn convert_weapon_to_turret(
 }
 
 #[tauri::command]
-fn auto_generate_collision_from_mesh(mut model: HODModel, collision_mesh_name: String, source_mesh_name: String) -> Result<HODModel, String> {
-    write_log("INFO", &format!("Auto-generating collision mesh '{}' from visible mesh '{}'...", collision_mesh_name, source_mesh_name));
-    
-    // Attempt to generate the mesh using convex hull
-    let new_col_mesh = hwr_hod_parser::collision::generate_collision_from_visible_mesh(&model.meshes, Some(&source_mesh_name))
-        .ok_or_else(|| "Failed to generate collision mesh: no valid vertices found in source mesh".to_string())?;
+fn auto_generate_collision_from_mesh(
+    mut model: HODModel,
+    collision_mesh_name: String,
+    source_mesh_name: Option<String>,
+    source_mesh_names: Option<Vec<String>>,
+) -> Result<HODModel, String> {
+    let mesh_names: Vec<String> = match source_mesh_names {
+        Some(names) if !names.is_empty() => names,
+        _ => match source_mesh_name {
+            Some(name) if !name.trim().is_empty() => vec![name],
+            _ => return Err("No source meshes selected for collision generation".to_string()),
+        },
+    };
 
-    // Update the model with the newly generated mesh parts
-    if let Some(col) = model.collision_meshes.iter_mut().find(|c| c.name == collision_mesh_name) {
+    write_log(
+        "INFO",
+        &format!(
+            "Auto-generating collision mesh '{}' from visible meshes {:?}...",
+            collision_mesh_name, mesh_names
+        ),
+    );
+
+    // Attempt to generate the combined collision mesh using convex hull
+    let new_col_mesh = hwr_hod_parser::collision::generate_collision_from_model_meshes(
+        &model.meshes,
+        &model.joints,
+        &mesh_names,
+    )
+    .ok_or_else(|| {
+        "Failed to generate collision mesh: no valid vertices found in selected source meshes"
+            .to_string()
+    })?;
+
+    // Update the model with the newly generated mesh parts and computed bounds
+    if let Some(col) = model
+        .collision_meshes
+        .iter_mut()
+        .find(|c| c.name == collision_mesh_name)
+    {
         col.mesh.parts = new_col_mesh.mesh.parts;
+        col.min_extents = new_col_mesh.min_extents;
+        col.max_extents = new_col_mesh.max_extents;
+        col.center = new_col_mesh.center;
+        col.radius = new_col_mesh.radius;
     } else {
-        return Err(format!("Collision mesh '{}' not found in model", collision_mesh_name));
+        return Err(format!(
+            "Collision mesh '{}' not found in model",
+            collision_mesh_name
+        ));
     }
-    
-    // Auto-calculate bounds based on the new mesh
+
+    // Clear any preserved raw COLD/KDOP chunks so save serializes the newly generated collision mesh into POOL/DTRM
+    model
+        .preserved_chunks
+        .retain(|chunk| chunk.id != "KDOP" && chunk.id != "COLD");
+    for chunk in &mut model.preserved_chunks {
+        if chunk.id == "DTRM" {
+            chunk
+                .children
+                .retain(|child| child.id != "KDOP" && child.id != "COLD");
+        }
+    }
+
+    // Normalize and ensure collision mesh validity
     hwr_hod_parser::hod::generate_collision_mesh(&mut model);
-    
+
     write_log("INFO", "Collision mesh generation successful.");
     Ok(model)
 }
