@@ -219,6 +219,11 @@ input, select, textarea {
   transition: all 0.2s ease;
 }
 
+input[type="checkbox"], input[type="radio"] {
+  width: auto;
+  padding: 0;
+}
+
 select {
   background-color: #ffffff !important;
   color: #000000 !important;

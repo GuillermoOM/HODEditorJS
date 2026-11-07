@@ -2227,21 +2227,22 @@ export const Inspector: React.FC<InspectorProps> = ({
                             border: isChecked ? "1px solid rgba(22, 160, 255, 0.3)" : "1px solid transparent",
                           }}
                         >
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px", overflow: "hidden", flex: 1 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "8px", minWidth: 0, flex: 1 }}>
                             <input
                               type="checkbox"
                               checked={isChecked}
                               onChange={toggleMesh}
                               onClick={(e) => e.stopPropagation()}
-                              style={{ cursor: "pointer", margin: 0 }}
+                              style={{ width: "14px", height: "14px", flexShrink: 0, padding: 0, margin: 0, cursor: "pointer" }}
                             />
                             <span
                               style={{
                                 fontSize: "12px",
                                 color: isChecked ? "var(--accent-cyan)" : "var(--text-primary)",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
+                                paddingLeft: "4px",
+                                textAlign: "left",
+                                wordBreak: "break-all",
+                                flex: 1,
                               }}
                               title={opt.baseName}
                             >
