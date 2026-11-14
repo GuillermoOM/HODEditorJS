@@ -7,6 +7,7 @@ import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, E
 import {
   getSlaveBases,
   isJointInWeaponFamily,
+  isJointInWeaponBase,
   nextSlaveBase,
   cloneWeaponFamilyJoints,
   renameWeaponFamilyName,
@@ -14,6 +15,24 @@ import {
   muzzleName,
   nextMuzzleIndex,
 } from "../weapon_utils";
+
+type TreeJoint = HODModel["joints"][number];
+type WeaponGroupInfo = { baseName: string; suffix: string; type: string } | null;
+
+/** Per-model lookups for the tree render; built lazily by getTreeIndex. */
+interface TreeIndex {
+  jointsByName: Map<string, TreeJoint>;
+  childrenByParent: Map<string, TreeJoint[]>;
+  groupInfoByName: Map<string, WeaponGroupInfo>;
+  groupJointsByBase: Map<string, TreeJoint[]>;
+  /** Assembly bases whose root joint(s) hang off the keyed parent, in group order. */
+  weaponGroupsByParent: Map<string, string[]>;
+  navLightsByParent: Map<string, NonNullable<HODModel["nav_lights"]>[number][]>;
+  markersByParent: Map<string, HODModel["markers"][number][]>;
+  meshesByParent: Map<string, HODModel["meshes"][number][]>;
+  navLightNamesLower: Set<string>;
+  engineParents: Set<string>;
+}
 
 interface HierarchyTreeProps {
   model: HODModel | null;
@@ -466,6 +485,7 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
   const [collapsedJoints, setCollapsedJoints] = useState<Record<string, boolean>>({});
   const [dragOverJoint, setDragOverJoint] = useState<string | null>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
+  const treeIndexRef = useRef<{ model: HODModel; index: TreeIndex } | null>(null);
   const [diagnosticsHeight, setDiagnosticsHeight] = useState(140);
 
   const handleDiagnosticsDragStart = (e: React.MouseEvent) => {
@@ -583,6 +603,75 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       }
     });
     return Array.from(groups);
+  };
+
+  // PERF TRAP: renderJointNode runs once per joint on every tree render
+  // (selection, visibility, collapse). Scanning model.joints / groups inside it
+  // was O(J^2 * G) and cost ~100ms per click on large ships. Everything it needs
+  // is indexed here once per model object; edits always produce a new model.
+  const getTreeIndex = (m: HODModel): TreeIndex => {
+    const cached = treeIndexRef.current;
+    if (cached && cached.model === m) return cached.index;
+
+    const push = <T,>(map: Map<string, T[]>, key: string, value: T) => {
+      const list = map.get(key);
+      if (list) list.push(value); else map.set(key, [value]);
+    };
+
+    const jointsByName = new Map<string, HODModel["joints"][number]>();
+    const childrenByParent = new Map<string, HODModel["joints"][number][]>();
+    m.joints.forEach(j => {
+      if (!jointsByName.has(j.name)) jointsByName.set(j.name, j);
+      if (j.parent_name) push(childrenByParent, j.parent_name, j);
+    });
+
+    const groupInfoByName = new Map<string, ReturnType<typeof getWeaponGroupInfo>>();
+    m.joints.forEach(j => groupInfoByName.set(j.name, getWeaponGroupInfo(j.name)));
+
+    const groupJointsByBase = new Map<string, HODModel["joints"][number][]>();
+    const weaponGroupsByParent = new Map<string, string[]>();
+    getUniqueAssemblyGroups().forEach(baseName => {
+      const groupJoints = m.joints.filter(j => isJointInWeaponBase(j.name, baseName));
+      groupJointsByBase.set(baseName, groupJoints);
+      const memberNames = new Set(groupJoints.map(j => j.name));
+      const rootParents = new Set<string>();
+      groupJoints.forEach(j => {
+        if (j.parent_name && !memberNames.has(j.parent_name)) rootParents.add(j.parent_name);
+      });
+      rootParents.forEach(parent => push(weaponGroupsByParent, parent, baseName));
+    });
+
+    const navLightsByParent = new Map<string, NonNullable<HODModel["nav_lights"]>[number][]>();
+    m.nav_lights?.forEach(n => {
+      const joint = jointsByName.get(n.name);
+      const key = joint ? joint.parent_name : n.name;
+      if (key) push(navLightsByParent, key, n);
+    });
+
+    const markersByParent = new Map<string, HODModel["markers"][number][]>();
+    m.markers.forEach(mk => push(markersByParent, mk.parent_joint, mk));
+    const meshesByParent = new Map<string, HODModel["meshes"][number][]>();
+    m.meshes?.forEach(mesh => push(meshesByParent, mesh.parent_name, mesh));
+
+    const engineParents = new Set<string>();
+    m.engine_burns?.forEach(b => engineParents.add(b.parent_name));
+    m.engine_glows?.forEach(g => engineParents.add(g.parent_name));
+    m.engine_shapes?.forEach(sh => engineParents.add(sh.parent_name));
+
+    const index: TreeIndex = {
+      jointsByName,
+      childrenByParent,
+      groupInfoByName,
+      groupJointsByBase,
+      weaponGroupsByParent,
+      navLightsByParent,
+      markersByParent,
+      meshesByParent,
+      navLightNamesLower: new Set((m.nav_lights || []).map(n => n.name.toLowerCase())),
+      engineParents,
+    };
+    treeIndexRef.current = { model: m, index };
+    return index;
   };
 
   const handleAddNode = () => {
@@ -1995,7 +2084,8 @@ const handleDeleteNode = (name: string, type: string) => {
     if (visited.has(jointName)) {
       return null;
     }
-    const joint = model.joints.find((j) => j.name === jointName);
+    const treeIndex = getTreeIndex(model);
+    const joint = treeIndex.jointsByName.get(jointName);
     if (!joint) return null;
 
     const nextVisited = new Set(visited);
@@ -2004,21 +2094,17 @@ const handleDeleteNode = (name: string, type: string) => {
     const isSelected = selectedNode?.type === "joint" && selectedNode.name === jointName;
     const isCollapsed = !!collapsedJoints[jointName];
     
-    const children = model.joints.filter((j) => j.parent_name === jointName);
+    const children = treeIndex.childrenByParent.get(jointName) || [];
     const standardChildJoints = children.filter(c => {
-      const isNavLight = model.nav_lights?.some(n => n.name.toLowerCase() === c.name.toLowerCase());
+      const isNavLight = treeIndex.navLightNamesLower.has(c.name.toLowerCase());
       if (isNavLight) {
-        const isEngineParent =
-          model.engine_burns?.some(b => b.parent_name === c.name) ||
-          model.engine_glows?.some(g => g.parent_name === c.name) ||
-          model.engine_shapes?.some(s => s.parent_name === c.name);
-        if (!isEngineParent) return false;
+        if (!treeIndex.engineParents.has(c.name)) return false;
       }
 
-      const weaponInfo = getWeaponGroupInfo(c.name);
+      const weaponInfo = treeIndex.groupInfoByName.get(c.name) ?? null;
       if (weaponInfo) {
-        const parentJoint = model.joints.find(pj => pj.name === c.parent_name);
-        const parentWeaponInfo = parentJoint ? getWeaponGroupInfo(parentJoint.name) : null;
+        const parentJoint = c.parent_name ? treeIndex.jointsByName.get(c.parent_name) : undefined;
+        const parentWeaponInfo = parentJoint ? treeIndex.groupInfoByName.get(parentJoint.name) ?? null : null;
         if (!parentWeaponInfo || parentWeaponInfo.baseName.toLowerCase() !== weaponInfo.baseName.toLowerCase()) {
           return false; // Filter out root weapon joint
         }
@@ -2026,23 +2112,13 @@ const handleDeleteNode = (name: string, type: string) => {
       return true;
     });
     
-    const childWeaponGroups = getUniqueAssemblyGroups().filter(baseName => {
-      const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_") || j.name.toLowerCase() === baseName.toLowerCase());
-      return groupJoints.some(j => {
-        const hasParentInGroup = groupJoints.some(other => other.name === j.parent_name);
-        return !hasParentInGroup && j.parent_name === jointName;
-      });
-    });
+    const childWeaponGroups = treeIndex.weaponGroupsByParent.get(jointName) || [];
 
-    const markers = model.markers.filter((m) => m.parent_joint === jointName);
-    const meshes = model.meshes?.filter((m) => m.parent_name === jointName) || [];
+    const markers = treeIndex.markersByParent.get(jointName) || [];
+    const meshes = treeIndex.meshesByParent.get(jointName) || [];
 
     // Filter and list new elements matching parent/association
-    const navLights = model.nav_lights?.filter((n) => {
-      const joint = model.joints.find(j => j.name === n.name);
-      if (joint) return joint.parent_name === jointName;
-      return n.name === jointName;
-    }) || [];
+    const navLights = treeIndex.navLightsByParent.get(jointName) || [];
     const engineBurns = model.engine_burns?.filter((b) => b.parent_name === jointName) || [];
     const engineGlows = model.engine_glows?.filter((g) => g.parent_name === jointName) || [];
     const engineShapes = model.engine_shapes?.filter((s) => s.parent_name === jointName) || [];
@@ -2512,13 +2588,12 @@ const handleDeleteNode = (name: string, type: string) => {
     const isSlaveAssembly = /Slave\d*$/i.test(baseName);
 
     // Find all joints belonging to this weapon group
-    const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_") || j.name.toLowerCase() === baseName.toLowerCase());
+    const groupJoints = getTreeIndex(model).groupJointsByBase.get(baseName)
+      || model.joints.filter(j => isJointInWeaponBase(j.name, baseName));
     
     // Find the root joints of this weapon group (the ones parented to something outside the group)
-    const rootGroupJoints = groupJoints.filter(j => {
-      const hasParentInGroup = groupJoints.some(other => other.name === j.parent_name);
-      return !hasParentInGroup;
-    });
+    const groupMemberNames = new Set(groupJoints.map(j => j.name));
+    const rootGroupJoints = groupJoints.filter(j => !j.parent_name || !groupMemberNames.has(j.parent_name));
 
     const hasChildren = rootGroupJoints.length > 0;
     const matchesSearch = baseName.toLowerCase().includes(searchTerm.toLowerCase()) || groupJoints.some(j => matchesSearchRecursive(j.name));
@@ -2608,7 +2683,7 @@ const handleDeleteNode = (name: string, type: string) => {
 
   // Find root weapon groups (groups whose top-most parent is null, or parentless)
   const rootWeaponGroups = getUniqueAssemblyGroups().filter(baseName => {
-    const groupJoints = model.joints.filter(j => j.name.toLowerCase().startsWith(baseName.toLowerCase() + "_") || j.name.toLowerCase() === baseName.toLowerCase());
+    const groupJoints = model.joints.filter(j => isJointInWeaponBase(j.name, baseName));
     return groupJoints.some(j => {
       const hasParentInGroup = groupJoints.some(other => other.name === j.parent_name);
       if (hasParentInGroup) return false;

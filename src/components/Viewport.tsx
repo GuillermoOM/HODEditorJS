@@ -283,9 +283,20 @@ export const Viewport: React.FC<ViewportProps> = ({
   const scaleFactorRef = useRef<number>(1.0);
   const selectionAxesHelperRef = useRef<THREE.AxesHelper | null>(null);
   const lastFocusedModelRef = useRef<string | null>(null);
-  const textureCacheRef = useRef<Map<string, THREE.Texture>>(new Map());
+  // Textures survive scene rebuilds: re-decoding every base64 PNG and
+  // re-uploading it to the GPU dominated each visibility toggle / transform
+  // commit. Keyed by texture name + flip; `src` detects replaced image data.
+  const textureCacheRef = useRef<Map<string, { src: string; tex: THREE.Texture }>>(new Map());
+  // Bumped after every scene rebuild so the render loop re-evaluates poses once.
+  const sceneVersionRef = useRef(0);
+  const lastAnimEvalRef = useRef<{ model: HODModel | null; key: string }>({ model: null, key: "" });
 
   const modelRef = useRef(model);
+  // Read by the scene rebuild for initial visibility. Visibility changes are
+  // applied by flipping `.visible` (see the visibility effect), never by
+  // rebuilding the scene.
+  const visibleMeshesRef = useRef(visibleMeshes);
+  visibleMeshesRef.current = visibleMeshes;
   const onModelChangeRef = useRef(onModelChange);
   useEffect(() => {
     modelRef.current = model;
@@ -302,12 +313,53 @@ export const Viewport: React.FC<ViewportProps> = ({
     onNodeTransformRef.current = onNodeTransform;
   }, [onNodeTransform]);
 
-  const getAnimatedJointGlobalMatrix = (jointName: string, time: number, visited = new Set<string>()): THREE.Matrix4 => {
+  // Name -> joint index, static global matrices and per-animation track index,
+  // rebuilt whenever App replaces the model object (it updates immutably).
+  // Scene rebuilds, gizmo commits and animation frames all resolve joints
+  // through here; the previous joints.find() per ancestor made them O(n^2).
+  const jointCacheRef = useRef<{
+    model: HODModel | null;
+    byName: Map<string, HODJoint>;
+    globals: Map<string, THREE.Matrix4>;
+    tracks: WeakMap<object, Map<string, any>>;
+  }>({ model: null, byName: new Map(), globals: new Map(), tracks: new WeakMap() });
+
+  const getJointCache = () => {
     const currentModel = modelRef.current;
-    if (!currentModel || visited.has(jointName.toLowerCase())) {
+    if (jointCacheRef.current.model !== currentModel) {
+      const byName = new Map<string, HODJoint>();
+      currentModel?.joints.forEach(j => {
+        const key = j.name.toLowerCase();
+        if (!byName.has(key)) byName.set(key, j);
+      });
+      jointCacheRef.current = { model: currentModel, byName, globals: new Map(), tracks: new WeakMap() };
+    }
+    return jointCacheRef.current;
+  };
+
+  const findTrack = (anim: any, jointName: string) => {
+    const cache = getJointCache();
+    let byJoint = cache.tracks.get(anim);
+    if (!byJoint) {
+      byJoint = new Map();
+      for (const t of anim.tracks || []) {
+        const key = t.joint_name.toLowerCase();
+        if (!byJoint.has(key)) byJoint.set(key, t);
+      }
+      cache.tracks.set(anim, byJoint);
+    }
+    return byJoint.get(jointName.toLowerCase());
+  };
+
+  const getAnimatedJointGlobalMatrix = (jointName: string, time: number, visited = new Set<string>(), memo?: Map<string, THREE.Matrix4>): THREE.Matrix4 => {
+    const currentModel = modelRef.current;
+    const memoKey = jointName.toLowerCase();
+    const memoHit = memo?.get(memoKey);
+    if (memoHit) return memoHit.clone();
+    if (!currentModel || visited.has(memoKey)) {
       return new THREE.Matrix4();
     }
-    const joint = currentModel.joints.find(j => j.name.toLowerCase() === jointName.toLowerCase());
+    const joint = getJointCache().byName.get(memoKey);
     if (!joint) return new THREE.Matrix4();
 
     const nextVisited = new Set(visited);
@@ -323,13 +375,15 @@ export const Viewport: React.FC<ViewportProps> = ({
       if (tcName === `joint:${joint.name}`.toLowerCase() || 
           tcName === `navlight:${joint.name}`.toLowerCase()) {
         tc.object.updateMatrix();
-        return tc.object.matrix.clone();
+        const dragged = tc.object.matrix.clone();
+        if (memo && visited.size === 0) memo.set(memoKey, dragged.clone());
+        return dragged;
       }
     }
 
     let parentMatrix = new THREE.Matrix4();
     if (joint.parent_name && joint.parent_name.toLowerCase() !== jointName.toLowerCase()) {
-      parentMatrix = getAnimatedJointGlobalMatrix(joint.parent_name, time, nextVisited);
+      parentMatrix = getAnimatedJointGlobalMatrix(joint.parent_name, time, nextVisited, memo);
     }
 
     let localMatrix = toThreeMatrix(joint.local_transform);
@@ -343,7 +397,7 @@ export const Viewport: React.FC<ViewportProps> = ({
     // Only apply animation if playing or actively inspecting a keyframe.
     // This allows joints to reset to their natural coordinates when not animating/editing keyframes.
     if (activeAnim && (isPlay || isKeyframeActive)) {
-      const track = activeAnim.tracks.find(t => t.joint_name.toLowerCase() === joint.name.toLowerCase());
+      const track = findTrack(activeAnim, joint.name);
       if (track && track.keyframes.length > 0) {
         const keys = track.keyframes;
         let t1 = keys[0];
@@ -404,7 +458,9 @@ export const Viewport: React.FC<ViewportProps> = ({
       }
     }
 
-    return parentMatrix.clone().multiply(localMatrix);
+    const result = parentMatrix.clone().multiply(localMatrix);
+    if (memo && visited.size === 0) memo.set(memoKey, result.clone());
+    return result;
   };
 
   const evaluateAnimation = (mModel: HODModel, animIdx: number, time: number) => {
@@ -415,17 +471,23 @@ export const Viewport: React.FC<ViewportProps> = ({
       return 4.0;
     }
 
+    // One frame's worth of animated globals, shared by joints, meshes and helpers.
+    const memo = new Map<string, THREE.Matrix4>();
+    const jointMeshes = new Map<string, THREE.Object3D>();
+    jointsGroupRef.current?.children.forEach(c => {
+      const key = c.name.toLowerCase();
+      if (!jointMeshes.has(key)) jointMeshes.set(key, c);
+    });
+
     if (jointsGroupRef.current) {
       mModel.joints.forEach(joint => {
-        const jointMesh = jointsGroupRef.current?.children.find(
-          c => c.name.toLowerCase() === `joint:${joint.name}`.toLowerCase()
-        ) as THREE.Mesh | undefined;
+        const jointMesh = jointMeshes.get(`joint:${joint.name}`.toLowerCase()) as THREE.Mesh | undefined;
         if (jointMesh) {
           const tc = transformControlsRef.current;
           const isBeingDragged = tc && tc.dragging && tc.object === jointMesh;
 
           if (!isBeingDragged) {
-            const animatedWorldMatrix = getAnimatedJointGlobalMatrix(joint.name, time);
+            const animatedWorldMatrix = getAnimatedJointGlobalMatrix(joint.name, time, undefined, memo);
             const pos = new THREE.Vector3();
             const quat = new THREE.Quaternion();
             const scale = new THREE.Vector3();
@@ -452,12 +514,8 @@ export const Viewport: React.FC<ViewportProps> = ({
           const parentName = boneLine.userData.parentJointName as string | undefined;
           const childName = boneLine.userData.childJointName as string | undefined;
           if (parentName && childName) {
-            const parentMesh = jointsGroupRef.current?.children.find(
-              c => c.name.toLowerCase() === `joint:${parentName}`.toLowerCase()
-            ) as THREE.Mesh | undefined;
-            const childMesh = jointsGroupRef.current?.children.find(
-              c => c.name.toLowerCase() === `joint:${childName}`.toLowerCase()
-            ) as THREE.Mesh | undefined;
+            const parentMesh = jointMeshes.get(`joint:${parentName}`.toLowerCase()) as THREE.Mesh | undefined;
+            const childMesh = jointMeshes.get(`joint:${childName}`.toLowerCase()) as THREE.Mesh | undefined;
             if (parentMesh && childMesh) {
               const positions = boneLine.geometry.attributes.position.array as Float32Array;
               positions[0] = childMesh.position.x;
@@ -478,7 +536,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         const parentJointName = child.userData.parentJointName as string | undefined;
         if (!parentJointName) return;
 
-        const animatedWorldMatrix = getAnimatedJointGlobalMatrix(parentJointName, time);
+        const animatedWorldMatrix = getAnimatedJointGlobalMatrix(parentJointName, time, undefined, memo);
         child.matrix.copy(animatedWorldMatrix);
         child.matrix.decompose(child.position, child.quaternion, child.scale);
         child.matrixWorldNeedsUpdate = true;
@@ -496,7 +554,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         const isBeingDragged = tc && tc.dragging && tc.object === child;
 
         if (!isBeingDragged) {
-          const animatedWorldMatrix = getAnimatedJointGlobalMatrix(parentJointName, time);
+          const animatedWorldMatrix = getAnimatedJointGlobalMatrix(parentJointName, time, undefined, memo);
           const newMatrix = animatedWorldMatrix.clone().multiply(baseMatrix);
           child.matrix.copy(newMatrix);
           child.matrix.decompose(child.position, child.quaternion, child.scale);
@@ -523,6 +581,10 @@ export const Viewport: React.FC<ViewportProps> = ({
     updateGroupChildren(collisionGroupRef.current);
 
     if (dockpathsGroupRef.current) {
+      const dockPoints = new Map<string, THREE.Object3D>();
+      dockpathsGroupRef.current.children.forEach(c => {
+        if (c.name.startsWith("dockpoint:") && !dockPoints.has(c.name)) dockPoints.set(c.name, c);
+      });
       dockpathsGroupRef.current.children.forEach(child => {
         if (child.name.startsWith("dockpath_line:")) {
           const pathLine = child as THREE.Line;
@@ -531,9 +593,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           if (pathName && pointCount) {
             const pointsInWorld: THREE.Vector3[] = [];
             for (let i = 0; i < pointCount; i++) {
-              const ptMesh = dockpathsGroupRef.current?.children.find(
-                c => c.name === `dockpoint:${pathName}:${i}`
-              ) as THREE.Mesh | undefined;
+              const ptMesh = dockPoints.get(`dockpoint:${pathName}:${i}`) as THREE.Mesh | undefined;
               if (ptMesh) {
                 pointsInWorld.push(ptMesh.position);
               }
@@ -606,26 +666,28 @@ export const Viewport: React.FC<ViewportProps> = ({
       return new THREE.Matrix4();
     }
 
-    const joint = currentModel.joints.find(j => j.name.toLowerCase() === jointName.toLowerCase());
+    const cache = getJointCache();
+    const key = jointName.toLowerCase();
+    const cached = cache.globals.get(key);
+    if (cached) return cached.clone();
+
+    const joint = cache.byName.get(key);
     if (!joint) return new THREE.Matrix4();
 
     const localMatrix = toThreeMatrix(joint.local_transform);
 
-    if (joint.name.toLowerCase().includes("nozzle") || joint.name.toLowerCase().includes("engine")) {
-      invoke("log_event", {
-        level: "INFO",
-        message: `Joint ${joint.name} local translation: [${joint.local_transform.m[3][0].toFixed(3)}, ${joint.local_transform.m[3][1].toFixed(3)}, ${joint.local_transform.m[3][2].toFixed(3)}], parent_name: ${joint.parent_name}`
-      }).catch(console.error);
-    }
-
-    if (joint.parent_name && joint.parent_name.toLowerCase() !== jointName.toLowerCase()) {
+    let result: THREE.Matrix4;
+    if (joint.parent_name && joint.parent_name.toLowerCase() !== key) {
       const nextVisited = new Set(visited);
-      nextVisited.add(jointName.toLowerCase());
+      nextVisited.add(key);
       const parentGlobalMatrix = getJointGlobalMatrix(joint.parent_name, nextVisited);
-      return parentGlobalMatrix.clone().multiply(localMatrix);
+      result = parentGlobalMatrix.multiply(localMatrix);
     } else {
-      return localMatrix;
+      result = localMatrix;
     }
+    // Only cache top-level results so cycle-cut walks never pollute the cache.
+    if (visited.size === 0) cache.globals.set(key, result.clone());
+    return result;
   };
 
   // Helper to resolve helper world position to local position of parent joint
@@ -959,7 +1021,20 @@ export const Viewport: React.FC<ViewportProps> = ({
             playbackClock.getDelta(); // keep delta clean
           }
 
-          const duration = evaluateAnimation(modelRef.current, selectedAnimIdxRef.current, currTime);
+          // Poses only change while playing, scrubbing, dragging, inspecting a
+          // keyframe, or after a rebuild/selection change; otherwise skip the
+          // whole-skeleton solve that used to run every frame.
+          const tc = transformControlsRef.current;
+          const sel = selectedNodeRef.current;
+          const evalKey = `${sceneVersionRef.current}|${selectedAnimIdxRef.current}|${currTime}|${isPlay}|${sel ? `${sel.type}:${sel.name}` : ""}`;
+          const last = lastAnimEvalRef.current;
+          let duration: number;
+          if (isPlay || (tc && tc.dragging) || last.model !== modelRef.current || last.key !== evalKey) {
+            duration = evaluateAnimation(modelRef.current, selectedAnimIdxRef.current, currTime);
+            lastAnimEvalRef.current = { model: modelRef.current, key: evalKey };
+          } else {
+            duration = modelRef.current.animations?.[selectedAnimIdxRef.current]?.duration ?? 4.0;
+          }
 
           if (isPlay) {
             if (currTime >= duration) {
@@ -1184,16 +1259,20 @@ export const Viewport: React.FC<ViewportProps> = ({
       const camera = cameraRef.current;
       const orbitControls = orbitControlsRef.current;
 
-      invoke("log_event", {
-        level: "INFO",
-        message: `Scene useEffect triggered. scene: ${!!scene}, model: ${!!model}, meshesGroup: ${!!meshesGroup}, joints: ${model?.joints?.length || 0}`,
-      }).catch(console.error);
+      const rebuildStart = performance.now();
 
       if (!scene || !model || !meshesGroup || !jointsGroup || !markersGroup || !navLightsGroup || !collisionGroup || !dockpathsGroup || !engineBurnsGroup || !engineGlowsGroup || !engineShapesGroup || !targetBoxesGroup) {
         return;
       }
 
       // Clear existing meshes, joints, markers, and helpers with full recursive GPU resource disposal!
+      // Cached textures are owned by textureCacheRef and swept after the
+      // rebuild; disposing them here forced a full GPU re-upload every time.
+      const cachedTextures = new Set<THREE.Texture>();
+      textureCacheRef.current.forEach(entry => cachedTextures.add(entry.tex));
+      const disposeTexture = (tex: THREE.Texture | null | undefined) => {
+        if (tex && !cachedTextures.has(tex)) tex.dispose();
+      };
       const disposeNode = (node: THREE.Object3D) => {
         if ((node as any).geometry) {
           (node as any).geometry.dispose();
@@ -1201,11 +1280,11 @@ export const Viewport: React.FC<ViewportProps> = ({
         if ((node as any).material) {
           const mats = Array.isArray((node as any).material) ? (node as any).material : [(node as any).material];
           mats.forEach((mat: any) => {
-            if (mat.map) mat.map.dispose();
-            if (mat.normalMap) mat.normalMap.dispose();
-            if (mat.emissiveMap) mat.emissiveMap.dispose();
-            if (mat.roughnessMap) mat.roughnessMap.dispose();
-            if (mat.metalnessMap) mat.metalnessMap.dispose();
+            disposeTexture(mat.map);
+            disposeTexture(mat.normalMap);
+            disposeTexture(mat.emissiveMap);
+            disposeTexture(mat.roughnessMap);
+            disposeTexture(mat.metalnessMap);
             mat.dispose();
           });
         }
@@ -1225,7 +1304,7 @@ export const Viewport: React.FC<ViewportProps> = ({
       disposeHierarchy(engineGlowsGroup);
       disposeHierarchy(engineShapesGroup);
       disposeHierarchy(targetBoxesGroup);
-      textureCacheRef.current.clear();
+      const usedTextureKeys = new Set<string>();
 
       while (meshesGroup.children.length > 0) meshesGroup.remove(meshesGroup.children[0]);
       while (jointsGroup.children.length > 0) jointsGroup.remove(jointsGroup.children[0]);
@@ -1240,48 +1319,15 @@ export const Viewport: React.FC<ViewportProps> = ({
       
       navLightsAnimateRef.current = [];
 
-      invoke("log_event", { level: "INFO", message: "Viewport: Cleared old 3D groups. Starting mesh diagnostics..." }).catch(console.error);
 
-      // --- DETAILED MESH DIAGNOSTICS ---
-      model.meshes.forEach((mesh) => {
-        mesh.parts.forEach((part, pi) => {
-          const verts = part.vertices;
-          const idxCount = part.indices.length;
-          let maxIdx = -1;
-          for (let i = 0; i < part.indices.length; i++) {
-            if (part.indices[i] > maxIdx) {
-              maxIdx = part.indices[i];
-            }
-          }
-          let minX = Infinity, maxX = -Infinity;
-          let minY = Infinity, maxY = -Infinity;
-          let minZ = Infinity, maxZ = -Infinity;
-          let nanCount = 0;
-          verts.forEach(v => {
-            if (!v.position || !Number.isFinite(v.position.x)) { nanCount++; return; }
-            if (v.position.x < minX) minX = v.position.x;
-            if (v.position.x > maxX) maxX = v.position.x;
-            if (v.position.y < minY) minY = v.position.y;
-            if (v.position.y > maxY) maxY = v.position.y;
-            if (v.position.z < minZ) minZ = v.position.z;
-            if (v.position.z > maxZ) maxZ = v.position.z;
-          });
-          invoke("log_event", {
-            level: "DEBUG",
-            message: `MESH[${mesh.name}] part[${pi}] mask=0x${part.vertex_mask.toString(16)} verts=${verts.length} idxCount=${idxCount} maxIdx=${maxIdx} nan=${nanCount} X=[${minX.toFixed(1)},${maxX.toFixed(1)}] Y=[${minY.toFixed(1)},${maxY.toFixed(1)}] Z=[${minZ.toFixed(1)},${maxZ.toFixed(1)}]`,
-          }).catch(console.error);
-        });
-      });
-      // ---------------------------------
-
-      invoke("log_event", { level: "INFO", message: `Viewport: Mesh diagnostics finished. Starting mesh rendering (count: ${model.meshes.length})...` }).catch(console.error);
+      const isKeyVisible = (key: string) => visibleMeshesRef.current[key] !== false;
 
       const bbox = new THREE.Box3();
       let hasValidBounds = false;
 
       // 1. Render ship meshes
       model.meshes.forEach((mesh) => {
-        const isVisible = visibleMeshes[`${mesh.name}_lod_${mesh.lod}`] !== false;
+        const isVisible = isKeyVisible(`${mesh.name}_lod_${mesh.lod}`);
 
         mesh.parts.forEach((part, index) => {
           const geometry = new THREE.BufferGeometry();
@@ -1401,10 +1447,15 @@ export const Viewport: React.FC<ViewportProps> = ({
           // Helper to get or create a texture from base64Png
           const getCachedTexture = (base64Png: string, name: string, yFlipped: boolean = false): THREE.Texture => {
             const cache = textureCacheRef.current;
-            const cacheKey = `${name}:${yFlipped}:${base64Png.length}:${base64Png.slice(0, 64)}`;
-            if (cache.has(cacheKey)) {
-              return cache.get(cacheKey)!;
+            const cacheKey = `${name}:${yFlipped}`;
+            usedTextureKeys.add(cacheKey);
+            const existing = cache.get(cacheKey);
+            // Unchanged textures keep the same string object across immutable
+            // model updates, so this comparison is normally a pointer check.
+            if (existing && existing.src === base64Png) {
+              return existing.tex;
             }
+            if (existing) existing.tex.dispose();
             const img = new Image();
             img.src = base64Png.startsWith("data:") ? base64Png : `data:image/png;base64,${base64Png}`;
             const tex = new THREE.Texture(img);
@@ -1419,7 +1470,7 @@ export const Viewport: React.FC<ViewportProps> = ({
             img.onload = () => {
               tex.needsUpdate = true;
             };
-            cache.set(cacheKey, tex);
+            cache.set(cacheKey, { src: base64Png, tex });
             return tex;
           };
 
@@ -1587,6 +1638,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           const threeMesh = new THREE.Mesh(geometry, material);
           threeMesh.name = `${mesh.name}_part_${index}`;
           threeMesh.visible = isVisible;
+          threeMesh.userData.visKey = `${mesh.name}_lod_${mesh.lod}`;
 
           const parentName = mesh.parent_name || "Root";
           const jointMatrix = getJointGlobalMatrix(parentName);
@@ -1611,7 +1663,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       });
 
       // 2. Pre-calculate joint positions to build bounding box and connections safely
-      invoke("log_event", { level: "INFO", message: `Viewport: Mesh rendering done. Pre-calculating ${model.joints.length} joint positions...` }).catch(console.error);
       const jointPositions = new Map<string, THREE.Vector3>();
 
       model.joints.forEach((joint) => {
@@ -1647,7 +1698,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       const scaleFactor = hasValidBounds && maxDim > 0 ? Math.max(0.15, maxDim * 0.025) : 1.0;
       scaleFactorRef.current = scaleFactor;
 
-      invoke("log_event", { level: "INFO", message: `Viewport: Joint pre-calculation complete. scaleFactor: ${scaleFactor}. Rendering joints and connections...` }).catch(console.error);
 
       // 3. Render joint skeletons using scaleFactor
       const sphereGeo = new THREE.SphereGeometry(Math.max(0.12, Math.min(2.5, 0.08 * scaleFactor)), 16, 16);
@@ -1668,16 +1718,8 @@ export const Viewport: React.FC<ViewportProps> = ({
           if (!isEngineParent) return;
         }
 
-        const isJointVisible = visibleMeshes[`joint:${joint.name}`] !== false;
-        if (!isJointVisible) return;
-
         const pos = jointPositions.get(joint.name.toLowerCase());
         if (!pos) return;
-
-        invoke("log_event", {
-          level: "INFO",
-          message: `Joint ${joint.name}: parent=${joint.parent_name}, localCoords=[${joint.local_transform.m[3][0].toFixed(3)}, ${joint.local_transform.m[3][1].toFixed(3)}, ${joint.local_transform.m[3][2].toFixed(3)}], worldPos=[${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)}]`
-        }).catch(console.error);
 
         // Decompose global orientation matrix
         const matrix = getJointGlobalMatrix(joint.name);
@@ -1690,12 +1732,13 @@ export const Viewport: React.FC<ViewportProps> = ({
         jointMesh.position.copy(pos);
         jointMesh.quaternion.copy(q);
         jointMesh.name = `joint:${joint.name}`;
+        jointMesh.userData.visKey = `joint:${joint.name}`;
+        jointMesh.visible = isKeyVisible(`joint:${joint.name}`);
         jointsGroup.add(jointMesh);
 
         // Draw bone line if there is a parent joint, parent is visible, and showBoneLines is enabled
         if (showBoneLines && joint.parent_name) {
-          const isParentVisible = visibleMeshes[`joint:${joint.parent_name}`] !== false;
-          if (isParentVisible) {
+          {
             const parentPos = jointPositions.get(joint.parent_name.toLowerCase());
             if (parentPos) {
               const boneGeo = new THREE.BufferGeometry().setFromPoints([pos, parentPos]);
@@ -1709,15 +1752,16 @@ export const Viewport: React.FC<ViewportProps> = ({
               boneLine.name = `bone:${joint.parent_name}->${joint.name}`;
               boneLine.userData = {
                 parentJointName: joint.parent_name,
-                childJointName: joint.name
+                childJointName: joint.name,
+                visKeys: [`joint:${joint.name}`, `joint:${joint.parent_name}`],
               };
+              boneLine.visible = isKeyVisible(`joint:${joint.name}`) && isKeyVisible(`joint:${joint.parent_name}`);
               jointsGroup.add(boneLine);
             }
           }
         }
       });
 
-      invoke("log_event", { level: "INFO", message: `Viewport: Joint rendering complete. Rendering ${model.markers.length} markers...` }).catch(console.error);
 
       // 4. Render markers using scaleFactor
       const mr = Math.max(0.1, Math.min(2.5, 0.05 * scaleFactor));
@@ -1732,9 +1776,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       });
 
       model.markers.forEach((marker) => {
-        const isMarkerVisible = visibleMeshes[`marker:${marker.name}`] !== false;
-        if (!isMarkerVisible) return;
-
         const markerMesh = new THREE.Mesh(markerGeo, markerMat);
         
         // Calculate global transform recursively from parent joint
@@ -1758,8 +1799,10 @@ export const Viewport: React.FC<ViewportProps> = ({
         markerMesh.name = `marker:${marker.name}`;
         markerMesh.userData = {
           parentJointName: marker.parent_joint,
-          baseMatrix: localMatrix.clone()
+          baseMatrix: localMatrix.clone(),
+          visKey: `marker:${marker.name}`,
         };
+        markerMesh.visible = isKeyVisible(`marker:${marker.name}`);
         markersGroup.add(markerMesh);
         
         const markerAxes = new THREE.AxesHelper(0.4 * scaleFactor);
@@ -1769,9 +1812,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 5. Render NavLights (Pulsing Previews)
       if (model.nav_lights) {
         model.nav_lights.forEach((nav) => {
-          const isNavVisible = visibleMeshes[`navlight:${nav.name}`] !== false;
-          if (!isNavVisible) return;
-
           const color = new THREE.Color(nav.color.x, nav.color.y, nav.color.z);
           
           // Render the actual sprite size as a small solid pulsing sphere
@@ -1789,8 +1829,10 @@ export const Viewport: React.FC<ViewportProps> = ({
           navMesh.renderOrder = 20;
           navMesh.userData = {
             parentJointName: nav.name,
-            baseMatrix: new THREE.Matrix4()
+            baseMatrix: new THREE.Matrix4(),
+            visKey: `navlight:${nav.name}`,
           };
+          navMesh.visible = isKeyVisible(`navlight:${nav.name}`);
 
           const jointPos = jointPositions.get(nav.name.toLowerCase());
           if (jointPos) {
@@ -1828,8 +1870,8 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 6. Render Dockpaths (connected paths with splines)
       if (model.dockpaths) {
         model.dockpaths.forEach((path) => {
-          const isPathVisible = visibleMeshes[`dockpath:${path.name}`] !== false;
-          if (!isPathVisible) return;
+          const pathVisKey = `dockpath:${path.name}`;
+          const isPathVisible = isKeyVisible(pathVisKey);
 
           const parentMatrix = getJointGlobalMatrix(path.parent_name);
           const pointsInWorld: THREE.Vector3[] = [];
@@ -1870,8 +1912,10 @@ export const Viewport: React.FC<ViewportProps> = ({
             pyramidMesh.quaternion.copy(ptQuat);
             pyramidMesh.userData = {
               parentJointName: path.parent_name,
-              baseMatrix: localMatrix.clone()
+              baseMatrix: localMatrix.clone(),
+              visKey: pathVisKey,
             };
+            pyramidMesh.visible = isPathVisible;
 
             dockpathsGroup.add(pyramidMesh);
           });
@@ -1888,8 +1932,10 @@ export const Viewport: React.FC<ViewportProps> = ({
             pathLine.name = `dockpath_line:${path.name}`;
             pathLine.userData = {
               pathName: path.name,
-              pointCount: path.points.length
+              pointCount: path.points.length,
+              visKey: pathVisKey,
             };
+            pathLine.visible = isPathVisible;
             dockpathsGroup.add(pathLine);
           }
         });
@@ -2006,9 +2052,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 7. Render Engine Burns (exhaust trails)
       if (model.engine_burns) {
         model.engine_burns.forEach((burn) => {
-          const isBurnVisible = visibleMeshes[`engine_burn:${burn.name}`] !== false;
-          if (!isBurnVisible) return;
-
           const parentMatrix = getJointGlobalMatrix(burn.parent_name);
           const parentPos = new THREE.Vector3();
           const parentQuat = new THREE.Quaternion();
@@ -2028,8 +2071,10 @@ export const Viewport: React.FC<ViewportProps> = ({
             burnGroup.quaternion.copy(parentQuat);
             burnGroup.userData = {
               parentJointName: burn.parent_name,
-              baseMatrix: new THREE.Matrix4()
+              baseMatrix: new THREE.Matrix4(),
+              visKey: `engine_burn:${burn.name}`,
             };
+            burnGroup.visible = isKeyVisible(`engine_burn:${burn.name}`);
 
             const burnGeo = new THREE.BufferGeometry().setFromPoints(burnPoints);
             const burnMat = new THREE.LineBasicMaterial({
@@ -2063,9 +2108,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 8. Render Engine Glows
       if (model.engine_glows) {
         model.engine_glows.forEach((glow) => {
-          const isGlowVisible = visibleMeshes[`engine_glow:${glow.name}`] !== false;
-          if (!isGlowVisible) return;
-
           const parentMatrix = getJointGlobalMatrix(glow.parent_name);
           const parentPos = new THREE.Vector3();
           const parentQuat = new THREE.Quaternion();
@@ -2078,8 +2120,10 @@ export const Viewport: React.FC<ViewportProps> = ({
           glowGroup.quaternion.copy(parentQuat);
           glowGroup.userData = {
             parentJointName: glow.parent_name,
-            baseMatrix: new THREE.Matrix4()
+            baseMatrix: new THREE.Matrix4(),
+            visKey: `engine_glow:${glow.name}`,
           };
+          glowGroup.visible = isKeyVisible(`engine_glow:${glow.name}`);
 
           engineGlowsGroup.add(glowGroup);
         });
@@ -2088,9 +2132,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 9. Render Engine Shapes
       if (model.engine_shapes) {
         model.engine_shapes.forEach((shape) => {
-          const isShapeVisible = visibleMeshes[`engine_shape:${shape.name}`] !== false;
-          if (!isShapeVisible) return;
-
           const parentMatrix = getJointGlobalMatrix(shape.parent_name);
           const parentPos = new THREE.Vector3();
           const parentQuat = new THREE.Quaternion();
@@ -2103,8 +2144,10 @@ export const Viewport: React.FC<ViewportProps> = ({
           shapeGroup.quaternion.copy(parentQuat);
           shapeGroup.userData = {
             parentJointName: shape.parent_name,
-            baseMatrix: new THREE.Matrix4()
+            baseMatrix: new THREE.Matrix4(),
+            visKey: `engine_shape:${shape.name}`,
           };
+          shapeGroup.visible = isKeyVisible(`engine_shape:${shape.name}`);
 
           engineShapesGroup.add(shapeGroup);
         });
@@ -2113,9 +2156,6 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 10. Render Collision Meshes (Wireframe)
       if (model.collision_meshes) {
         model.collision_meshes.forEach((col) => {
-          const isColVisible = visibleMeshes[`collision:${col.name}`] !== false;
-          if (!isColVisible) return;
-
           const jointMatrix = getJointGlobalMatrix(col.name);
 
           const colGroup = new THREE.Group();
@@ -2235,8 +2275,10 @@ export const Viewport: React.FC<ViewportProps> = ({
           colGroup.applyMatrix4(jointMatrix);
           colGroup.userData = {
             parentJointName: col.name,
-            baseMatrix: new THREE.Matrix4()
+            baseMatrix: new THREE.Matrix4(),
+            visKey: `collision:${col.name}`,
           };
+          colGroup.visible = isKeyVisible(`collision:${col.name}`);
           collisionGroup.add(colGroup);
         });
       }
@@ -2317,13 +2359,44 @@ export const Viewport: React.FC<ViewportProps> = ({
           message: `Camera auto-focused for loaded HOD model "${model.name}": far=${camera.far.toFixed(0)} pos=[${camX.toFixed(1)},${camY.toFixed(1)},${camZ.toFixed(1)}]`,
         }).catch(console.error);
       }
+
+      textureCacheRef.current.forEach((entry, key) => {
+        if (!usedTextureKeys.has(key)) {
+          entry.tex.dispose();
+          textureCacheRef.current.delete(key);
+        }
+      });
+      sceneVersionRef.current++;
+
+      // One summary line per rebuild. Per-part/per-joint log_event calls used to
+      // fire hundreds of synchronous IPC + log-file writes on every edit; do not
+      // reintroduce logging inside the rebuild loops.
+      invoke("log_event", {
+        level: "INFO",
+        message: `Viewport scene rebuilt in ${(performance.now() - rebuildStart).toFixed(1)}ms (meshes: ${model.meshes.length}, joints: ${model.joints.length}, textures cached: ${textureCacheRef.current.size})`,
+      }).catch(console.error);
     } catch (e: any) {
       invoke("log_event", {
         level: "ERROR",
         message: `Exception thrown inside Viewport scene update useEffect: ${e.stack || e.toString()}`,
       }).catch(console.error);
     }
-  }, [model, visibleMeshes, isInitialized, showBoneLines, renderMode, teamColor, stripeColor, targetBoxes]);
+    // visibleMeshes is intentionally NOT a dependency: visibility toggles are
+    // applied by the effect below without rebuilding geometry or textures.
+  }, [model, isInitialized, showBoneLines, renderMode, teamColor, stripeColor, targetBoxes]);
+
+  // Apply node/layer visibility by flipping `.visible` on already-built objects.
+  useEffect(() => {
+    const visible = visibleMeshes;
+    const apply = (obj: THREE.Object3D) => {
+      const keys: string[] | undefined = obj.userData.visKeys ?? (obj.userData.visKey ? [obj.userData.visKey] : undefined);
+      if (keys) obj.visible = keys.every(key => visible[key] !== false);
+    };
+    [
+      meshesGroupRef, jointsGroupRef, markersGroupRef, navLightsGroupRef, collisionGroupRef,
+      dockpathsGroupRef, engineBurnsGroupRef, engineGlowsGroupRef, engineShapesGroupRef,
+    ].forEach(ref => ref.current?.children.forEach(apply));
+  }, [visibleMeshes, model, isInitialized, showBoneLines, renderMode, teamColor, stripeColor, targetBoxes]);
 
   // Hook visual gizmo to the selected node
   useEffect(() => {
@@ -2352,11 +2425,6 @@ export const Viewport: React.FC<ViewportProps> = ({
 
       let targetObj: THREE.Object3D | undefined;
 
-      invoke("log_event", {
-        level: "INFO",
-        message: `jointsGroup children count: ${jointsGroup.children.length}, names: ${jointsGroup.children.map(c => c.name).join(", ")}`
-      }).catch(console.error);
-
       if (selectedNode.type === "joint" || selectedNode.type === "engine_nozzle") {
         targetObj = jointsGroup.children.find(c => c.name.toLowerCase() === `joint:${selectedNode.name}`.toLowerCase());
       } else if (selectedNode.type === "weapon_group") {
@@ -2384,6 +2452,9 @@ export const Viewport: React.FC<ViewportProps> = ({
         level: "INFO",
         message: `Selection changed: type=${selectedNode.type}, name=${selectedNode.name}, foundTarget=${!!targetObj}, targetPos=${targetObj ? JSON.stringify(targetObj.position) : "none"}`
       }).catch(console.error);
+
+      // Hidden nodes used to be absent from the scene; keep them un-pickable.
+      if (targetObj && !targetObj.visible) targetObj = undefined;
 
       if (targetObj) {
         transformControls.attach(targetObj);
@@ -2414,7 +2485,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         targetObj.add(selectionAxesHelperRef.current);
       }
     }
-  }, [selectedNode, model]);
+  }, [selectedNode, model, visibleMeshes]);
 
   return (
     <div className="viewport-container" style={{ position: "relative" }}>

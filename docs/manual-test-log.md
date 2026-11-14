@@ -1348,7 +1348,30 @@ Test hod: `testing/hgn_destroyer/hgn_destroyer.hod` (vanilla; `.ship` latch list
 
 ### Manual in-game checks
 
-1. Save vanilla `hgn_destroyer.hod` from the editor; load in game; repair ships latch onto the destroyer (RepCap): [ ] NOT RUN (user)
+1. Save vanilla `hgn_destroyer.hod` from the editor; load in game; repair ships latch onto the destroyer (RepCap): [x] PASS (user, 14/11/2026: "both confirmed fixed in game")
 2. Salvage/capture latching on the saved destroyer works: [ ] NOT RUN (user)
-3. Team badge is visible on the destroyer hull at the vanilla location: [ ] NOT RUN (user)
+3. Team badge is visible on the destroyer hull at the vanilla location: [x] PASS (user, 14/11/2026)
 4. No crash on load; hull textures unchanged: [ ] NOT RUN (user)
+
+---
+
+Timestamp: `14/11/2026` (performance)
+Test hod: `testing/hgn_destroyer/hgn_destroyer.hod`, a mothership HOD (both loaded as JSON into a mocked-Tauri production bundle)
+
+**Goal**: Verify viewport/hierarchy visibility toggles, selection and transform commits no longer stall the UI, and that tree/visibility behavior is unchanged.
+
+### Automated pre-verification (agent)
+
+1. `npx tsc --noEmit` and `npm run build`: [x] PASS
+2. Headless Chromium long-task measurement (before → after), destroyer: layer/eye toggles ~250–330 ms → 0 ms; transform commit 248 ms → 0 ms; IPC per toggle 114 → 0: [x] PASS
+3. Same, mothership: every action ~940–980 ms → 0 ms long tasks; IPC per toggle 217 → 0: [x] PASS
+4. Hierarchy tree row text (with depth) diffed against a HEAD build for both models: identical: [x] PASS
+5. Collision Hulls layer off/on screenshots: hull hidden, then restored: [x] PASS
+6. `renameWeaponFamilyName`/`renameAssemblyMember`: `RepairPoint0Heading` → `RepairPoint7Heading`, `Weapon_Gun0Slave1_Rest` → `Weapon_BigSlave1_Rest`, `RepairPoint01Heading` untouched: [x] PASS
+
+### Manual editor checks
+
+1. Toggle Viewport Layers and hierarchy eye icons on a large ship; viewport updates immediately without textures reloading: [ ] NOT RUN (user)
+2. Drag translate/rotate gizmo on a joint; release commits without a multi-second stall; hidden nodes cannot be gizmo-selected: [ ] NOT RUN (user)
+3. Rename a Repair Point group from the Inspector; `Heading/Left/Up` children follow the new name: [ ] NOT RUN (user)
+4. Animation playback still animates joints/meshes/dock points: [ ] NOT RUN (user)

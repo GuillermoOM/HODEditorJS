@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { invoke } from "@tauri-apps/api/core";
+import { renameAssemblyMember } from "../weapon_utils";
 import { HODModel, Vector3D, HODNavLight, HODDockpoint, Matrix4D } from "./Viewport";
 import { parseTextureGroups, SHADER_SLOTS, KNOWN_TYPES, getExpectedSlots, findTextureForSlot } from "../texture_utils";
 import { parseMtl, resolveDiffuseTexture } from "../mtl_utils";
@@ -1248,47 +1249,23 @@ export const Inspector: React.FC<InspectorProps> = ({
         const nextName = renameWeaponName.trim();
         if (!nextName || nextName === baseName) return;
 
-        const updatedJoints = model.joints.map((joint) => {
-          let updatedName = joint.name;
-          let updatedParent = joint.parent_name;
-          
-          if (joint.name.toLowerCase() === baseName.toLowerCase()) {
-            updatedName = nextName;
-          } else if (joint.name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
-            const suffix = joint.name.substring(baseName.length + 1);
-            updatedName = `${nextName}_${suffix}`;
-          }
-          if (joint.parent_name && joint.parent_name.toLowerCase() === baseName.toLowerCase()) {
-            updatedParent = nextName;
-          } else if (joint.parent_name && joint.parent_name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
-            const suffix = joint.parent_name.substring(baseName.length + 1);
-            updatedParent = `${nextName}_${suffix}`;
-          }
+        // renameAssemblyMember also covers latch children (`RepairPoint0Heading`),
+        // which have no underscore before the suffix.
+        const updatedJoints = model.joints.map((joint) => ({
+          ...joint,
+          name: renameAssemblyMember(joint.name, baseName, nextName),
+          parent_name: joint.parent_name ? renameAssemblyMember(joint.parent_name, baseName, nextName) : joint.parent_name,
+        }));
 
-          return { ...joint, name: updatedName, parent_name: updatedParent };
-        });
+        const updatedMarkers = model.markers.map((marker) => ({
+          ...marker,
+          parent_joint: renameAssemblyMember(marker.parent_joint, baseName, nextName),
+        }));
 
-        const updatedMarkers = model.markers.map((marker) => {
-          let updatedParent = marker.parent_joint;
-          if (marker.parent_joint.toLowerCase() === baseName.toLowerCase()) {
-            updatedParent = nextName;
-          } else if (marker.parent_joint.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
-            const suffix = marker.parent_joint.substring(baseName.length + 1);
-            updatedParent = `${nextName}_${suffix}`;
-          }
-          return { ...marker, parent_joint: updatedParent };
-        });
-
-        const updatedMeshes = model.meshes.map((mesh) => {
-          let updatedParent = mesh.parent_name;
-          if (mesh.parent_name.toLowerCase() === baseName.toLowerCase()) {
-            updatedParent = nextName;
-          } else if (mesh.parent_name.toLowerCase().startsWith(baseName.toLowerCase() + "_")) {
-            const suffix = mesh.parent_name.substring(baseName.length + 1);
-            updatedParent = `${nextName}_${suffix}`;
-          }
-          return { ...mesh, parent_name: updatedParent };
-        });
+        const updatedMeshes = model.meshes.map((mesh) => ({
+          ...mesh,
+          parent_name: renameAssemblyMember(mesh.parent_name, baseName, nextName),
+        }));
 
         onModelChange?.({
           ...model,

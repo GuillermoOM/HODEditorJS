@@ -79,7 +79,7 @@ If hierarchy diagnostics and Inspector disagree on required components, do not g
 
 Assembly-level rename should update all related component names and references for that assembly. Subnode-level rename is forbidden for protected weapon assembly subnodes.
 
-Point-group rename behavior must be checked in Inspector before making claims, because point-group semantics are not identical to weapon-group tree semantics.
+Point-group rename behavior must be checked in Inspector before making claims, because point-group semantics are not identical to weapon-group tree semantics. Group membership for rename and tree grouping is `weapon_utils.ts#isJointInWeaponBase`: `${base}` and `${base}_*` for every assembly, plus `${base}Heading/Left/Up` (no underscore) for Capture/Repair/SalvagePointN bases. Inspector group rename uses `renameAssemblyMember` so latch children follow the new base name.
 
 ## Delete Boundaries
 

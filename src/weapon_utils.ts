@@ -64,11 +64,24 @@ export function nextSlaveBase(model: HODModel, baseName: string): string {
   }
 }
 
-/** True for `${base}` or any descendant joint `${base}_...`. */
+const LATCH_POINT_BASE = /^(capturepoint|repairpoint|salvagepoint)\d+$/;
+const LATCH_POINT_SUFFIX = /^(heading|left|up)$/;
+
+/**
+ * True for `${base}` or any descendant joint `${base}_...`. Latch points
+ * (Capture/Repair/SalvagePointN) also own `${base}Heading/Left/Up`: the engine
+ * resolves those names without an underscore, as every vanilla HOD stores them.
+ */
 export function isJointInWeaponBase(name: string, baseName: string): boolean {
   const lower = name.toLowerCase();
   const base = baseName.toLowerCase();
-  return lower === base || lower.startsWith(`${base}_`);
+  if (lower === base || lower.startsWith(`${base}_`)) return true;
+  return LATCH_POINT_BASE.test(base) && lower.startsWith(base) && LATCH_POINT_SUFFIX.test(lower.slice(base.length));
+}
+
+/** Renames an assembly member, keeping its suffix (`_Position`, `Heading`, ...). */
+export function renameAssemblyMember(name: string, baseName: string, nextBase: string): string {
+  return isJointInWeaponBase(name, baseName) ? `${nextBase}${name.substring(baseName.length)}` : name;
 }
 
 /** True for any base in a weapon family (main + slaves). */
@@ -142,7 +155,7 @@ export function renameWeaponFamilyName(
     if (lower === baseLower) {
       return `${newBaseName}${base.substring(oldBaseName.length)}`;
     }
-    if (lower.startsWith(`${baseLower}_`)) {
+    if (isJointInWeaponBase(name, base)) {
       return `${newBaseName}${base.substring(oldBaseName.length)}${name.substring(base.length)}`;
     }
   }
