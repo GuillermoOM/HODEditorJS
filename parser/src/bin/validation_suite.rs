@@ -343,6 +343,8 @@ fn parse_obj_vertex(
         uv: ti
             .and_then(|idx| uvs.get(idx).cloned())
             .or(Some(hwr_hod_parser::hod::Vector2 { u: 0.0, v: 0.0 })),
+        uv1: None,
+        uv2: None,
         tangent: Some(hwr_hod_parser::hod::Vector3 {
             x: 1.0,
             y: 0.0,

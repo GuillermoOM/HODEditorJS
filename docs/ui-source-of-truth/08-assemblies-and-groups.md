@@ -71,7 +71,7 @@ Current Inspector-backed required component keys are:
 - Weapon group: `Position`, `Direction`, `Muzzle`, `Rest`.
 - Turret group: `Position`, `Direction`, `Latitude`, `Muzzle`, `Rest`. `Barrel` is optional and unverified.
 - Hardpoint group: `Position`, `Direction`, `Rest`.
-- Capture point, repair point, and salvage point groups: `Base`, `Heading`, `Left`, `Up`.
+- Capture point, repair point, and salvage point groups: `Base`, `Heading`, `Left`, `Up`. The child joints are named `${base}Heading`, `${base}Left`, `${base}Up` with **no underscore** (`loadLatchPointList` in `.ship` files resolves that spelling; 0 vanilla HODs use `_Heading/_Left/_Up`). `HierarchyTree.tsx#getWeaponGroupInfo` also groups the legacy `${base}_Heading` form written by builds up to v1.2.16; the parser migrates those back on load (`auto_repair_assembly_names`).
 
 If hierarchy diagnostics and Inspector disagree on required components, do not guess. Read both implementations and either reconcile docs to source or ask for a behavior decision.
 

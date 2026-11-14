@@ -13,6 +13,10 @@ struct HashableVertex {
     c: u32,
     u: u32,
     v: u32,
+    u1: u32,
+    v1: u32,
+    u2: u32,
+    v2: u32,
     tx: u32,
     ty: u32,
     tz: u32,
@@ -38,6 +42,14 @@ impl HashableVertex {
         let (u, v_uv) =
             v.uv.as_ref()
                 .map_or((0, 0), |uv| (f32_to_u32(uv.u), f32_to_u32(uv.v)));
+        let (u1, v1) = v
+            .uv1
+            .as_ref()
+            .map_or((0, 0), |uv| (f32_to_u32(uv.u), f32_to_u32(uv.v)));
+        let (u2, v2) = v
+            .uv2
+            .as_ref()
+            .map_or((0, 0), |uv| (f32_to_u32(uv.u), f32_to_u32(uv.v)));
         let (tx, ty, tz) = v.tangent.as_ref().map_or((0, 0, 0), |t| {
             (f32_to_u32(t.x), f32_to_u32(t.y), f32_to_u32(t.z))
         });
@@ -55,6 +67,10 @@ impl HashableVertex {
             c: v.color.unwrap_or(0),
             u,
             v: v_uv,
+            u1,
+            v1,
+            u2,
+            v2,
             tx,
             ty,
             tz,
@@ -106,12 +122,33 @@ pub struct CompiledMesh {
     pub new_parts: Vec<HODMeshPart>,
 }
 
-fn normalize_hwrm_vertex_mask(mask: u32) -> u32 {
+/// Extra UV sets (0x10 uv1, 0x20 uv2) only exist in BMSH v1401; a v1400
+/// reader (engine HodMesh.cpp) copies uv0 into uv1. Keep a bit only when the
+/// part really carries that set (parsed from a v1401 file): `badge` decals
+/// are placed through uv1, so stripping it moved every badge.
+fn normalize_hwrm_vertex_mask(part: &HODMeshPart) -> u32 {
+    let mask = part.vertex_mask;
     let mut normalized = mask & !0x30;
     if (mask & 0x10) != 0 {
         normalized |= 0x08;
+        if part.vertices.iter().any(|v| v.uv1.is_some()) {
+            normalized |= 0x10;
+        }
+    }
+    if (mask & 0x20) != 0 && part.vertices.iter().any(|v| v.uv2.is_some()) {
+        normalized |= 0x20;
     }
     normalized
+}
+
+/// BMSH version for a compiled part list: v1401 only when a part keeps an
+/// extra UV set, so meshes without one stay byte-identical to before.
+fn bmsh_version_for_parts(parts: &[HODMeshPart]) -> u32 {
+    if parts.iter().any(|part| (part.vertex_mask & 0x30) != 0) {
+        1401
+    } else {
+        1400
+    }
 }
 
 fn write_len_string<W: Write>(writer: &mut W, s: &str) -> std::io::Result<()> {
@@ -521,7 +558,7 @@ pub fn compile_model_meshes(model: &mut HODModel) -> Vec<CompiledMesh> {
 
                 new_parts.push(HODMeshPart {
                     material_index: part.material_index,
-                    vertex_mask: normalize_hwrm_vertex_mask(part.vertex_mask),
+                    vertex_mask: normalize_hwrm_vertex_mask(part),
                     vertices,
                     indices,
                 });
@@ -540,7 +577,7 @@ pub fn compile_model_meshes(model: &mut HODModel) -> Vec<CompiledMesh> {
 
                 new_parts.push(HODMeshPart {
                     material_index: part.material_index,
-                    vertex_mask: normalize_hwrm_vertex_mask(part.vertex_mask),
+                    vertex_mask: normalize_hwrm_vertex_mask(part),
                     vertices: dedup.get_vertices().to_vec(),
                     indices: new_indices,
                 });
@@ -571,6 +608,7 @@ pub fn generate_pool_data(
     let mut decomp_face = Vec::new();
 
     for mesh in compiled_meshes {
+        let bmsh_version = bmsh_version_for_parts(&mesh.new_parts);
         for part in &mesh.new_parts {
             let mut vertex_stride = 0;
             if (part.vertex_mask & 0x01) != 0 {
@@ -612,7 +650,7 @@ pub fn generate_pool_data(
                     &mut decomp_mesh,
                     v,
                     part.vertex_mask,
-                    1400,
+                    bmsh_version,
                     vertex_stride,
                 );
             }
@@ -730,7 +768,8 @@ pub fn generate_mult_chunks(compiled_meshes: &[CompiledMesh]) -> std::io::Result
             m_cursor.write_all(b"NRML")?;
             m_cursor.write_u32::<BigEndian>(nrml_size as u32)?;
             m_cursor.write_all(b"BMSH")?;
-            m_cursor.write_u32::<BigEndian>(1400)?; // nested NRML BMSH version
+            // Nested NRML BMSH version: 1401 when a part keeps uv1/uv2.
+            m_cursor.write_u32::<BigEndian>(bmsh_version_for_parts(&mesh.new_parts))?;
 
             m_cursor.write_i32::<LittleEndian>(mesh.lod)?;
             m_cursor.write_i32::<LittleEndian>(mesh.new_parts.len() as i32)?;

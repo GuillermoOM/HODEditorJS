@@ -32,6 +32,14 @@ pub struct HODVertex {
     pub normal: Option<Vector3>,
     pub color: Option<u32>,
     pub uv: Option<Vector2>,
+    /// Second UV set (vertex mask 0x10, BMSH v1401). The `badge` shader
+    /// samples the team badge through this set (SOB_BADGE `inUV1`), so it
+    /// must round-trip verbatim; it is not a copy of `uv`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uv1: Option<Vector2>,
+    /// Third UV set (vertex mask 0x20, BMSH v1401).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uv2: Option<Vector2>,
     pub tangent: Option<Vector3>,
     pub binormal: Option<Vector3>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

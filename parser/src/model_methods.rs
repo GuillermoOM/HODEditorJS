@@ -60,10 +60,42 @@ impl HODModel {
     pub fn auto_repair_assembly_names(&mut self) {
         let mut renames: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
-        let suffixes = ["Heading", "Position", "Direction", "Rest", "Left", "Up"];
+        // Weapon/hardpoint assemblies use `_Position`/`_Direction`/`_Rest`.
+        // Latch points (CapturePoint/RepairPoint/SalvagePoint, any name passed
+        // to loadLatchPointList) are the opposite: the engine resolves
+        // `<base>Heading`/`<base>Left`/`<base>Up` with NO underscore, and no
+        // vanilla HOD has `_Heading`/`_Left`/`_Up`. Inserting the underscore
+        // there made the game ignore every repair/salvage/capture point.
+        let suffixes = ["Position", "Direction", "Rest"];
+        let latch_suffixes = ["Heading", "Left", "Up"];
+        let joint_names: std::collections::HashSet<String> =
+            self.joints.iter().map(|j| j.name.to_lowercase()).collect();
 
         for joint in &self.joints {
             let name = &joint.name;
+            // Undo the underscore older editor builds wrote on latch children.
+            // Only for joints parented to their own `<base>` joint, so weapon
+            // turrets (`Weapon_X_Heading` under `Weapon_X_Position`) and
+            // unrelated names are left alone.
+            for suffix in &latch_suffixes {
+                let underscored = format!("_{}", suffix);
+                if !name.ends_with(&underscored) {
+                    continue;
+                }
+                let base = &name[..name.len() - underscored.len()];
+                let parent_is_base = joint
+                    .parent_name
+                    .as_deref()
+                    .map_or(false, |parent| parent.eq_ignore_ascii_case(base));
+                let fixed = format!("{}{}", base, suffix);
+                if !base.is_empty()
+                    && parent_is_base
+                    && !base.to_lowercase().starts_with("weapon_")
+                    && !joint_names.contains(&fixed.to_lowercase())
+                {
+                    renames.insert(name.clone(), fixed);
+                }
+            }
             for suffix in &suffixes {
                 if name.ends_with(suffix) && !name.ends_with(&format!("_{}", suffix)) {
                     let base = &name[..name.len() - suffix.len()];
@@ -458,10 +490,30 @@ impl HODModel {
                 "Normal Map (NORM)",
             ];
 
-            if shader.contains("badge") && !shader.contains("glow") {
-                expected_slots = vec!["Diffuse Map (DIFF)"];
-            } else if shader.contains("badgeglow") {
-                expected_slots = vec!["Badge Diffuse Map (DIFF)", "Glow Map (GLOW)"];
+            // `badge` is the ship shader plus a decal pass: the badge image
+            // comes from the player's team colour at runtime, never from the
+            // HOD, and the decal is only blended where $team marks paint. It
+            // needs the full ship slot set; trimming it to $diffuse made every
+            // saved badge invisible in game. Keep these aligned with
+            // `shader_slot_table` (serialize.rs) and `SHADER_SLOTS`
+            // (src/texture_utils.ts). Vanilla sweep: 97 `badge` STATs use
+            // $diffuse/$glow/$team/$normal; the one `badgeglow`
+            // (kus_mothership) uses $diffuse/$spec/$glow/$team/$normal.
+            if shader.contains("badgeglow") {
+                expected_slots = vec![
+                    "Diffuse Map (DIFF)",
+                    "Specular Map (SPEC)",
+                    "Glow Map (GLOW)",
+                    "Team Paint Map (TEAM)",
+                    "Normal Map (NORM)",
+                ];
+            } else if shader.contains("badge") {
+                expected_slots = vec![
+                    "Diffuse Map (DIFF)",
+                    "Glow Map (GLOW)",
+                    "Team Paint Map (TEAM)",
+                    "Normal Map (NORM)",
+                ];
             } else if shader.contains("thruster") {
                 // Canonical STAT slot order: on-state diffuse, off-state
                 // diffuse, on-state glow, off-state glow, team, normal.
@@ -914,6 +966,126 @@ mod tests {
                 "Engine_DIFX".to_string(),
                 String::new(),
             ]
+        );
+    }
+
+    fn joint(name: &str, parent: Option<&str>) -> HODJoint {
+        HODJoint {
+            name: name.to_string(),
+            parent_name: parent.map(|p| p.to_string()),
+            local_transform: identity_matrix(),
+            position: None,
+            rotation: None,
+            scale: None,
+        }
+    }
+
+    #[test]
+    fn auto_repair_keeps_engine_latch_point_names() {
+        // loadLatchPointList resolves `<base>Heading/Left/Up` without an
+        // underscore; vanilla hgn_destroyer uses exactly these names.
+        let mut model = HODModel::new();
+        model.joints = vec![
+            joint("Root", None),
+            joint("RepairPoint0", Some("Root")),
+            joint("RepairPoint0Heading", Some("RepairPoint0")),
+            joint("RepairPoint0Left", Some("RepairPoint0")),
+            joint("RepairPoint0Up", Some("RepairPoint0")),
+            joint("Weapon_GunPosition", Some("Root")),
+        ];
+
+        model.auto_repair_assembly_names();
+
+        let names: Vec<&str> = model.joints.iter().map(|j| j.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "Root",
+                "RepairPoint0",
+                "RepairPoint0Heading",
+                "RepairPoint0Left",
+                "RepairPoint0Up",
+                "Weapon_Gun_Position",
+            ]
+        );
+    }
+
+    #[test]
+    fn auto_repair_restores_underscored_latch_point_names() {
+        // Files saved by older builds carry `<base>_Heading`; migrate them
+        // back, but leave weapon turret joints alone.
+        let mut model = HODModel::new();
+        model.joints = vec![
+            joint("Root", None),
+            joint("SalvagePoint1", Some("Root")),
+            joint("SalvagePoint1_Heading", Some("SalvagePoint1")),
+            joint("SalvagePoint1_Left", Some("SalvagePoint1")),
+            joint("SalvagePoint1_Up", Some("SalvagePoint1")),
+            joint("Weapon_Gun_Position", Some("Root")),
+            joint("Weapon_Gun_Heading", Some("Weapon_Gun_Position")),
+        ];
+        model.markers = vec![HODMarker {
+            name: "Marker".to_string(),
+            parent_joint: "SalvagePoint1_Up".to_string(),
+            position: Vector3 { x: 0.0, y: 0.0, z: 0.0 },
+            rotation: identity_matrix(),
+            rotation_euler: None,
+        }];
+
+        model.auto_repair_assembly_names();
+
+        let names: Vec<&str> = model.joints.iter().map(|j| j.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "Root",
+                "SalvagePoint1",
+                "SalvagePoint1Heading",
+                "SalvagePoint1Left",
+                "SalvagePoint1Up",
+                "Weapon_Gun_Position",
+                "Weapon_Gun_Heading",
+            ]
+        );
+        assert_eq!(model.markers[0].parent_joint, "SalvagePoint1Up");
+    }
+
+    #[test]
+    fn auto_assign_keeps_full_badge_slot_set() {
+        // A `badge` material is the ship shader plus a decal pass; it needs
+        // $diffuse/$glow/$team/$normal (97 vanilla STATs), not $diffuse only.
+        let names = [
+            "Hull_DIFF",
+            "Hull_GLOW",
+            "Hull_TEAM",
+            "Hull_NORM",
+        ];
+        let mut model = HODModel::new();
+        model.textures = names
+            .iter()
+            .map(|name| HODTexture {
+                name: name.to_string(),
+                width: 1,
+                height: 1,
+                format: "DXT1".to_string(),
+                png_preview: None,
+                png_data: None,
+                source_path: None,
+            })
+            .collect();
+        model.materials = vec![HODMaterial {
+            name: "badge".to_string(),
+            shader_name: "badge".to_string(),
+            texture_maps: names.iter().map(|name| name.to_string()).collect(),
+            parameters: Vec::new(),
+            params: Vec::new(),
+        }];
+
+        model.auto_assign_and_resize_textures();
+
+        assert_eq!(
+            model.materials[0].texture_maps,
+            names.iter().map(|name| name.to_string()).collect::<Vec<_>>()
         );
     }
 }

@@ -1323,3 +1323,32 @@ Test hod: `kus_destroyer` (6 EngineGlows), `kus_targetdrone` (2 EngineShapes + 2
 1. Load saved `kus_destroyer` in game; engine glow renders (not missing): [ ] NOT RUN (user)
 2. Load saved thruster HOD; nozzle uses on/off diffuse/glow maps (no white/black fallback, no fake bump): [ ] NOT RUN (user)
 3. No crash on load: [ ] NOT RUN (user)
+
+---
+
+SHA: `(working tree - latch point names + badge STAT/UV1)`
+Timestamp: `14/11/2026`
+Test hod: `testing/hgn_destroyer/hgn_destroyer.hod` (vanilla; `.ship` latch lists `SalCap`/`CapCap`/`RepCap`; `badge`/`badge2` materials), `testing/hgn_destroyer/hgn_destroyer-saved.hod` (v1.2.16 save, broken)
+
+**Goal**: Verify that saved HODs keep engine-resolvable latch joint names (`RepairPoint0Heading`, not `RepairPoint0_Heading`) and keep badge materials usable (4 STAT texture params, uv1 data, BMSH v1401).
+
+### Automated pre-verification (agent)
+
+1. `cargo test --manifest-path parser/Cargo.toml`: [x] PASS (48 tests)
+2. `npm run build`: [x] PASS (Vite chunk-size warning only)
+3. `distrobox enter mesa-dev -- cargo check --manifest-path src-tauri/Cargo.toml`: [x] PASS
+4. `cargo run --bin verify_lossless`: [x] PASS (all reparse counts identical; deltas `136/-74546/-761139/-5336579` vs HEAD `136/-74546/-761130/-5336577`, explained by latch name migration on `ter_fenris` (-9) and `asteroid_3` `Latch3*` kept (-2))
+5. `hgn_destroyer.hod` load (`parse_with_external` + `auto_assign_and_resize_textures`) → `generate_v2_from_model` → reparse: latch joints `RepairPoint0Heading/Left/Up` unchanged; `badge`/`badge2` STAT `$diffuse/$glow/$team/$normal` (was `$diffuse` only); nested BMSH `0x579` (was `0x578`); 15/15 parts keep mask `0x601B` and identical (pos, uv0, uv1) sets: [x] PASS
+
+### Manual editor checks
+
+1. Open vanilla `hgn_destroyer.hod`; Hierarchy shows `RepairPoint0..3`, `SalvagePoint1..4`, `CapturePoint0..1` as complete point groups (no missing Heading/Left/Up warning): [ ] NOT RUN (user)
+2. Add Node → Repair Point; created children are `RepairPointNHeading/Left/Up`: [ ] NOT RUN (user)
+3. Badge material inspector shows Diffuse/Glow/Team/Normal assigned: [ ] NOT RUN (user)
+
+### Manual in-game checks
+
+1. Save vanilla `hgn_destroyer.hod` from the editor; load in game; repair ships latch onto the destroyer (RepCap): [ ] NOT RUN (user)
+2. Salvage/capture latching on the saved destroyer works: [ ] NOT RUN (user)
+3. Team badge is visible on the destroyer hull at the vanilla location: [ ] NOT RUN (user)
+4. No crash on load; hull textures unchanged: [ ] NOT RUN (user)

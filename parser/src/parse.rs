@@ -928,6 +928,8 @@ impl HODModel {
                                                     normal: None,
                                                     color: None,
                                                     uv: None,
+                                                    uv1: None,
+                                                    uv2: None,
                                                     tangent: None,
                                                     binormal: None,
                                                     skinning_data: None,
@@ -1132,6 +1134,8 @@ impl HODModel {
                                                             normal: None,
                                                             color: None,
                                                             uv: None,
+                                                            uv1: None,
+                                                            uv2: None,
                                                             tangent: None,
                                                             binormal: None,
                                                             skinning_data: None,
@@ -1693,24 +1697,30 @@ fn read_vertex<R: Read>(
         uv = Some(Vector2 { u, v });
     }
 
+    // Keep the extra UV sets: `badge` materials place the team badge decal
+    // through uv1, and the writer used to zero it.
+    let mut uv1 = None;
+    let mut uv2 = None;
     if version == 1401 {
         if (vertex_mask & 0x10) != 0 {
-            let _u1 = vertex_reader
+            let u = vertex_reader
                 .read_f32::<LittleEndian>()
                 .map_err(|e| e.to_string())?;
-            let _v1 = vertex_reader
+            let v = vertex_reader
                 .read_f32::<LittleEndian>()
                 .map_err(|e| e.to_string())?;
             bytes_read += 8;
+            uv1 = Some(Vector2 { u, v });
         }
         if (vertex_mask & 0x20) != 0 {
-            let _u2 = vertex_reader
+            let u = vertex_reader
                 .read_f32::<LittleEndian>()
                 .map_err(|e| e.to_string())?;
-            let _v2 = vertex_reader
+            let v = vertex_reader
                 .read_f32::<LittleEndian>()
                 .map_err(|e| e.to_string())?;
             bytes_read += 8;
+            uv2 = Some(Vector2 { u, v });
         }
     }
 
@@ -1769,6 +1779,8 @@ fn read_vertex<R: Read>(
         normal,
         color,
         uv,
+        uv1,
+        uv2,
         tangent,
         binormal,
         skinning_data,
@@ -2278,6 +2290,8 @@ fn parse_kdop_collision_mesh(data: &[u8], name: &str) -> Result<HODCollisionMesh
             normal: None,
             color: None,
             uv: None,
+            uv1: None,
+            uv2: None,
             tangent: None,
             binormal: None,
             skinning_data: None,

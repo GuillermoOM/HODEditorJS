@@ -249,6 +249,8 @@ pub fn parse_dae(xml_str: &str) -> Result<HODModel, String> {
                                     z: 1.0,
                                 }),
                                 uv: Some(Vector2 { u: 0.0, v: 0.0 }),
+                                uv1: None,
+                                uv2: None,
                                 color: Some(0xFFFFFFFF),
                                 skinning_data: None,
                             };

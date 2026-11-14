@@ -109,21 +109,35 @@ pub fn write_vertex<W: Write>(
         bytes_written += 8;
     }
     if version == 1401 {
+        // Write the parsed extra UV sets back. When a vertex has none (new
+        // geometry), fall back to uv0, which is what the engine itself does
+        // for meshes without a second set; zeros would pin a badge decal to
+        // a single texel.
         if (vertex_mask & 0x10) != 0 {
+            let uv1 = vertex
+                .uv1
+                .clone()
+                .or_else(|| vertex.uv.clone())
+                .unwrap_or(Vector2 { u: 0.0, v: 0.0 });
             writer
-                .write_f32::<LittleEndian>(0.0)
+                .write_f32::<LittleEndian>(uv1.u)
                 .map_err(|e| e.to_string())?;
             writer
-                .write_f32::<LittleEndian>(0.0)
+                .write_f32::<LittleEndian>(uv1.v)
                 .map_err(|e| e.to_string())?;
             bytes_written += 8;
         }
         if (vertex_mask & 0x20) != 0 {
+            let uv2 = vertex
+                .uv2
+                .clone()
+                .or_else(|| vertex.uv.clone())
+                .unwrap_or(Vector2 { u: 0.0, v: 0.0 });
             writer
-                .write_f32::<LittleEndian>(0.0)
+                .write_f32::<LittleEndian>(uv2.u)
                 .map_err(|e| e.to_string())?;
             writer
-                .write_f32::<LittleEndian>(0.0)
+                .write_f32::<LittleEndian>(uv2.v)
                 .map_err(|e| e.to_string())?;
             bytes_written += 8;
         }
@@ -3597,6 +3611,8 @@ mod tests {
                             normal: None,
                             color: None,
                             uv: None,
+                            uv1: None,
+                            uv2: None,
                             tangent: None,
                             binormal: None,
                             skinning_data: None,

@@ -1146,23 +1146,23 @@ export const Inspector: React.FC<InspectorProps> = ({
       } else if (groupType === "capture_point_group") {
         jointSpecs = [
           { key: "Base", label: "1. Base Joint", suffix: "", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
-          { key: "Heading", label: "2. Heading", suffix: "_Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
-          { key: "Left", label: "3. Left", suffix: "_Left", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
-          { key: "Up", label: "4. Up", suffix: "_Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
+          { key: "Heading", label: "2. Heading", suffix: "Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
+          { key: "Left", label: "3. Left", suffix: "Left", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
+          { key: "Up", label: "4. Up", suffix: "Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
         ];
       } else if (groupType === "repair_point_group") {
         jointSpecs = [
           { key: "Base", label: "1. Base Joint", suffix: "", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
-          { key: "Heading", label: "2. Heading", suffix: "_Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
-          { key: "Left", label: "3. Left", suffix: "_Left", parentSuffix: "", defaultOffset: { x: 5.0, y: 0, z: 0 } },
-          { key: "Up", label: "4. Up", suffix: "_Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
+          { key: "Heading", label: "2. Heading", suffix: "Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
+          { key: "Left", label: "3. Left", suffix: "Left", parentSuffix: "", defaultOffset: { x: 5.0, y: 0, z: 0 } },
+          { key: "Up", label: "4. Up", suffix: "Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
         ];
       } else if (groupType === "salvage_point_group") {
         jointSpecs = [
           { key: "Base", label: "1. Base Joint", suffix: "", parentSuffix: null, defaultOffset: { x: 0, y: 0, z: 0 } },
-          { key: "Heading", label: "2. Heading", suffix: "_Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
-          { key: "Left", label: "3. Left", suffix: "_Left", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
-          { key: "Up", label: "4. Up", suffix: "_Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
+          { key: "Heading", label: "2. Heading", suffix: "Heading", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
+          { key: "Left", label: "3. Left", suffix: "Left", parentSuffix: "", defaultOffset: { x: 0, y: 0, z: 5.0 } },
+          { key: "Up", label: "4. Up", suffix: "Up", parentSuffix: "", defaultOffset: { x: 0, y: 5.0, z: 0 } },
         ];
       }
 

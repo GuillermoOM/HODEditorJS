@@ -543,7 +543,13 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     }
     
     // Check point groups (Capture, Repair, Salvage, Hardpoint)
-    const pointMatch = name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+|Hardpoint[A-Za-z0-9_]*)_(Heading|Left|Up|Position|Direction|Rest)$/i);
+    // Latch points (loadLatchPointList in .ship) are looked up by the engine
+    // as `<base>Heading` / `<base>Left` / `<base>Up` with NO underscore; every
+    // vanilla HOD uses that form. `_?` still groups files saved by older
+    // editor builds, which wrote `<base>_Heading`. Hardpoints use `_Position`.
+    const pointMatch =
+      name.match(/^(CapturePoint\d+|RepairPoint\d+|SalvagePoint\d+)_?(Heading|Left|Up)$/i) ||
+      name.match(/^(Hardpoint[A-Za-z0-9_]*)_(Position|Direction|Rest)$/i);
     if (pointMatch) {
       let type = "point_group";
       if (pointMatch[1].startsWith("Hardpoint")) type = "hardpoint_group";
@@ -849,9 +855,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       invoke("log_event", { level: "INFO", message: `Added new empty HODMesh: ${name} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "repair_point_template") {
       const base = finalNodeName;
-      const headingName = `${base}_Heading`;
-      const leftName = `${base}_Left`;
-      const upName = `${base}_Up`;
+      const headingName = `${base}Heading`;
+      const leftName = `${base}Left`;
+      const upName = `${base}Up`;
 
       const templateJoints = [
         {
@@ -907,9 +913,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       invoke("log_event", { level: "INFO", message: `Added new repair point template: ${base} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "capture_point_template") {
       const base = finalNodeName;
-      const headingName = `${base}_Heading`;
-      const leftName = `${base}_Left`;
-      const upName = `${base}_Up`;
+      const headingName = `${base}Heading`;
+      const leftName = `${base}Left`;
+      const upName = `${base}Up`;
 
       const templateJoints = [
         {
@@ -1011,9 +1017,9 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
       invoke("log_event", { level: "INFO", message: `Added new hardpoint template: ${base} parented under ${parent}` }).catch(console.error);
     } else if (addNodeType === "salvage_point_template") {
       const base = finalNodeName;
-      const headingName = `${base}_Heading`;
-      const leftName = `${base}_Left`;
-      const upName = `${base}_Up`;
+      const headingName = `${base}Heading`;
+      const leftName = `${base}Left`;
+      const upName = `${base}Up`;
 
       const templateJoints = [
         {
@@ -1820,27 +1826,27 @@ const handleDeleteNode = (name: string, type: string) => {
         label: "Capture point group",
         required: [
           { key: "Base", suffix: "" },
-          { key: "Heading", suffix: "_Heading" },
-          { key: "Left", suffix: "_Left" },
-          { key: "Up", suffix: "_Up" },
+          { key: "Heading", suffix: "Heading" },
+          { key: "Left", suffix: "Left" },
+          { key: "Up", suffix: "Up" },
         ],
       },
       repair_point_group: {
         label: "Repair point group",
         required: [
           { key: "Base", suffix: "" },
-          { key: "Heading", suffix: "_Heading" },
-          { key: "Left", suffix: "_Left" },
-          { key: "Up", suffix: "_Up" },
+          { key: "Heading", suffix: "Heading" },
+          { key: "Left", suffix: "Left" },
+          { key: "Up", suffix: "Up" },
         ],
       },
       salvage_point_group: {
         label: "Salvage point group",
         required: [
           { key: "Base", suffix: "" },
-          { key: "Heading", suffix: "_Heading" },
-          { key: "Left", suffix: "_Left" },
-          { key: "Up", suffix: "_Up" },
+          { key: "Heading", suffix: "Heading" },
+          { key: "Left", suffix: "Left" },
+          { key: "Up", suffix: "Up" },
         ],
       },
     };
