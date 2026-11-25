@@ -2600,7 +2600,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           }}
         >
           <span style={{ display: "inline-block", width: "5px", height: "5px", borderRadius: "50%", background: "#00e676" }} />
-          {model.animations.length} Anim{model.animations.length !== 1 ? "s" : ""} — See Dock Below
+          {model.animations.length} Anim{model.animations.length !== 1 ? "s" : ""} — Edit in Animations tab
         </div>
       )}
     </div>
