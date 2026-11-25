@@ -1617,26 +1617,33 @@ const handleDeleteNode = (name: string, type: string) => {
   };
 
   keyHandlerRef.current = (e: KeyboardEvent) => {
-    if (activeTab !== "hierarchy" || e.defaultPrevented) return;
+    if (activeTab !== "hierarchy") return;
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     const mod = e.ctrlKey || e.metaKey;
-    const key = e.key.toLowerCase();
+    // e.code fallback keeps shortcuts working on non-Latin keyboard layouts.
+    const key = e.code === "KeyC" ? "c" : e.code === "KeyX" ? "x" : e.code === "KeyV" ? "v" : e.key.toLowerCase();
     if (mod && !e.altKey && (key === "c" || key === "x" || key === "v")) {
-      if (key !== "v" && window.getSelection()?.toString()) return; // let native text copy win
       e.preventDefault();
-      if (key === "v") {
-        pasteClipboard();
-      } else {
-        const clip = copySelected();
-        if (!clip) return;
-        if (key === "x") {
-          onModelChange?.(removeSubtree(model, clip.rootName));
-          setSelectedNode(null);
-          setStatusMsg?.(`Cut "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+      try {
+        if (key === "v") {
+          if (!nodeClipboard) setStatusMsg?.("Nothing to paste: copy a joint first (Ctrl+C)");
+          else pasteClipboard();
         } else {
-          setStatusMsg?.(`Copied "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+          const clip = copySelected();
+          if (!clip) {
+            setStatusMsg?.("Select a joint (not Root or a weapon assembly part) to copy or cut");
+          } else if (key === "x") {
+            onModelChange?.(removeSubtree(model, clip.rootName));
+            setSelectedNode(null);
+            setStatusMsg?.(`Cut "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+          } else {
+            setStatusMsg?.(`Copied "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+          }
         }
+      } catch (err) {
+        console.error("Clipboard operation failed", err);
+        setStatusMsg?.(`Clipboard operation failed: ${String(err)}`);
       }
       return;
     }
@@ -1655,10 +1662,23 @@ const handleDeleteNode = (name: string, type: string) => {
   };
 
   const collapseAll = () => {
+    // Collapse every joint that renders a chevron: any child joint, marker, mesh, nav light,
+    // engine part, collision hull, dockpath or weapon group (mirrors `hasChildren` in renderJointNode).
     const idx = getTreeIndex(model);
+    const hasAttached = new Set<string>();
+    for (const [parent, kids] of idx.childrenByParent) if (kids.length) hasAttached.add(parent);
+    for (const k of idx.weaponGroupsByParent.keys()) hasAttached.add(k);
+    for (const k of idx.markersByParent.keys()) hasAttached.add(k);
+    for (const k of idx.meshesByParent.keys()) hasAttached.add(k);
+    for (const k of idx.navLightsByParent.keys()) hasAttached.add(k);
+    model.engine_burns?.forEach((x) => hasAttached.add(x.parent_name));
+    model.engine_glows?.forEach((x) => hasAttached.add(x.parent_name));
+    model.engine_shapes?.forEach((x) => hasAttached.add(x.parent_name));
+    model.dockpaths?.forEach((x) => hasAttached.add(x.parent_name));
+    model.collision_meshes?.forEach((x) => { hasAttached.add(x.name); if (x.mesh?.parent_name) hasAttached.add(x.mesh.parent_name); });
     const next: Record<string, boolean> = {};
-    for (const [parent, kids] of idx.childrenByParent) {
-      if (kids.length > 0 && parent.toLowerCase() !== "root") next[parent] = true;
+    for (const j of model.joints) {
+      if (j.name.toLowerCase() !== "root" && hasAttached.has(j.name)) next[j.name] = true;
     }
     for (const base of getUniqueAssemblyGroups()) next[`weapon_group:${base}`] = true;
     setCollapsedJoints(next);

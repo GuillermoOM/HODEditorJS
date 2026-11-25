@@ -16,6 +16,9 @@ export interface JointSubtreeClip {
   dockpaths: HODModel["dockpaths"];
 }
 
+/** JSON deep clone: the model is plain JSON, and older WebKitGTK builds lack structuredClone. */
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
 const lc = (s: string | undefined) => (s ?? "").toLowerCase();
 
 /** Lower-cased names of `rootName` and every descendant joint. */
@@ -43,7 +46,7 @@ export function copySubtree(model: HODModel, rootName: string): JointSubtreeClip
   if (!root || lc(rootName) === "root") return null;
   const names = collectSubtreeNames(model, rootName);
   const inSet = (n: string | undefined) => names.has(lc(n));
-  return structuredClone({
+  return clone({
     rootName,
     joints: model.joints.filter((j) => inSet(j.name)),
     meshes: model.meshes.filter((m) => inSet(m.parent_name)),
@@ -122,7 +125,7 @@ export function pasteSubtree(
   clip.joints.forEach((j) => jointMap.set(lc(j.name), rename(j.name)));
   const mapJoint = (name: string) => jointMap.get(lc(name)) ?? name;
   const newRootName = mapJoint(clip.rootName);
-  const fresh = structuredClone(clip);
+  const fresh = clone(clip);
 
   return {
     newRootName,
