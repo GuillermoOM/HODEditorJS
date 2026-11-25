@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { HODModel, HODAnimation, HODDockpath } from "./Viewport";
 import { parseTextureGroups, KNOWN_TYPES, getExpectedTextureType } from "../texture_utils";
 import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2, Pencil, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
-import { copySubtree, removeSubtree, pasteSubtree, JointSubtreeClip } from "../node_clipboard";
+import { copySubtree, copyAssembly, removeSubtree, pasteSubtree, JointSubtreeClip } from "../node_clipboard";
 import {
   getSlaveBases,
   isJointInWeaponFamily,
@@ -1596,6 +1596,12 @@ const handleDeleteNode = (name: string, type: string) => {
     !!n && (n.type === "joint" || n.type === "engine_nozzle") && isNodeDeletable(n.name, n.type);
 
   const copySelected = (): JointSubtreeClip | null => {
+    // Whole assembly (weapon / hardpoint / latch point folder row).
+    if (selectedNode && selectedNode.type.endsWith("_group") && getUniqueAssemblyGroups().includes(selectedNode.name)) {
+      const clip = copyAssembly(model, selectedNode.name, selectedNode.type);
+      if (clip) nodeClipboard = clip;
+      return clip;
+    }
     if (!isJointLike(selectedNode)) return null;
     const clip = copySubtree(model, selectedNode!.name);
     if (clip) nodeClipboard = clip;
@@ -1610,10 +1616,11 @@ const handleDeleteNode = (name: string, type: string) => {
     if (sel && (sel.type === "joint" || sel.type === "engine_nozzle") && model.joints.some((j) => j.name === sel.name) && getWeaponGroupInfo(sel.name) === null) {
       parent = sel.name;
     }
-    const { model: next, newRootName } = pasteSubtree(model, nodeClipboard, parent);
+    const { model: next, newRootName, newAssemblyBase } = pasteSubtree(model, nodeClipboard, parent);
     onModelChange?.(next);
-    setSelectedNode({ type: "joint", name: newRootName });
-    setStatusMsg?.(`Pasted "${newRootName}" under "${parent}"`);
+    const label = newAssemblyBase ?? newRootName;
+    setSelectedNode(nodeClipboard.assembly ? { type: nodeClipboard.assembly.type, name: label } : { type: "joint", name: newRootName });
+    setStatusMsg?.(`Pasted "${label}" under "${parent}"`);
   };
 
   keyHandlerRef.current = (e: KeyboardEvent) => {
@@ -1632,13 +1639,13 @@ const handleDeleteNode = (name: string, type: string) => {
         } else {
           const clip = copySelected();
           if (!clip) {
-            setStatusMsg?.("Select a joint (not Root or a weapon assembly part) to copy or cut");
+            setStatusMsg?.("Select a joint or an assembly folder (not Root or a single assembly part) to copy or cut");
           } else if (key === "x") {
-            onModelChange?.(removeSubtree(model, clip.rootName));
+            onModelChange?.(removeSubtree(model, clip.rootNames));
             setSelectedNode(null);
-            setStatusMsg?.(`Cut "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+            setStatusMsg?.(`Cut "${clip.assembly?.base ?? clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
           } else {
-            setStatusMsg?.(`Copied "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+            setStatusMsg?.(`Copied "${clip.assembly?.base ?? clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
           }
         }
       } catch (err) {

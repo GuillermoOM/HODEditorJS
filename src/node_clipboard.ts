@@ -1,11 +1,17 @@
 import type { HODModel } from "./components/Viewport";
+import { getSlaveBases, isJointInWeaponFamily, renameWeaponFamilyName } from "./weapon_utils";
 
 /**
  * Joint-subtree clipboard. Pure model-in / model-out helpers; the caller is
  * responsible for committing the result (so history/undo sees one step).
  */
 export interface JointSubtreeClip {
+  /** First root; used for status messages and single-joint selection after paste. */
   rootName: string;
+  /** All subtree roots (several for a weapon assembly: main chain + Slave chains). */
+  rootNames: string[];
+  /** Set when the clip is a whole assembly (weapon/hardpoint/latch point family). */
+  assembly?: { base: string; familyBases: string[]; type: string };
   joints: HODModel["joints"];
   meshes: HODModel["meshes"];
   markers: HODModel["markers"];
@@ -22,7 +28,7 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const lc = (s: string | undefined) => (s ?? "").toLowerCase();
 
 /** Lower-cased names of `rootName` and every descendant joint. */
-export function collectSubtreeNames(model: HODModel, rootName: string): Set<string> {
+export function collectSubtreeNames(model: HODModel, rootNameOrNames: string | string[]): Set<string> {
   const children = new Map<string, string[]>();
   for (const j of model.joints) {
     const p = lc(j.parent_name);
@@ -30,7 +36,7 @@ export function collectSubtreeNames(model: HODModel, rootName: string): Set<stri
     children.get(p)!.push(j.name);
   }
   const out = new Set<string>();
-  const stack = [rootName];
+  const stack = Array.isArray(rootNameOrNames) ? [...rootNameOrNames] : [rootNameOrNames];
   while (stack.length) {
     const n = stack.pop()!;
     if (out.has(lc(n))) continue;
@@ -44,10 +50,33 @@ export function collectSubtreeNames(model: HODModel, rootName: string): Set<stri
 export function copySubtree(model: HODModel, rootName: string): JointSubtreeClip | null {
   const root = model.joints.find((j) => j.name === rootName);
   if (!root || lc(rootName) === "root") return null;
-  const names = collectSubtreeNames(model, rootName);
+  return copyJoints(model, [rootName]);
+}
+
+/**
+ * Copies a whole assembly (e.g. `Weapon_Gun0` plus its `Slave` chains): every joint
+ * in the family, their descendants, and attached data. `isJointInWeaponFamily` decides
+ * membership, so latch-point `Heading/Left/Up` joints are included.
+ */
+export function copyAssembly(model: HODModel, base: string, type: string): JointSubtreeClip | null {
+  const familyBases = [base, ...getSlaveBases(model, base)];
+  const members = model.joints.filter((j) => isJointInWeaponFamily(j.name, familyBases));
+  if (members.length === 0) return null;
+  // Roots = members whose parent is not itself a member.
+  const memberSet = new Set(members.map((j) => lc(j.name)));
+  const roots = members.filter((j) => !j.parent_name || !memberSet.has(lc(j.parent_name))).map((j) => j.name);
+  const clip = copyJoints(model, roots);
+  if (!clip) return null;
+  clip.assembly = { base, familyBases, type };
+  return clip;
+}
+
+function copyJoints(model: HODModel, rootNames: string[]): JointSubtreeClip | null {
+  const names = collectSubtreeNames(model, rootNames);
   const inSet = (n: string | undefined) => names.has(lc(n));
   return clone({
-    rootName,
+    rootName: rootNames[0],
+    rootNames,
     joints: model.joints.filter((j) => inSet(j.name)),
     meshes: model.meshes.filter((m) => inSet(m.parent_name)),
     markers: model.markers.filter((m) => inSet(m.parent_joint)),
@@ -60,8 +89,8 @@ export function copySubtree(model: HODModel, rootName: string): JointSubtreeClip
 }
 
 /** Removes a joint subtree and all data attached to it (used by Cut). */
-export function removeSubtree(model: HODModel, rootName: string): HODModel {
-  const names = collectSubtreeNames(model, rootName);
+export function removeSubtree(model: HODModel, rootNameOrNames: string | string[]): HODModel {
+  const names = collectSubtreeNames(model, rootNameOrNames);
   const inSet = (n: string | undefined) => names.has(lc(n));
   return {
     ...model,
@@ -99,8 +128,18 @@ export function pasteSubtree(
   model: HODModel,
   clip: JointSubtreeClip,
   parentName: string,
-): { model: HODModel; newRootName: string } {
+): { model: HODModel; newRootName: string; newAssemblyBase?: string } {
   const used = usedNames(model);
+
+  // Assemblies get a fresh numbered base (Weapon_Gun0 -> Weapon_Gun1); members keep their suffixes.
+  let newAssemblyBase: string | undefined;
+  let pre = (n: string) => n;
+  if (clip.assembly) {
+    const { base, familyBases } = clip.assembly;
+    newAssemblyBase = nextAssemblyBase(model, base);
+    pre = (n) => renameWeaponFamilyName(n, familyBases, base, newAssemblyBase!);
+  }
+
   const clipNames = new Set<string>();
   const addC = (n?: string) => n && clipNames.add(n);
   clip.joints.forEach((x) => addC(x.name));
@@ -112,23 +151,28 @@ export function pasteSubtree(
   clip.engine_shapes.forEach((x) => addC(x.name));
   clip.dockpaths.forEach((x) => addC(x.name));
 
-  // Smallest N where every colliding name has a free `_N` variant.
+  // Smallest N where every colliding (post-mapping) name has a free `_N` variant.
   let n = 0;
-  const conflicts = [...clipNames].some((c) => used.has(lc(c)));
-  if (conflicts) {
+  const mapped = [...clipNames].map(pre);
+  if (mapped.some((c) => used.has(lc(c)))) {
     n = 1;
-    while ([...clipNames].some((c) => used.has(lc(c)) && used.has(lc(`${c}_${n}`)))) n++;
+    while (mapped.some((c) => used.has(lc(c)) && used.has(lc(`${c}_${n}`)))) n++;
   }
-  const rename = (name: string) => (used.has(lc(name)) ? `${name}_${n}` : name);
+  const rename = (name: string) => {
+    const m = pre(name);
+    return used.has(lc(m)) ? `${m}_${n}` : m;
+  };
 
   const jointMap = new Map<string, string>();
   clip.joints.forEach((j) => jointMap.set(lc(j.name), rename(j.name)));
   const mapJoint = (name: string) => jointMap.get(lc(name)) ?? name;
   const newRootName = mapJoint(clip.rootName);
+  const rootSet = new Set((clip.rootNames ?? [clip.rootName]).map(lc));
   const fresh = clone(clip);
 
   return {
     newRootName,
+    newAssemblyBase,
     model: {
       ...model,
       joints: [
@@ -136,7 +180,7 @@ export function pasteSubtree(
         ...fresh.joints.map((j) => ({
           ...j,
           name: mapJoint(j.name),
-          parent_name: lc(j.name) === lc(clip.rootName) ? parentName : mapJoint(j.parent_name ?? parentName),
+          parent_name: rootSet.has(lc(j.name)) ? parentName : mapJoint(j.parent_name ?? parentName),
         })),
       ],
       meshes: [...model.meshes, ...fresh.meshes.map((m) => ({ ...m, name: rename(m.name), parent_name: mapJoint(m.parent_name) }))],
@@ -164,4 +208,25 @@ export function pasteSubtree(
       dockpaths: [...model.dockpaths, ...fresh.dockpaths.map((d) => ({ ...d, name: rename(d.name), parent_name: mapJoint(d.parent_name) }))],
     },
   };
+}
+
+/** Next free numbered base for a pasted assembly: `Weapon_Gun0` -> `Weapon_Gun<max+1>`; `Foo` -> `Foo1`. */
+export function nextAssemblyBase(model: HODModel, base: string): string {
+  const taken = (b: string) =>
+    model.joints.some((j) => lc(j.name).startsWith(lc(b)) && /^(?:$|_|slave|heading$|left$|up$)/i.test(j.name.slice(b.length)));
+  if (!taken(base)) return base; // e.g. after Cut: pasting restores the original name (a move)
+  const m = base.match(/^(.*?)(\d*)$/)!;
+  const prefix = m[1];
+  const prefixLc = lc(prefix);
+  let max = m[2] ? parseInt(m[2], 10) : 0;
+  for (const j of model.joints) {
+    const jm = j.name.match(/^(.*?)(\d+)(?=$|_|Slave|Heading$|Left$|Up$)/i);
+    if (jm && lc(jm[1]) === prefixLc) max = Math.max(max, parseInt(jm[2], 10));
+  }
+  let candidate = `${prefix}${max + 1}`;
+  while (taken(candidate)) {
+    max++;
+    candidate = `${prefix}${max + 1}`;
+  }
+  return candidate;
 }
