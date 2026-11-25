@@ -1,0 +1,4 @@
+- key binds, history
+- editor tools: copy, paste, cut of nodes
+- collapse all nodes
+- selectable joints in view port.

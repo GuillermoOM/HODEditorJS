@@ -1,9 +1,10 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { HODModel, HODAnimation, HODDockpath } from "./Viewport";
 import { parseTextureGroups, KNOWN_TYPES, getExpectedTextureType } from "../texture_utils";
-import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2, Pencil } from "lucide-react";
+import { Folder, FolderOpen, Tag, ChevronDown, ChevronRight, Search, Box, Eye, EyeOff, Radio, Activity, Shield, Flame, Palette, Crosshair, Plus, Trash2, AlertTriangle, Info , FlipVertical, Download, Upload, Wand2, Pencil, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { copySubtree, removeSubtree, pasteSubtree, JointSubtreeClip } from "../node_clipboard";
 import {
   getSlaveBases,
   isJointInWeaponFamily,
@@ -15,6 +16,9 @@ import {
   muzzleName,
   nextMuzzleIndex,
 } from "../weapon_utils";
+
+// Joint-subtree clipboard shared across tree instances (app-internal; not the OS clipboard).
+let nodeClipboard: JointSubtreeClip | null = null;
 
 type TreeJoint = HODModel["joints"][number];
 type WeaponGroupInfo = { baseName: string; suffix: string; type: string } | null;
@@ -483,6 +487,14 @@ export const HierarchyTree: React.FC<HierarchyTreeProps> = ({
     };
   };
   const [collapsedJoints, setCollapsedJoints] = useState<Record<string, boolean>>({});
+  // Tree keybinds (F2 / Delete / Ctrl+C,X,V). The handler is reassigned every render
+  // (after the `!model` early return) so the single window listener never sees stale state.
+  const keyHandlerRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
   const [dragOverJoint, setDragOverJoint] = useState<string | null>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
   const treeIndexRef = useRef<{ model: HODModel; index: TreeIndex } | null>(null);
@@ -1572,12 +1584,86 @@ const handleDeleteNode = (name: string, type: string) => {
   };
 
   if (!model) {
+    keyHandlerRef.current = () => {};
     return (
       <div className="panel-content" style={{ display: "flex", justifyContent: "center", alignItems: "center", color: "var(--text-muted)" }}>
         No model loaded
       </div>
     );
   }
+
+  const isJointLike = (n: { type: string; name: string } | null) =>
+    !!n && (n.type === "joint" || n.type === "engine_nozzle") && isNodeDeletable(n.name, n.type);
+
+  const copySelected = (): JointSubtreeClip | null => {
+    if (!isJointLike(selectedNode)) return null;
+    const clip = copySubtree(model, selectedNode!.name);
+    if (clip) nodeClipboard = clip;
+    return clip;
+  };
+
+  const pasteClipboard = () => {
+    if (!nodeClipboard) return;
+    const sel = selectedNode;
+    const rootJoint = model.joints.find((j) => !j.parent_name);
+    let parent = rootJoint?.name ?? "Root";
+    if (sel && (sel.type === "joint" || sel.type === "engine_nozzle") && model.joints.some((j) => j.name === sel.name) && getWeaponGroupInfo(sel.name) === null) {
+      parent = sel.name;
+    }
+    const { model: next, newRootName } = pasteSubtree(model, nodeClipboard, parent);
+    onModelChange?.(next);
+    setSelectedNode({ type: "joint", name: newRootName });
+    setStatusMsg?.(`Pasted "${newRootName}" under "${parent}"`);
+  };
+
+  keyHandlerRef.current = (e: KeyboardEvent) => {
+    if (activeTab !== "hierarchy" || e.defaultPrevented) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    const mod = e.ctrlKey || e.metaKey;
+    const key = e.key.toLowerCase();
+    if (mod && !e.altKey && (key === "c" || key === "x" || key === "v")) {
+      if (key !== "v" && window.getSelection()?.toString()) return; // let native text copy win
+      e.preventDefault();
+      if (key === "v") {
+        pasteClipboard();
+      } else {
+        const clip = copySelected();
+        if (!clip) return;
+        if (key === "x") {
+          onModelChange?.(removeSubtree(model, clip.rootName));
+          setSelectedNode(null);
+          setStatusMsg?.(`Cut "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+        } else {
+          setStatusMsg?.(`Copied "${clip.rootName}" (${clip.joints.length} joint${clip.joints.length === 1 ? "" : "s"})`);
+        }
+      }
+      return;
+    }
+    if (mod || e.altKey || !selectedNode) return;
+    if (e.key === "F2") {
+      e.preventDefault();
+      handleRenameNode(selectedNode.name, selectedNode.type);
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      const deletable = ["joint", "engine_nozzle", "marker", "mesh", "navlight", "dockpath", "collision", "engine_burn"];
+      if (!deletable.includes(selectedNode.type) || !isNodeDeletable(selectedNode.name, selectedNode.type)) return;
+      e.preventDefault();
+      if (window.confirm(`Delete ${selectedNode.type} "${selectedNode.name}"?`)) {
+        handleDeleteNode(selectedNode.name, selectedNode.type);
+      }
+    }
+  };
+
+  const collapseAll = () => {
+    const idx = getTreeIndex(model);
+    const next: Record<string, boolean> = {};
+    for (const [parent, kids] of idx.childrenByParent) {
+      if (kids.length > 0 && parent.toLowerCase() !== "root") next[parent] = true;
+    }
+    for (const base of getUniqueAssemblyGroups()) next[`weapon_group:${base}`] = true;
+    setCollapsedJoints(next);
+  };
+  const expandAll = () => setCollapsedJoints({});
 
   const toggleCollapse = (name: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -3032,6 +3118,16 @@ const handleDeleteNode = (name: string, type: string) => {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ height: "28px", fontSize: "12px", width: "100%" }}
           />
+          {activeTab === "hierarchy" && (
+            <>
+              <button title="Collapse all" onClick={collapseAll} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "2px", display: "flex" }}>
+                <ChevronsDownUp size={14} />
+              </button>
+              <button title="Expand all" onClick={expandAll} style={{ background: "transparent", border: "none", color: "var(--text-secondary)", cursor: "pointer", padding: "2px", display: "flex" }}>
+                <ChevronsUpDown size={14} />
+              </button>
+            </>
+          )}
         </div>
 
         <div

@@ -38,6 +38,16 @@ Weapon group rows use type `weapon_group`. Weapon subnodes rendered inside the g
 
 Search filters tree rows using direct names and recursive descendant matches. Collapsible rows use `collapsedJoints` state. Weapon group collapse keys are prefixed with `weapon_group:`.
 
+Hierarchy tab search row has **Collapse all** / **Expand all** buttons. Collapse all sets `collapsedJoints` for every joint that has children (except `Root`, so Root's direct children stay visible) and every weapon group key; Expand all clears it.
+
+## Copy / Cut / Paste
+
+Source: `HierarchyTree.tsx` (`keyHandlerRef`, module-level `nodeClipboard`), pure logic in `src/node_clipboard.ts`.
+
+- Ctrl/Cmd+C copies the selected `joint`/`engine_nozzle` subtree (the joint, all descendant joints, and meshes, markers, nav lights, engine burns/glows/shapes and dockpaths parented to them). Root and weapon assembly subnodes are not copyable (same guard as delete). The clipboard is app-internal, not the OS clipboard.
+- Ctrl/Cmd+X copies and then removes the subtree and everything attached (descendants are removed, not re-parented, so cut+paste is a move).
+- Ctrl/Cmd+V pastes under the selected joint, or under the root joint if the selection is not a plain joint. Local transforms are preserved. Names already in use get a `_N` suffix (same N for the whole paste); unused names are kept. The pasted root becomes selected. Each action is one undo step.
+
 ## Visibility
 
 Eye toggles update `visibleMeshes` keys. Toggling a joint propagates visibility to descendant keys. Toggling a weapon group propagates visibility to all component joints and their descendants.

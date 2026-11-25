@@ -303,6 +303,9 @@ export const Viewport: React.FC<ViewportProps> = ({
     onModelChangeRef.current = onModelChange;
   }, [model, onModelChange]);
 
+  // Latest selection setter for the long-lived canvas pick listener (set up once in the init effect).
+  const setSelectedNodeRef = useRef(_setSelectedNode);
+  setSelectedNodeRef.current = _setSelectedNode;
   const selectedNodeRef = useRef(selectedNode);
   useEffect(() => {
     selectedNodeRef.current = selectedNode;
@@ -847,6 +850,43 @@ export const Viewport: React.FC<ViewportProps> = ({
       transformControlsRef.current = transformControls;
       scene.add(transformControls.getHelper());
 
+      // Click-to-select joints: left-click (no drag) picks the joint whose sphere is nearest the
+      // cursor in screen space (within PICK_RADIUS_PX; spheres are tiny, so exact ray hits are too fiddly).
+      // Left button is free because orbit uses right/middle. Empty clicks leave the selection alone;
+      // hovering a gizmo handle (transformControls.axis) or dragging suppresses the pick.
+      const PICK_RADIUS_PX = 14;
+      let pickDown: { x: number; y: number } | null = null;
+      const onPickDown = (e: PointerEvent) => {
+        pickDown = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+      };
+      const onPickUp = (e: PointerEvent) => {
+        const start = pickDown;
+        pickDown = null;
+        if (!start || e.button !== 0) return;
+        if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
+        if (transformControls.dragging || (transformControls as any).axis) return;
+        const group = jointsGroupRef.current;
+        if (!group || !group.visible) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const tmp = new THREE.Vector3();
+        let best: { name: string; d: number; z: number } | null = null;
+        for (const obj of group.children) {
+          if (!obj.name.startsWith("joint:") || !obj.visible) continue;
+          obj.getWorldPosition(tmp).project(camera);
+          if (tmp.z < -1 || tmp.z > 1) continue;
+          const sx = (tmp.x * 0.5 + 0.5) * rect.width + rect.left;
+          const sy = (-tmp.y * 0.5 + 0.5) * rect.height + rect.top;
+          const d = Math.hypot(sx - e.clientX, sy - e.clientY);
+          if (d > PICK_RADIUS_PX) continue;
+          if (!best || d < best.d - 2 || (Math.abs(d - best.d) <= 2 && tmp.z < best.z)) {
+            best = { name: obj.name.slice("joint:".length), d, z: tmp.z };
+          }
+        }
+        if (best) setSelectedNodeRef.current({ type: "joint", name: best.name });
+      };
+      renderer.domElement.addEventListener("pointerdown", onPickDown);
+      renderer.domElement.addEventListener("pointerup", onPickUp);
+
       // Prevent orbit rotation while transforming nodes
       transformControls.addEventListener("dragging-changed", (event) => {
         orbitControls.enabled = !event.value;
@@ -1207,6 +1247,8 @@ export const Viewport: React.FC<ViewportProps> = ({
         }
         renderer.domElement.removeEventListener("dragstart", handlePrevent);
         renderer.domElement.removeEventListener("selectstart", handlePrevent);
+        renderer.domElement.removeEventListener("pointerdown", onPickDown);
+        renderer.domElement.removeEventListener("pointerup", onPickUp);
         window.removeEventListener("resize", handleResize);
         window.removeEventListener("export-gltf-model", handleExportGLTFEvent);
         window.removeEventListener("import-gltf-mesh", handleImportGLTFEvent);

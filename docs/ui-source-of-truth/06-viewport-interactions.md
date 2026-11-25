@@ -28,6 +28,10 @@ A single app-level toggle switches the viewport transform gizmo between **Global
 - The toggle state is owned by `App.tsx`, not by `Viewport.tsx` or `Inspector.tsx` independently.
 - Animation keyframe values are excluded from the Inspector coordinate toggle: they store deltas relative to the joint rest pose and are always shown in animation space. The viewport gizmo space still applies when dragging a keyframe, but commits store the resulting keyframe delta unchanged.
 
+## Joint Click Selection
+
+Left-click (press/release within 4 px) on the canvas selects the visible joint whose sphere is nearest the cursor in screen space, within 14 px, as `{type: "joint", name}`. Left button is unused by orbit (right/middle). Clicking empty space does not change selection; a pick is suppressed while a gizmo handle is hovered or dragged. Hidden joints (eye toggle) are not pickable. Source: `Viewport.tsx` `onPickDown`/`onPickUp`.
+
 ## Selection Coupling
 
 Viewport behavior follows `selectedNode` from app state. Selecting a tree row or viewport target should keep Inspector and Viewport synchronized.

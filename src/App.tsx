@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Viewport, HODModel, Vector3D } from "./components/Viewport";
 import { Toolbar } from "./components/Toolbar";
@@ -92,9 +92,74 @@ function App() {
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  const updateModel = (nextModel: HODModel) => {
-    setModel(nextModel);
+  // ---- Undo/redo history (see docs/ui-source-of-truth/13-undo-redo-history.md) ----
+  // Model edits are immutable, so history stores previous model objects by
+  // reference. EVERY user edit must go through commitModel/updateModel; loads
+  // and "new" go through replaceModel, which clears history.
+  const MAX_HISTORY = 100;
+  const COALESCE_MS = 800;
+  const modelRef = useRef<HODModel | null>(null);
+  modelRef.current = model;
+  const pastRef = useRef<HODModel[]>([]);
+  const futureRef = useRef<HODModel[]>([]);
+  const lastCommitRef = useRef<{ key: string; t: number } | null>(null);
+
+  const replaceModel = (next: HODModel | null) => {
+    modelRef.current = next;
+    pastRef.current = [];
+    futureRef.current = [];
+    lastCommitRef.current = null;
+    setModel(next);
+  };
+
+  /** Commit a user edit. Commits sharing a coalesceKey within COALESCE_MS (e.g. a gizmo drag) form one undo step. */
+  const commitModel = (next: HODModel, coalesceKey?: string) => {
+    const prev = modelRef.current;
+    if (next === prev) return;
+    if (prev) {
+      const now = performance.now();
+      const last = lastCommitRef.current;
+      const coalesce = !!coalesceKey && !!last && last.key === coalesceKey && now - last.t < COALESCE_MS;
+      if (!coalesce) {
+        pastRef.current.push(prev);
+        if (pastRef.current.length > MAX_HISTORY) pastRef.current.shift();
+      }
+      lastCommitRef.current = coalesceKey ? { key: coalesceKey, t: now } : null;
+      futureRef.current = [];
+    }
+    modelRef.current = next;
+    setModel(next);
     setIsDirty(true);
+  };
+  const updateModel = commitModel;
+
+  const applyHistoryModel = (m: HODModel) => {
+    modelRef.current = m;
+    lastCommitRef.current = null;
+    setModel(m);
+    setIsDirty(true);
+    // Drop a selection whose joint no longer exists in the restored model.
+    setSelectedNode((sel) =>
+      sel && (sel.type === "joint" || sel.type === "engine_nozzle") && !m.joints.some((j) => j.name === sel.name) ? null : sel
+    );
+  };
+
+  const undo = () => {
+    const cur = modelRef.current;
+    const prev = pastRef.current.pop();
+    if (!cur || !prev) return;
+    futureRef.current.push(cur);
+    applyHistoryModel(prev);
+    setStatusMsg(`Undo (${pastRef.current.length} more)`);
+  };
+
+  const redo = () => {
+    const cur = modelRef.current;
+    const next = futureRef.current.pop();
+    if (!cur || !next) return;
+    pastRef.current.push(cur);
+    applyHistoryModel(next);
+    setStatusMsg(`Redo (${futureRef.current.length} more)`);
   };
   const [statusMsg, setStatusMsg] = useState("System Ready");
   const [visibleMeshes, setVisibleMeshes] = useState<Record<string, boolean>>({});
@@ -144,11 +209,33 @@ function App() {
     invoke("log_event", { level: "INFO", message: "HOD Remastered Editor React Frontend initialized." }).catch(console.error);
   }, []);
 
-  // Global Escape key listener to clear selection
+  // Latest-closure refs so the single global key listener never goes stale.
+  const saveRef = useRef<() => void>(() => {});
+  const undoRef = useRef(() => {});
+  const redoRef = useRef(() => {});
+
+  // Global key listener: Escape clears selection; Ctrl/Cmd+Z undo, Ctrl+Y / Ctrl+Shift+Z redo, Ctrl+S save.
+  // Text fields keep their native shortcuts (see docs/ui-source-of-truth/12-accessibility-and-keybinds.md).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const inField = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
       if (e.key === "Escape") {
         setSelectedNode(null);
+        return;
+      }
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "s") {
+        e.preventDefault();
+        saveRef.current();
+      } else if (!inField && k === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redoRef.current(); else undoRef.current();
+      } else if (!inField && k === "y") {
+        e.preventDefault();
+        redoRef.current();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -198,7 +285,7 @@ function App() {
         setErrorMsg(null);
         try {
           const parsedModel = await invoke<HODModel>("import_dae_file", { path: selectedPath });
-          setModel(parsedModel);
+          replaceModel(parsedModel);
           setFilePath(""); // No original path, it's newly imported
           setIsDirty(true);
           setSelectedNode(null);
@@ -223,7 +310,7 @@ function App() {
 
 
   const resetUIState = () => {
-    setModel(null);
+    replaceModel(null);
     setSelectedNode(null);
     setSelectedAnimIdx(0);
     setTargetBoxes([]);
@@ -260,7 +347,7 @@ function App() {
           dockpaths: parsedModel.dockpaths || [],
         };
 
-        setModel(processedModel);
+        replaceModel(processedModel);
         setIsDirty(false);
         setSelectedNode(null);
         setSelectedAnimIdx(0);
@@ -339,7 +426,7 @@ function App() {
     
     // Slight delay to ensure React unmounts previous Viewport and clears WebGL context
     setTimeout(() => {
-      setModel(newModel);
+      replaceModel(newModel);
       setFilePath("");
       setIsDirty(false);
       setStatusMsg("New HOD model successfully initialized!");
@@ -571,8 +658,7 @@ function App() {
       engine_glows: updatedEngineGlows,
     };
 
-    setModel(upgradedModel);
-    setIsDirty(true);
+    commitModel(upgradedModel);
     setIsMigrationModalOpen(false);
     setStatusMsg("Model successfully auto-transformed to HOD 2.0 with customized schema reclassifications!");
     alert("Schema migration complete! Un-standardized joints have been promoted, and the file layout upgraded to modern HOD 2.0.");
@@ -695,7 +781,7 @@ function App() {
         }
         return joint;
       });
-      updateModel({ ...model, joints: updatedJoints });
+      updateModel({ ...model, joints: updatedJoints }, `xf:${type}:${name}`);
     } else if (type === "marker") {
       const updatedMarkers = model.markers.map((marker) => {
         if (marker.name === name) {
@@ -703,7 +789,7 @@ function App() {
         }
         return marker;
       });
-      updateModel({ ...model, markers: updatedMarkers });
+      updateModel({ ...model, markers: updatedMarkers }, `xf:${type}:${name}`);
     } else if (type === "navlight") {
       // Translating NavLight translates its matching joint bone
       let foundJoint = false;
@@ -742,7 +828,7 @@ function App() {
           }
         });
       }
-      updateModel({ ...model, joints: updatedJoints });
+      updateModel({ ...model, joints: updatedJoints }, `xf:${type}:${name}`);
     } else if (type.endsWith("_group")) {
       const updatedJoints = model.joints.map((joint) => {
         if (joint.name.toLowerCase() === `${name}_Position`.toLowerCase()) {
@@ -761,7 +847,7 @@ function App() {
         }
         return joint;
       });
-      updateModel({ ...model, joints: updatedJoints });
+      updateModel({ ...model, joints: updatedJoints }, `xf:${type}:${name}`);
     } else if (type === "dockpoint") {
       const [pathName, ptIdxStr] = name.split(":");
       const ptIdx = parseInt(ptIdxStr, 10);
@@ -781,7 +867,7 @@ function App() {
         }
         return dp;
       });
-      updateModel({ ...model, dockpaths: updatedPaths });
+      updateModel({ ...model, dockpaths: updatedPaths }, `xf:${type}:${name}`);
     } else if (type === "collision") {
       const updatedCols = model.collision_meshes.map((col) => {
         if (col.name === name) {
@@ -789,7 +875,7 @@ function App() {
         }
         return col;
       });
-      updateModel({ ...model, collision_meshes: updatedCols });
+      updateModel({ ...model, collision_meshes: updatedCols }, `xf:${type}:${name}`);
     } else if (type === "keyframe") {
       const [jointName, kfIdxStr] = name.split(":");
       const kfIdx = parseInt(kfIdxStr, 10);
@@ -815,7 +901,7 @@ function App() {
         });
         anim.tracks = updatedTracks;
         updatedAnims[selectedAnimIdx] = anim;
-        updateModel({ ...model, animations: updatedAnims });
+        updateModel({ ...model, animations: updatedAnims }, `xf:${type}:${name}`);
       }
     }
     
@@ -929,6 +1015,10 @@ function App() {
     });
   };
 
+  saveRef.current = handleSaveHOD;
+  undoRef.current = undo;
+  redoRef.current = redo;
+
   return (
     <div className="app-container">
       {configLoaded && keeperTxtPaths.length === 0 && (
@@ -1002,7 +1092,7 @@ function App() {
           visibleMeshes={visibleMeshes}
           setVisibleMeshes={setVisibleMeshes}
           onReParentNode={handleReParentNode}
-          onModelChange={setModel}
+          onModelChange={commitModel}
           selectedAnimIdx={selectedAnimIdx}
           setSelectedAnimIdx={setSelectedAnimIdx}
           targetBoxes={targetBoxes}
@@ -1433,7 +1523,7 @@ function App() {
           onPositionChange={handleNodeTransform}
           coordinateSpace={coordinateSpace}
           setCoordinateSpace={setCoordinateSpace}
-          onModelChange={setModel}
+          onModelChange={commitModel}
           onSelectedNodeChange={setSelectedNode}
           selectedAnimIdx={selectedAnimIdx}
           visibleMeshes={visibleMeshes}

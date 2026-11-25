@@ -8,11 +8,16 @@ This specification establishes a central standard for keyboard shortcuts and acc
 
 To ensure a predictable user experience, the following keyboard shortcuts should be universally supported and respected across the application:
 
-- **F2**: Rename the currently selected node.
-- **Delete / Backspace**: Delete the currently selected node (with appropriate confirmation warnings).
-- **Ctrl + S (Cmd + S on Mac)**: Save the current HOD model.
-- **Ctrl + Z / Ctrl + Y**: Undo / Redo (if/when a history stack is implemented).
-- **Escape**: Close any active modal, dialog, or cancel a drag/drop operation.
+Implemented (source: `App.tsx` global listener, `HierarchyTree.tsx` `keyHandlerRef`):
+
+- **Ctrl/Cmd + S**: Save (App). Works even while a text field is focused.
+- **Ctrl/Cmd + Z**: Undo. **Ctrl/Cmd + Y** or **Ctrl/Cmd + Shift + Z**: Redo (App). Ignored while a text field is focused so native text undo wins.
+- **Escape**: Clears the selection (App).
+- **F2**: Rename the selected node (Hierarchy tab only; uses `handleRenameNode`).
+- **Delete / Backspace**: Delete the selected node after a `window.confirm` (Hierarchy tab only; types joint, engine_nozzle, marker, mesh, navlight, dockpath, collision, engine_burn; protected nodes ignored).
+- **Ctrl/Cmd + C / X / V**: Copy / cut / paste a joint subtree (see `03-hierarchy-tree-interactions.md`). Not triggered when text is selected for native copy.
+
+Tree/App key handlers all return early when the event target is an `input`, `textarea`, `select` or contenteditable element (except Ctrl+S).
 
 ## UI Navigation
 

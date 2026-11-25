@@ -22,6 +22,10 @@ This directory is the agent-facing source of truth for how the current UI is exp
 - [07 Validation Warnings](./07-validation-warnings.md)
 - [08 Assemblies And Groups](./08-assemblies-and-groups.md)
 - [09 Node Type Rulings](./09-node-type-rulings.md)
+- [10 State Management And Performance](./10-state-management-and-performance.md)
+- [11 Error Boundaries And Resilience](./11-error-boundaries-and-resilience.md)
+- [12 Accessibility And Keybinds](./12-accessibility-and-keybinds.md)
+- [13 Undo Redo History](./13-undo-redo-history.md)
 
 ## Source Priority
 
