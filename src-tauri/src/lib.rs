@@ -865,7 +865,7 @@ fn auto_generate_collision_from_mesh(
         ),
     );
 
-    // Attempt to generate the combined collision mesh using convex hull
+    // Attempt to generate the combined collision mesh (tight simplified surface of the visible mesh, convex hull fallback)
     let new_col_mesh = hwr_hod_parser::collision::generate_collision_from_model_meshes(
         &model.meshes,
         &model.joints,

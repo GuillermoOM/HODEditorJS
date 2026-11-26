@@ -55,7 +55,7 @@ Dockpoint selection names are derived from dockpath name and point index.
 
 ## Collision Editing
 
-Collision inspector supports editing center/radius/extents and selecting one or more visual meshes from a checklist (with `Select All` / `Clear` helpers) to generate a combined convex hull or calculate combined box bounds covering all included meshes. When a visual mesh is parented to a joint below `Root`, its vertices are transformed into `Root` space before combining so multi-mesh ships receive a single coherent collision hull.
+Collision inspector supports editing center/radius/extents and selecting one or more visual meshes from a checklist (with `Select All` / `Clear` helpers) to generate a combined collision surface (a tight, welded and simplified copy of the selected meshes in Root space, ~50–360 triangles, no inflation; convex hull only as fallback) or calculate combined box bounds covering all included meshes. When a visual mesh is parented to a joint below `Root`, its vertices are transformed into `Root` space before combining so multi-mesh ships receive a single coherent collision hull.
 
 Collision mesh parent access may be optional in imported/malformed data; UI code should preserve null-safe handling.
 

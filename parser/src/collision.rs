@@ -483,6 +483,222 @@ pub fn generate_collision_from_visible_meshes(
     generate_collision_from_model_meshes(visible_meshes, &[], mesh_names)
 }
 
+/// Target collision triangle count for a visible mesh of `src_tris` triangles.
+/// Vanilla ships keep ~60-400 collision triangles regardless of size
+/// (corvette 3.3k -> 307, battlecruiser 6.3k -> 260, small junk 676 -> 74).
+fn collision_target_tris(src_tris: usize) -> usize {
+    ((src_tris as f32 * 0.07) as usize).clamp(48, 360).min(src_tris.max(4))
+}
+
+/// Build a tight, concave-preserving collision surface by welding and simplifying
+/// the visible geometry (Root space, no inflation). This mirrors vanilla HOD 2.0
+/// collision, which follows the hull silhouette at roughly LOD0 volume.
+/// Returns `None` if the source is unsuitable so the caller can fall back to a convex hull.
+fn generate_tight_collision(
+    target_meshes: &[&HODMesh],
+    joints: &[HODJoint],
+    budget_scale: f32,
+) -> Option<(Vec<[f32; 3]>, Vec<u16>)> {
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+    let mut raw: Vec<[f32; 3]> = Vec::new();
+    let mut tris: Vec<[u32; 3]> = Vec::new();
+    for mesh in target_meshes {
+        for part in &mesh.parts {
+            let base = raw.len() as u32;
+            for v in &part.vertices {
+                let p = transform_point_to_root(
+                    [v.position.x, v.position.y, v.position.z],
+                    &mesh.parent_name,
+                    joints,
+                );
+                for j in 0..3 {
+                    min[j] = min[j].min(p[j]);
+                    max[j] = max[j].max(p[j]);
+                }
+                raw.push(p);
+            }
+            for t in part.indices.chunks_exact(3) {
+                let (a, b, c) = (t[0] as u32, t[1] as u32, t[2] as u32);
+                if (a.max(b).max(c) as usize) < part.vertices.len() {
+                    tris.push([base + a, base + b, base + c]);
+                }
+            }
+        }
+    }
+    if tris.len() < 12 {
+        return None;
+    }
+    let diag = vec_len(&vec_sub(&max, &min));
+    if !(diag > 1e-6) {
+        return None;
+    }
+
+    // Weld coincident positions (UV/normal seams) so the surface is connected.
+    let q = (diag * 1e-5).max(1e-7);
+    let mut map: std::collections::HashMap<[i64; 3], u32> = std::collections::HashMap::new();
+    let mut welded: Vec<[f32; 3]> = Vec::new();
+    let remap: Vec<u32> = raw
+        .iter()
+        .map(|p| {
+            let key = [
+                (p[0] / q).round() as i64,
+                (p[1] / q).round() as i64,
+                (p[2] / q).round() as i64,
+            ];
+            *map.entry(key).or_insert_with(|| {
+                welded.push(*p);
+                (welded.len() - 1) as u32
+            })
+        })
+        .collect();
+    let mut indices: Vec<u32> = Vec::with_capacity(tris.len() * 3);
+    for t in &tris {
+        let (a, b, c) = (remap[t[0] as usize], remap[t[1] as usize], remap[t[2] as usize]);
+        if a != b && b != c && a != c {
+            indices.extend_from_slice(&[a, b, c]);
+        }
+    }
+    let src_tris = indices.len() / 3;
+    if src_tris < 12 {
+        return None;
+    }
+
+    let target = (((collision_target_tris(src_tris) as f32) * budget_scale) as usize).min(src_tris);
+    let target_idx = target * 3;
+    let mut result = indices.clone();
+    if src_tris > target {
+        let mut err = 0.0f32;
+        result = meshopt::simplify_decoder(
+            &indices,
+            &welded,
+            target_idx,
+            0.08,
+            meshopt::SimplifyOptions::None,
+            Some(&mut err),
+        );
+        // Quality-limited simplification may stop above the budget; finish with the
+        // aggressive variant (still surface-following, just blockier).
+        if result.len() > target_idx * 3 / 2 {
+            let pos_bytes: Vec<u8> = welded
+                .iter()
+                .flat_map(|p| p.iter().flat_map(|f| f.to_le_bytes()))
+                .collect();
+            let adapter = meshopt::VertexDataAdapter::new(&pos_bytes, 12, 0).ok()?;
+            let sloppy = meshopt::simplify_sloppy(&result, &adapter, target_idx, 0.25, None);
+            if sloppy.len() >= 12 {
+                result = sloppy;
+            }
+        }
+    }
+    if result.len() < 12 {
+        return None;
+    }
+
+    // Compact vertices.
+    let mut compact: Vec<[f32; 3]> = Vec::new();
+    let mut cmap: std::collections::HashMap<u32, u16> = std::collections::HashMap::new();
+    let mut out_idx: Vec<u16> = Vec::with_capacity(result.len());
+    for &i in &result {
+        let id = match cmap.get(&i) {
+            Some(&v) => v,
+            None => {
+                if compact.len() >= u16::MAX as usize {
+                    return None;
+                }
+                compact.push(welded[i as usize]);
+                let v = (compact.len() - 1) as u16;
+                cmap.insert(i, v);
+                v
+            }
+        };
+        out_idx.push(id);
+    }
+
+    // Sanity: the simplified surface must still span most of the source bounds,
+    // otherwise shots would pass through the hull; let the caller use the hull path.
+    let mut smin = [f32::MAX; 3];
+    let mut smax = [f32::MIN; 3];
+    for p in &compact {
+        for j in 0..3 {
+            smin[j] = smin[j].min(p[j]);
+            smax[j] = smax[j].max(p[j]);
+        }
+    }
+    for j in 0..3 {
+        let full = max[j] - min[j];
+        if full > 1e-6 && (smax[j] - smin[j]) < full * 0.75 {
+            println!("[COLLISION] Tight surface rejected: axis {} spans {:.2} of source ({} -> {} tris)", j, (smax[j]-smin[j])/full, src_tris, out_idx.len()/3);
+            return None;
+        }
+    }
+
+    println!(
+        "[COLLISION] Tight surface: {} source tris -> {} tris, {} verts",
+        src_tris,
+        out_idx.len() / 3,
+        compact.len()
+    );
+    Some((compact, out_idx))
+}
+
+fn collision_mesh_from_surface(verts: Vec<[f32; 3]>, indices: Vec<u16>) -> HODCollisionMesh {
+    let mut min_e = Vector3 { x: f32::MAX, y: f32::MAX, z: f32::MAX };
+    let mut max_e = Vector3 { x: f32::MIN, y: f32::MIN, z: f32::MIN };
+    for v in &verts {
+        min_e.x = min_e.x.min(v[0]);
+        min_e.y = min_e.y.min(v[1]);
+        min_e.z = min_e.z.min(v[2]);
+        max_e.x = max_e.x.max(v[0]);
+        max_e.y = max_e.y.max(v[1]);
+        max_e.z = max_e.z.max(v[2]);
+    }
+    let center = Vector3 {
+        x: (min_e.x + max_e.x) / 2.0,
+        y: (min_e.y + max_e.y) / 2.0,
+        z: (min_e.z + max_e.z) / 2.0,
+    };
+    let (ex, ey, ez) = (
+        (max_e.x - min_e.x) / 2.0,
+        (max_e.y - min_e.y) / 2.0,
+        (max_e.z - min_e.z) / 2.0,
+    );
+    let radius = (ex * ex + ey * ey + ez * ez).sqrt();
+    let vertices = verts
+        .iter()
+        .map(|v| HODVertex {
+            position: Vector3 { x: v[0], y: v[1], z: v[2] },
+            normal: None,
+            color: None,
+            uv: None,
+            uv1: None,
+            uv2: None,
+            tangent: None,
+            binormal: None,
+            skinning_data: None,
+        })
+        .collect();
+    HODCollisionMesh {
+        name: "Root".to_string(),
+        min_extents: min_e,
+        max_extents: max_e,
+        center,
+        radius,
+        mesh: HODMesh {
+            name: "CollisionMesh".to_string(),
+            parent_name: String::new(),
+            lod: 0,
+            has_mult_tags: false,
+            parts: vec![HODMeshPart {
+                material_index: 0,
+                vertex_mask: 0x01,
+                vertices,
+                indices,
+            }],
+        },
+    }
+}
+
 /// Generate a single collision mesh enclosing one or more visible meshes.
 /// Vertices from each selected mesh are transformed into Root space via `joints`,
 /// combined into a unified point cloud (preserving per-mesh AABB extremes),
@@ -495,6 +711,15 @@ pub fn generate_collision_from_model_meshes(
     let target_meshes = select_target_meshes(visible_meshes, mesh_names);
     if target_meshes.is_empty() {
         return None;
+    }
+
+    // Preferred: tight simplified surface (matches vanilla). Falls back to the
+    // inflated convex hull below when the source geometry is unsuitable.
+    // A larger triangle budget is retried when thin features would otherwise be lost.
+    for scale in [1.0f32, 1.8, 3.2] {
+        if let Some((verts, idx)) = generate_tight_collision(&target_meshes, joints, scale) {
+            return Some(collision_mesh_from_surface(verts, idx));
+        }
     }
 
     // Collect vertex positions from all selected meshes in Root space
@@ -1036,6 +1261,84 @@ mod tests {
                 indices: vec![0, 1, 2, 0, 2, 3],
             }],
         }
+    }
+
+    #[test]
+    fn test_tight_collision_is_concave_and_not_inflated() {
+        // Two separated boxes: a convex hull would fill the 20-unit gap between them.
+        fn closed_box(name: &str, min: [f32; 3], max: [f32; 3]) -> HODMesh {
+            let mut m = make_box_mesh(name, "Root", min, max);
+            let part = &mut m.parts[0];
+            part.vertices.clear();
+            for i in 0..8 {
+                let p = [
+                    if i & 1 == 0 { min[0] } else { max[0] },
+                    if i & 2 == 0 { min[1] } else { max[1] },
+                    if i & 4 == 0 { min[2] } else { max[2] },
+                ];
+                let mut v = make_box_mesh("t", "Root", p, p).parts[0].vertices[0].clone();
+                v.position = Vector3 { x: p[0], y: p[1], z: p[2] };
+                part.vertices.push(v);
+            }
+            part.indices = vec![
+                0, 2, 3, 0, 3, 1, 4, 5, 7, 4, 7, 6, 0, 1, 5, 0, 5, 4, 2, 6, 7, 2, 7, 3, 0, 4, 6,
+                0, 6, 2, 1, 3, 7, 1, 7, 5,
+            ];
+            m
+        }
+        let a = closed_box("A", [-5.0, -5.0, -30.0], [5.0, 5.0, -10.0]);
+        let b = closed_box("B", [-5.0, -5.0, 10.0], [5.0, 5.0, 30.0]);
+        let meshes = vec![a, b];
+        let names = vec!["A".to_string(), "B".to_string()];
+        let col = generate_collision_from_model_meshes(&meshes, &[], &names).unwrap();
+        // No inflation: extents equal the source bounds exactly.
+        assert_eq!(col.min_extents.z, -30.0);
+        assert_eq!(col.max_extents.z, 30.0);
+        assert_eq!(col.max_extents.x, 5.0);
+        // No triangle may bridge the gap (all vertices are at |z| >= 10).
+        let part = &col.mesh.parts[0];
+        assert!(part.vertices.iter().all(|v| v.position.z.abs() >= 10.0));
+    }
+
+    #[test]
+    fn test_tight_collision_simplifies_dense_surface() {
+        // A dense UV sphere should be reduced to a bounded triangle budget and stay tight.
+        let (rings, segs) = (60usize, 90usize);
+        let mut verts = Vec::new();
+        for r in 0..=rings {
+            let th = std::f32::consts::PI * r as f32 / rings as f32;
+            for sg in 0..=segs {
+                let ph = 2.0 * std::f32::consts::PI * sg as f32 / segs as f32;
+                verts.push(HODVertex {
+                    position: Vector3 {
+                        x: 40.0 * th.sin() * ph.cos(),
+                        y: 40.0 * th.cos(),
+                        z: 40.0 * th.sin() * ph.sin(),
+                    },
+                    normal: None, color: None, uv: None, uv1: None, uv2: None,
+                    tangent: None, binormal: None, skinning_data: None,
+                });
+            }
+        }
+        let mut idx: Vec<u16> = Vec::new();
+        for r in 0..rings {
+            for sg in 0..segs {
+                let i = (r * (segs + 1) + sg) as u16;
+                let j = i + (segs + 1) as u16;
+                idx.extend_from_slice(&[i, j, i + 1, i + 1, j, j + 1]);
+            }
+        }
+        let mesh = HODMesh {
+            name: "Sphere".to_string(),
+            parent_name: "Root".to_string(),
+            lod: 0,
+            has_mult_tags: false,
+            parts: vec![HODMeshPart { material_index: 0, vertex_mask: 0x01, vertices: verts, indices: idx }],
+        };
+        let col = generate_collision_from_model_meshes(&[mesh], &[], &["Sphere".to_string()]).unwrap();
+        let tris = col.mesh.parts[0].indices.len() / 3;
+        assert!(tris <= 400, "tris={}", tris);
+        assert!(col.max_extents.x <= 40.001 && col.max_extents.x >= 30.0);
     }
 
     #[test]

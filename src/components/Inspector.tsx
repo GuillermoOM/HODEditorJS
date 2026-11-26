@@ -969,7 +969,7 @@ export const Inspector: React.FC<InspectorProps> = ({
     setStatusMsg?.("Generating Collision Convex Hull...");
     // TRAP COMMENT: Do not remove this setTimeout! Tauri IPC serializes the entire HODModel
     // synchronously on the main thread. Without this 50ms yield, React cannot paint the loading
-    // spinner overlay before the UI thread blocks during convex hull generation.
+    // spinner overlay before the UI thread blocks during collision generation.
     setTimeout(async () => {
       try {
         const updatedModel = await invoke<any>("auto_generate_collision_from_mesh", {
@@ -982,11 +982,11 @@ export const Inspector: React.FC<InspectorProps> = ({
 
         await invoke("log_event", {
           level: "INFO",
-          message: `Successfully generated convex hull collision mesh for ${colName} from visual meshes: ${meshNames.join(", ")}`,
+          message: `Successfully generated tight collision mesh for ${colName} from visual meshes: ${meshNames.join(", ")}`,
         });
 
         setIsLoading?.(false);
-        alert(`Collision convex hull mesh successfully generated for "${colName}" from ${meshNames.length} mesh(es) (${meshNames.join(", ")})!`);
+        alert(`Collision mesh successfully generated for "${colName}" from ${meshNames.length} mesh(es) (${meshNames.join(", ")})!`);
       } catch (e: any) {
         console.error(e);
         setIsLoading?.(false);
