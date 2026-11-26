@@ -83,6 +83,24 @@ Test hod: `ter_zephyrus`
 ## Test Runs
 
 ---
+SHA: `(pending commit)`
+Timestamp: `25/11/2026`
+Test hod: `hgn_destroyer` (vanilla game copy; has `SCAR` 13,749 B)
+
+**Goal**: GitHub issue #8 — UI save dropped SCAR/BNDV because `preserved_chunks` is `#[serde(skip)]`.
+
+Automated (parser level, simulating the IPC round trip by clearing `preserved_chunks`):
+
+- `cargo test --lib serialize::tests::save_recovers_scar_bndv_from_original_when_preserved_chunks_empty`: [x] PASS (fails with the recovery disabled: `left: [("SCAR", 13749)] right: []`)
+- `cargo test --lib`: 49 passed / 0 failed
+- `verify_lossless`: size diffs and re-parse results identical to the pre-change baseline (+136 / -74546 / -761139 / -5336579, DAE fallback 140254 B)
+
+Manual (editor + game), **not yet done**:
+
+1. Open vanilla `hgn_destroyer.hod`, save without edits: [ ] SCAR present in output (e.g. `grep -c -a SCAR`)
+2. Load the saved file in game: [ ] battle-scar decals render
+
+---
 SHA: `3dc8ed8b292cb0dbf0edafa17fd3979fc8ce79a7`
 Timestamp: `01/06/2026 14:05`
 Test hod: `ter_zephyrus`
