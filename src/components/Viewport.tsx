@@ -733,6 +733,41 @@ export const Viewport: React.FC<ViewportProps> = ({
     return result;
   };
 
+  // Frame used for engine glows/shapes. The three floats after a HIER rotation behave as a second Euler
+  // rotation on engine nozzles (a (+-pi, 0, +-pi) pair turns the nozzle 180 deg about Y so the glow shell, whose
+  // axis is +z, points out of the stern: 191 of 195 vanilla glows point rearward with it, ~50% without). They
+  // must never act as scale. Returns the unit-scale global matrix and the offset from the (scaled) joint
+  // global so animation (animated joint matrix * base) still follows.
+  const getEngineFrame = (jointName: string): { unitGlobal: THREE.Matrix4; base: THREE.Matrix4 } => {
+    const staticGlobal = getJointGlobalMatrix(jointName);
+    const joint = getJointCache().byName.get(jointName.toLowerCase());
+    if (!joint) return { unitGlobal: staticGlobal, base: new THREE.Matrix4() };
+    const rowMul = (a: number[][], b: number[][]) => {
+      const r = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) r[i][j] += a[i][k] * b[k][j];
+      return r;
+    };
+    const euler = (e?: { x: number; y: number; z: number } | null) => {
+      const x = e?.x ?? 0, y = e?.y ?? 0, z = e?.z ?? 0;
+      const cx = Math.cos(x), sx = Math.sin(x), cy = Math.cos(y), sy = Math.sin(y), cz = Math.cos(z), sz = Math.sin(z);
+      const rx = [[1,0,0,0],[0,cx,sx,0],[0,-sx,cx,0],[0,0,0,1]];
+      const ry = [[cy,0,-sy,0],[0,1,0,0],[sy,0,cy,0],[0,0,0,1]];
+      const rz = [[cz,sz,0,0],[-sz,cz,0,0],[0,0,1,0],[0,0,0,1]];
+      return rowMul(rowMul(rx, ry), rz);
+    };
+    const m = rowMul(euler(joint.scale), euler(joint.rotation));
+    m[3][0] = joint.position?.x ?? 0;
+    m[3][1] = joint.position?.y ?? 0;
+    m[3][2] = joint.position?.z ?? 0;
+    const unitLocal = toThreeMatrix({ m: m as any });
+    const parentGlobal = joint.parent_name && joint.parent_name.toLowerCase() !== jointName.toLowerCase()
+      ? getJointGlobalMatrix(joint.parent_name)
+      : new THREE.Matrix4();
+    const unitGlobal = parentGlobal.clone().multiply(unitLocal);
+    const base = staticGlobal.clone().invert().multiply(unitGlobal);
+    return { unitGlobal, base };
+  };
+
   // Helper to resolve helper world position to local position of parent joint
   const getLocalPosition = (obj: THREE.Object3D, selectedType: string, selectedName: string): Vector3D => {
     const currentModel = modelRef.current;
@@ -2233,11 +2268,11 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 8. Render Engine Glows
       if (model.engine_glows) {
         model.engine_glows.forEach((glow) => {
-          const parentMatrix = getJointGlobalMatrix(glow.parent_name);
+          const frame = getEngineFrame(glow.parent_name);
           const parentPos = new THREE.Vector3();
           const parentQuat = new THREE.Quaternion();
           const parentScale = new THREE.Vector3();
-          safeDecompose(parentMatrix, parentPos, parentQuat, parentScale);
+          safeDecompose(frame.unitGlobal, parentPos, parentQuat, parentScale);
 
           const glowGroup = createThreeMeshGroup(glow.mesh, "#ffd600", 0.5);
           // Retail draws glow shells with the procedural fx_eng_glowbasic program (hwrm-modern
@@ -2297,7 +2332,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           glowGroup.quaternion.copy(parentQuat);
           glowGroup.userData = {
             parentJointName: glow.parent_name,
-            baseMatrix: new THREE.Matrix4(),
+            baseMatrix: frame.base,
             visKey: `engine_glow:${glow.name}`,
           };
           glowGroup.visible = isKeyVisible(`engine_glow:${glow.name}`);
@@ -2309,11 +2344,11 @@ export const Viewport: React.FC<ViewportProps> = ({
       // 9. Render Engine Shapes
       if (model.engine_shapes) {
         model.engine_shapes.forEach((shape) => {
-          const parentMatrix = getJointGlobalMatrix(shape.parent_name);
+          const frame = getEngineFrame(shape.parent_name);
           const parentPos = new THREE.Vector3();
           const parentQuat = new THREE.Quaternion();
           const parentScale = new THREE.Vector3();
-          safeDecompose(parentMatrix, parentPos, parentQuat, parentScale);
+          safeDecompose(frame.unitGlobal, parentPos, parentQuat, parentScale);
 
           const shapeGroup = createThreeMeshGroup(shape.mesh, "#7209b7", 0.4);
           shapeGroup.name = `engine_shape:${shape.name}`;
@@ -2321,7 +2356,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           shapeGroup.quaternion.copy(parentQuat);
           shapeGroup.userData = {
             parentJointName: shape.parent_name,
-            baseMatrix: new THREE.Matrix4(),
+            baseMatrix: frame.base,
             visKey: `engine_shape:${shape.name}`,
           };
           shapeGroup.visible = isKeyVisible(`engine_shape:${shape.name}`);
