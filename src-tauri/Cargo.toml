@@ -1,6 +1,6 @@
 [package]
 name = "hodeditorjs"
-version = "1.2.19"
+version = "1.2.20"
 description = "HODEditorJS App"
 authors = ["willywolfy"]
 edition = "2021"
