@@ -1120,7 +1120,20 @@ impl HODModel {
                                                         .max(0) as usize;
                                                     let mesh_start = context.mesh_pool.position() as usize;
                                                     let face_start = context.face_pool.position() as usize;
-                                                    let mesh_end = mesh_start + vertex_count * 12;
+                                                    // Older editor builds wrote 16-byte (x, y, z, w=1.0) vertices here;
+                                                    // vanilla/engine layout is 12 bytes. Detect the old layout by w == 1.0
+                                                    // on every vertex (impossible for real 12-byte data) and still read it.
+                                                    let stride = {
+                                                        let mp = context.mesh_pool.get_ref();
+                                                        let old_layout = vertex_count >= 3
+                                                            && mesh_start + vertex_count * 16 <= mp.len()
+                                                            && (0..vertex_count).all(|i| {
+                                                                let o = mesh_start + i * 16 + 12;
+                                                                f32::from_le_bytes(mp[o..o + 4].try_into().unwrap()) == 1.0
+                                                            });
+                                                        if old_layout { 16 } else { 12 }
+                                                    };
+                                                    let mesh_end = mesh_start + vertex_count * stride;
                                                     let face_end = face_start + index_count * 2;
                                                     if mesh_end <= context.mesh_pool.get_ref().len()
                                                         && face_end <= context.face_pool.get_ref().len()
@@ -1129,7 +1142,7 @@ impl HODModel {
                                                         let frefs = context.face_pool.get_ref();
                                                         let mut vs = Vec::with_capacity(vertex_count);
                                                         for i in 0..vertex_count {
-                                                            let o = mesh_start + i * 12;
+                                                            let o = mesh_start + i * stride;
                                                             let f = |k: usize| {
                                                                 f32::from_le_bytes(
                                                                     mrefs[o + k..o + k + 4].try_into().unwrap(),
@@ -1145,22 +1158,13 @@ impl HODModel {
                                                             .collect::<Vec<u16>>();
                                                         context.mesh_pool.set_position(mesh_end as u64);
                                                         context.face_pool.set_position(face_end as u64);
-                                                        // Sanity: files saved by older editor builds stored 16-byte
-                                                        // vertices here; their data decodes as garbage. Accept only
-                                                        // finite vertices inside the COLD bbox and valid indices.
-                                                        let ext_ok = |v: f32, lo: f32, hi: f32| {
-                                                            let m = (hi - lo).abs() * 0.01 + 1e-3;
-                                                            v.is_finite() && v >= lo.min(hi) - m && v <= lo.max(hi) + m
-                                                        };
+                                                        // Sanity: finite vertices and valid triangle indices. (Not checked
+                                                        // against the COLD BBOX: generated hulls are inflated past it.)
                                                         let valid = vertex_count > 0
                                                             && index_count > 0
                                                             && index_count % 3 == 0
                                                             && is.iter().all(|&i| (i as usize) < vertex_count)
-                                                            && vs.iter().all(|v| {
-                                                                ext_ok(v.0, min_extents.x, max_extents.x)
-                                                                    && ext_ok(v.1, min_extents.y, max_extents.y)
-                                                                    && ext_ok(v.2, min_extents.z, max_extents.z)
-                                                            });
+                                                            && vs.iter().all(|v| v.0.is_finite() && v.1.is_finite() && v.2.is_finite());
                                                         if valid {
                                                             for (x, y, z) in vs {
                                                                 vertices.push(HODVertex {
