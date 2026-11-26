@@ -1445,7 +1445,7 @@ Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`;
 
 ## 2026-11-26 - Engine shape editor and trail simulation
 - Automated: `npx tsc --noEmit`, `npm run build`; headless esbuild+node run of `EngineTrailSim` (straight flight ribbon length = speed x linger, half width = diameter x min dimension, weave stays finite).
-- In app (user): select an engine shape on a small craft (e.g. `vgr_probe_prox` has none; use `hgn_scout`, `hgn_interceptor`): outline/markers/circle appear at the nozzle instead of triangles: [ ] NOT RUN (user)
+- In app (user): select an engine shape on a small craft (e.g. `hgn_scout`, whose HOD has `EngineShape1` with four points): outline/markers/circle appear at the nozzle instead of triangles: [ ] NOT RUN (user)
 - Edit a point / generate a polygon / scale to min dimension, save and reload: points persist (ETSH count = point count): [ ] NOT RUN (user)
 - Enable "Engine Trail Simulation" (Layers panel or shape inspector): ribbons stream behind the nozzles; straight and weave modes; width follows diameter x min dimension: [ ] NOT RUN (user)
 - Add Engine Shape on `EngineNozzle2` creates `EngineShape2` with 4 points: [ ] NOT RUN (user)
