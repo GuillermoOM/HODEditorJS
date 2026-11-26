@@ -186,6 +186,7 @@ fn build_model_from_assets(dir: &Path) -> Result<HODModel, String> {
         collision_meshes: Vec::new(),
         dockpaths: Vec::new(),
         animations: Vec::new(),
+        scar_meshes: Vec::new(),
         preserved_chunks: Vec::new(),
     })
 }

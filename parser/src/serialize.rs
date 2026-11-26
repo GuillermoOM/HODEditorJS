@@ -1206,6 +1206,60 @@ pub(crate) fn build_cold_chunk(cm: &HODCollisionMesh) -> Result<IffChunk, String
     })
 }
 
+/// Appends raw bytes to the decompressed mesh and face streams of a POOL payload and
+/// re-packs it (mesh stream XPress-compressed, face stream raw, like the other appends).
+fn append_pool_streams(pool: &[u8], mesh_extra: &[u8], face_extra: &[u8]) -> Result<Vec<u8>, String> {
+    use crate::xpress;
+    let mut c = Cursor::new(pool);
+    let pool_type = c.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+    let comp_tex_len = c.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+    let decomp_tex_len = c.read_u32::<LittleEndian>().map_err(|e| e.to_string())?;
+    let mut comp_tex = vec![0u8; comp_tex_len];
+    c.read_exact(&mut comp_tex).map_err(|e| e.to_string())?;
+    let comp_mesh_len = c.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+    let decomp_mesh_len = c.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+    let mut comp_mesh = vec![0u8; comp_mesh_len];
+    c.read_exact(&mut comp_mesh).map_err(|e| e.to_string())?;
+    let mut decomp_mesh = if comp_mesh_len == decomp_mesh_len {
+        comp_mesh
+    } else {
+        xpress::decompress(&comp_mesh, decomp_mesh_len)?
+    };
+    let comp_face_len = c.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+    let decomp_face_len = c.read_u32::<LittleEndian>().map_err(|e| e.to_string())? as usize;
+    let mut comp_face = vec![0u8; comp_face_len];
+    c.read_exact(&mut comp_face).map_err(|e| e.to_string())?;
+    let mut decomp_face = if comp_face_len == decomp_face_len {
+        comp_face
+    } else {
+        xpress::decompress(&comp_face, decomp_face_len)?
+    };
+
+    decomp_mesh.extend_from_slice(mesh_extra);
+    if decomp_face.len() % 2 != 0 {
+        decomp_face.push(0);
+    }
+    decomp_face.extend_from_slice(face_extra);
+
+    let new_comp_mesh = if decomp_mesh.is_empty() {
+        Vec::new()
+    } else {
+        xpress::compress(&decomp_mesh)
+    };
+    let mut out = Vec::new();
+    out.write_u32::<LittleEndian>(pool_type).map_err(|e| e.to_string())?;
+    out.write_u32::<LittleEndian>(comp_tex.len() as u32).map_err(|e| e.to_string())?;
+    out.write_u32::<LittleEndian>(decomp_tex_len).map_err(|e| e.to_string())?;
+    out.extend_from_slice(&comp_tex);
+    out.write_u32::<LittleEndian>(new_comp_mesh.len() as u32).map_err(|e| e.to_string())?;
+    out.write_u32::<LittleEndian>(decomp_mesh.len() as u32).map_err(|e| e.to_string())?;
+    out.extend_from_slice(&new_comp_mesh);
+    out.write_u32::<LittleEndian>(decomp_face.len() as u32).map_err(|e| e.to_string())?;
+    out.write_u32::<LittleEndian>(decomp_face.len() as u32).map_err(|e| e.to_string())?;
+    out.extend_from_slice(&decomp_face);
+    Ok(out)
+}
+
 pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result<Vec<u8>, String> {
     use crate::iff::{ChunkType, IffChunk};
     use crate::xpress;
@@ -1620,6 +1674,14 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
         new_pool.extend_from_slice(&new_comp_face);
 
         pool_data = new_pool;
+    }
+
+    // SCAR battle-scar reference mesh: regenerated from the LOD0 hull on every save
+    // (its vertex/normal/triangle arrays live in the POOL streams, after the COLD data,
+    // so a chunk-only carry-over from the original file would be unsafe).
+    let scars = crate::scar::generate_scars(&model);
+    for scar in &scars {
+        pool_data = append_pool_streams(&pool_data, &scar.mesh_pool, &scar.face_pool)?;
     }
     let mut hvmd_children = Vec::new();
 
@@ -2091,8 +2153,8 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     if let Some(dtrm) = model.preserved_chunks.iter().find(|c| c.id == "DTRM") {
         for child in &dtrm.children {
             if dtrm_sub_chunk_ids.contains(&child.id.as_str()) {
-                if child.id == "COLD" || child.id == "KDOP" {
-                    // Do not preserve old collision chunks; they will be regenerated
+                if child.id == "COLD" || child.id == "KDOP" || child.id == "SCAR" {
+                    // Do not preserve old collision/scar chunks; they will be regenerated
                     continue;
                 }
                 dtrm_children.push(child.clone());
@@ -2101,7 +2163,7 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     } else {
         // Handle case where DTRM was not preserved but its children were top-level
         for chunk in &model.preserved_chunks {
-            if ["SCAR", "BNDV", "ETSH"].contains(&chunk.id.as_str()) {
+            if ["BNDV", "ETSH"].contains(&chunk.id.as_str()) {
                 dtrm_children.push(chunk.clone());
             }
         }
@@ -2140,6 +2202,17 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
                 });
             }
         }
+    }
+
+    // SCAR must come after COLD: pool streams are consumed in chunk order.
+    for scar in scars {
+        dtrm_children.push(IffChunk {
+            id: "SCAR".to_string(),
+            chunk_type: ChunkType::Normal,
+            version: 0x7DF,
+            data: scar.chunk,
+            children: Vec::new(),
+        });
     }
 
     let dtrm_chunk = IffChunk {

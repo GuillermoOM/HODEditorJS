@@ -300,6 +300,7 @@ impl HODModel {
             dockpaths: Vec::new(),
             animations: Vec::new(),
             textures_modified: false,
+            scar_meshes: Vec::new(),
             preserved_chunks: Vec::new(),
         }
     }
@@ -1262,6 +1263,14 @@ impl HODModel {
             dockpaths,
             animations: Vec::new(),
             textures_modified: false,
+            scar_meshes: preserved_chunks
+                .iter()
+                .filter(|c| c.id == "SCAR")
+                .filter_map(|c| {
+                    let len = u32::from_le_bytes(c.data.get(0..4)?.try_into().ok()?) as usize;
+                    String::from_utf8(c.data.get(4..4 + len)?.to_vec()).ok()
+                })
+                .collect(),
             preserved_chunks,
         };
 

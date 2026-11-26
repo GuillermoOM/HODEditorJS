@@ -1375,3 +1375,23 @@ Test hod: `testing/hgn_destroyer/hgn_destroyer.hod`, a mothership HOD (both load
 2. Drag translate/rotate gizmo on a joint; release commits without a multi-second stall; hidden nodes cannot be gizmo-selected: [ ] NOT RUN (user)
 3. Rename a Repair Point group from the Inspector; `Heading/Left/Up` children follow the new name: [ ] NOT RUN (user)
 4. Animation playback still animates joints/meshes/dock points: [ ] NOT RUN (user)
+
+---
+
+Timestamp: `25/11/2026` (SCAR battle-scar mesh regenerated on save, GitHub issue #8)
+Test hod: vanilla `hgn_destroyer.hod` (has a SCAR chunk; `testing/hgn_destroyer` is an older re-save without one)
+
+**Goal**: Verify that saving from the editor keeps the SCAR chunk AND its POOL arrays valid, i.e. the engine still loads the ship and battle scars still work.
+
+### Automated pre-verification (agent)
+
+1. `cargo test --release --test scar_vanilla` (regenerated SCAR vs vanilla `hgn_destroyer`: names, bbox, counts, grid, cell lists, pool tails byte-identical; UI JSON-round-trip save emits SCAR after COLD; multi-SCAR `ter_elysium` keeps all 3): [x] PASS (3 passed)
+2. Sweep over all vanilla HODs + FSFC mod ships: 651 SCAR chunks, 645 regenerate identically, 6 are part-subset SCARs (`vgr_carrier`, `kus_carrier`, `hgn_mothership` x2, `shi_rakshasa`, `vgr_lancefighter`): [x] PASS (known exceptions)
+3. `cargo run --bin verify_lossless`: all re-parse; diffs Pebble +136, Elysium +18356 (3 SCARs now regenerated), Fenris -761139, Asteroid -5336579, DAE 140254 B: [x] PASS
+4. `cargo test --lib` (48) and `npm run build`: [x] PASS
+
+### Manual in-game checks
+
+1. Open vanilla `hgn_destroyer.hod`, save it, load it in game; no crash on load: [ ] NOT RUN (user)
+2. Damage the saved destroyer; battle-scar decals still appear on the hull: [ ] NOT RUN (user)
+3. Repeat with a ship whose SCAR is not on the largest mesh (`tai_researchstation`, `hgn_mothership`) and a multi-SCAR mod ship (`ter_elysium`): [ ] NOT RUN (user)

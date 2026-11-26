@@ -28,7 +28,7 @@ This is a **Tauri** desktop application with three major structural boundaries:
 - On save, `generate_v2_from_model([], &model)` is called to create a brand new HOD 2.0 binary from the model data.
 - **All output files are HOD 2.0 format**, regardless of input format. This app modernizes HOD 1.3 files.
 - The `save_edits` function and `original_needs_full_v2_regeneration` logic are DEPRECATED. They only exist as a fallback for edge cases and should not be relied upon.
-- Unparsed chunks from the original file (like `KDOP`, `COLD`, `SCAR`, `INFO`) must be preserved in `HODModel` as raw bytes and written back to the output during generation.
+- `KDOP`, `COLD` and `SCAR` are **regenerated** on every save (KDOP/COLD from the collision mesh, SCAR + its POOL arrays from the LOD0 hull via `parser/src/scar.rs`); never carry them over raw (SCAR's arrays live in the POOL). `HODModel.preserved_chunks` is `#[serde(skip)]`, so in the UI save path it is empty: anything that must survive a UI save needs a real serde field (e.g. `scar_mesh`), not a preserved chunk.
 
 This architecture is documented in `docs/hod2-reverse-engineering/architecture-overview.md`.
 

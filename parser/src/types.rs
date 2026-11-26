@@ -272,6 +272,12 @@ pub struct HODModel {
     pub animations: Vec<HODAnimation>,
     #[serde(default)]
     pub textures_modified: bool,
+    /// Names of the LOD0 meshes the loaded HOD's `SCAR` battle-scar reference meshes were
+    /// built from, in chunk order (vanilla has one, HODOR-built mods one per mesh; empty =
+    /// the HOD had no SCAR). Each chunk and its POOL arrays are regenerated from its mesh on
+    /// every save; see `scar.rs`.
+    #[serde(default)]
+    pub scar_meshes: Vec<String>,
     #[serde(skip)]
     pub preserved_chunks: Vec<crate::iff::IffChunk>,
 }

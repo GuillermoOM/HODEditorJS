@@ -180,6 +180,8 @@ export interface HODModel {
   dockpaths: HODDockpath[];
   animations?: HODAnimation[];
   textures_modified: boolean;
+  /** Source LOD0 mesh names of the loaded HOD's SCAR battle-scar meshes (empty/absent = none); the Rust save path regenerates them. */
+  scar_meshes?: string[];
 }
 
 const isFiniteVector = (v: any): boolean => {

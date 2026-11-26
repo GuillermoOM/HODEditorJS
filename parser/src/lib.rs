@@ -6,6 +6,7 @@ pub mod serialize;
 pub mod parse;
 pub mod iff;
 pub mod kdop;
+pub mod scar;
 pub mod math;
 pub mod shader_map;
 pub mod types;
