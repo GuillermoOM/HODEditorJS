@@ -1410,3 +1410,20 @@ Test hod: `hgn_assaultfrigate` (resaved by the user: SCAR decals visible but not
 
 1. Re-save vanilla `hgn_assaultfrigate.hod`, load in game, damage it; battle-scar decals follow the hull correctly: [ ] NOT RUN (user)
 2. Collision/repair/latching still behave (collision vertex layout changed): [ ] NOT RUN (user)
+
+---
+
+Timestamp: `26/11/2026` (collision: real COLD mesh from the pool + KDOP from LOD0 bbox)
+Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`; do NOT use `ter_orion_resaved.hod`, it was saved by the older build), `hgn_assaultfrigate`
+
+### Automated pre-verification (agent)
+
+1. `cargo test --release` (`collision_pool`: real COLD mesh read from the pool, round-trips, KDOP min/max == vanilla; `scar_vanilla` 3; lib 48): [x] PASS
+2. Old-build resave `ter_orion_resaved.hod` is detected (validation warning) and falls back to the KDOP hull instead of loading garbage: [x] PASS
+3. `verify_lossless`: unchanged diffs (+136 / +18356 / -761139 / -5336580, DAE 140254 B): [x] PASS
+
+### Manual in-game checks
+
+1. Open the original `ter_orion.hod`, check the Collision Hulls layer now shows the detailed hull (448 vertices), save, load in game: no crash: [ ] NOT RUN (user)
+2. Fire weapons at the sides of the resaved orion: shots hit the visible hull: [ ] NOT RUN (user)
+3. Battle-scar decals still follow the hull (SCAR after COLD, both from the same pool order): [ ] NOT RUN (user)

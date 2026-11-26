@@ -1106,7 +1106,81 @@ impl HODModel {
                                             }
                                             "TRIS" => {
                                                 let mut r_tris = Cursor::new(&child.data);
-                                                if child.data.len() >= 4 {
+                                                if child.data.len() == 8 && context.is_v2 {
+                                                    // HOD 2.0: TRIS holds only the counts; the triangles live in
+                                                    // the mesh pool (vertexCount * 12-byte vector3) and face pool
+                                                    // (indexCount * u16), consumed in chunk order after the GLOWs.
+                                                    let vertex_count = r_tris
+                                                        .read_i32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?
+                                                        .max(0) as usize;
+                                                    let index_count = r_tris
+                                                        .read_i32::<LittleEndian>()
+                                                        .map_err(|e| e.to_string())?
+                                                        .max(0) as usize;
+                                                    let mesh_start = context.mesh_pool.position() as usize;
+                                                    let face_start = context.face_pool.position() as usize;
+                                                    let mesh_end = mesh_start + vertex_count * 12;
+                                                    let face_end = face_start + index_count * 2;
+                                                    if mesh_end <= context.mesh_pool.get_ref().len()
+                                                        && face_end <= context.face_pool.get_ref().len()
+                                                    {
+                                                        let mrefs = context.mesh_pool.get_ref();
+                                                        let frefs = context.face_pool.get_ref();
+                                                        let mut vs = Vec::with_capacity(vertex_count);
+                                                        for i in 0..vertex_count {
+                                                            let o = mesh_start + i * 12;
+                                                            let f = |k: usize| {
+                                                                f32::from_le_bytes(
+                                                                    mrefs[o + k..o + k + 4].try_into().unwrap(),
+                                                                )
+                                                            };
+                                                            vs.push((f(0), f(4), f(8)));
+                                                        }
+                                                        let is = (0..index_count)
+                                                            .map(|i| {
+                                                                let o = face_start + i * 2;
+                                                                u16::from_le_bytes([frefs[o], frefs[o + 1]])
+                                                            })
+                                                            .collect::<Vec<u16>>();
+                                                        context.mesh_pool.set_position(mesh_end as u64);
+                                                        context.face_pool.set_position(face_end as u64);
+                                                        // Sanity: files saved by older editor builds stored 16-byte
+                                                        // vertices here; their data decodes as garbage. Accept only
+                                                        // finite vertices inside the COLD bbox and valid indices.
+                                                        let ext_ok = |v: f32, lo: f32, hi: f32| {
+                                                            let m = (hi - lo).abs() * 0.01 + 1e-3;
+                                                            v.is_finite() && v >= lo.min(hi) - m && v <= lo.max(hi) + m
+                                                        };
+                                                        let valid = vertex_count > 0
+                                                            && index_count > 0
+                                                            && index_count % 3 == 0
+                                                            && is.iter().all(|&i| (i as usize) < vertex_count)
+                                                            && vs.iter().all(|v| {
+                                                                ext_ok(v.0, min_extents.x, max_extents.x)
+                                                                    && ext_ok(v.1, min_extents.y, max_extents.y)
+                                                                    && ext_ok(v.2, min_extents.z, max_extents.z)
+                                                            });
+                                                        if valid {
+                                                            for (x, y, z) in vs {
+                                                                vertices.push(HODVertex {
+                                                                    position: Vector3 { x, y, z },
+                                                                    normal: None,
+                                                                    color: None,
+                                                                    uv: None,
+                                                                    uv1: None,
+                                                                    uv2: None,
+                                                                    tangent: None,
+                                                                    binormal: None,
+                                                                    skinning_data: None,
+                                                                });
+                                                            }
+                                                            indices = is;
+                                                        } else {
+                                                            println!("[RUST] WARNING: COLD pool triangles failed validation ({} verts, {} idx); using the KDOP hull instead", vertex_count, index_count);
+                                                        }
+                                                    }
+                                                } else if child.data.len() >= 4 {
                                                     let vertex_count = r_tris
                                                         .read_i32::<LittleEndian>()
                                                         .map_err(|e| e.to_string())?

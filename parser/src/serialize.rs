@@ -2165,11 +2165,25 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
     if !model.collision_meshes.is_empty() {
         for cm in &model.collision_meshes {
             if let Some(part) = cm.mesh.parts.first() {
-                let verts: Vec<[f32; 3]> = part
-                    .vertices
+                // Vanilla KDOPs are built from the VISIBLE LOD0 meshes (bbox of every LOD0 mesh's raw
+                // vertices matches the KDOP min/max in 790 of 824 vanilla/mod HODs), not from the COLD
+                // collision mesh; the engine only reads the KDOP min/max (it builds the joint OBB the
+                // collision mesh is created with). Fall back to the collision vertices if there is no LOD0.
+                let mut verts: Vec<[f32; 3]> = model
+                    .meshes
                     .iter()
+                    .filter(|m| m.lod == 0)
+                    .flat_map(|m| m.parts.iter())
+                    .flat_map(|p| p.vertices.iter())
                     .map(|v| [v.position.x, v.position.y, v.position.z])
                     .collect();
+                if verts.is_empty() {
+                    verts = part
+                        .vertices
+                        .iter()
+                        .map(|v| [v.position.x, v.position.y, v.position.z])
+                        .collect();
+                }
                 let kdop_data = crate::kdop::generate_kdop(&verts, &part.indices);
                 dtrm_children.push(IffChunk {
                     id: "KDOP".to_string(),
