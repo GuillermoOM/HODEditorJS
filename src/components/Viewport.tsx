@@ -604,7 +604,10 @@ export const Viewport: React.FC<ViewportProps> = ({
         if (child.name.startsWith("dockpoint:") || 
             child.name.startsWith("marker:") || 
             child.name.startsWith("navlight:") || 
-            child.name.startsWith("engine_burn:")) {
+            child.name.startsWith("engine_burn:") ||
+            // HIER sx/sy/sz are bounds, not scale (KB): a nozzle with bounds (pi, 0, pi) must not stretch its glow/shape.
+            child.name.startsWith("engine_glow:") ||
+            child.name.startsWith("engine_shape:")) {
           child.scale.set(1, 1, 1);
         }
 
@@ -2237,6 +2240,58 @@ export const Viewport: React.FC<ViewportProps> = ({
           safeDecompose(parentMatrix, parentPos, parentQuat, parentScale);
 
           const glowGroup = createThreeMeshGroup(glow.mesh, "#ffd600", 0.5);
+          // Retail draws glow shells with the procedural fx_eng_glowbasic program (hwrm-modern
+          // docs/evidence/effects.md section 18): faint additive shell that fades out over 30 units from the
+          // nozzle along the mesh z and is brightest where it faces the camera. Reproduce it at full thrust:
+          // an outer shell (z scale 1.0) plus an inner one (z scale 0.8^1.5).
+          const glowMats: THREE.ShaderMaterial[] = [];
+          const innerCopies: THREE.Mesh[] = [];
+          glowGroup.traverse((obj) => {
+            const m = obj as THREE.Mesh;
+            if (!m.isMesh) return;
+            const mat = new THREE.ShaderMaterial({
+              uniforms: { uColor: { value: new THREE.Vector4(0.35, 0.6, 0.95, 0.3) } },
+              vertexShader: `
+                varying float vFadeZ;
+                varying vec3 vN;
+                varying vec3 vEye;
+                void main() {
+                  vFadeZ = position.z;
+                  vN = normalize(normalMatrix * normal);
+                  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                  vEye = mv.xyz;
+                  gl_Position = projectionMatrix * mv;
+                }`,
+              fragmentShader: `
+                uniform vec4 uColor;
+                varying float vFadeZ;
+                varying vec3 vN;
+                varying vec3 vEye;
+                void main() {
+                  float coneA = 1.0 - min(abs(vFadeZ / 30.0), 1.0);
+                  float sphereA = pow(clamp(-dot(normalize(vN), normalize(vEye)), 0.0, 1.0), 1.5);
+                  float blendA = max(coneA * 0.5 + sphereA, 0.0) * 1.3;
+                  gl_FragColor = vec4(uColor.rgb, uColor.a * blendA);
+                }`,
+              transparent: true,
+              depthWrite: false,
+              depthTest: true,
+              side: THREE.DoubleSide,
+              blending: THREE.CustomBlending,
+              blendEquation: THREE.AddEquation,
+              blendSrc: THREE.SrcAlphaFactor,
+              blendDst: THREE.OneFactor,
+            });
+            glowMats.push(mat);
+            const prev = m.material;
+            m.material = mat;
+            if (Array.isArray(prev)) prev.forEach((x) => x.dispose()); else prev.dispose();
+            const inner = new THREE.Mesh(m.geometry, mat);
+            inner.scale.set(1, 1, Math.pow(0.8, 1.5));
+            innerCopies.push(inner);
+            inner.userData.glowInnerOf = m;
+          });
+          innerCopies.forEach((inner) => (inner.userData.glowInnerOf as THREE.Mesh).parent?.add(inner));
           glowGroup.name = `engine_glow:${glow.name}`;
           glowGroup.position.copy(parentPos);
           glowGroup.quaternion.copy(parentQuat);

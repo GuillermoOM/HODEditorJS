@@ -57,8 +57,8 @@ Viewport renders model meshes and helper visuals for supported data collections,
 - Nav lights.
 - Dockpaths.
 - Engine burns.
-- Engine glows.
-- Engine shapes.
+- Engine glows (previewed like retail at full thrust: faint additive shell, `srcAlpha/one` blending with depth test, fading out over 30 mesh-z units from the nozzle and brightest where facing the camera; outer shell plus an inner one at z scale 0.8^1.5; colour/strength are fixed editor defaults because retail takes them from the `.ship` `setEngineGlow` call). Glow/shape groups ignore joint "scale" (HIER bounds).
+- Engine shapes (ETSH points; only used by retail for the small-craft engine trail ribbon width).
 - Collision hulls.
 - Target boxes.
 
