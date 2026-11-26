@@ -10,7 +10,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { updateDynamicShaderSlots } from "./texture_utils";
 import * as THREE from "three";
 import { CoordinateSpace, matrixRotationToHodRadians, stripBoundsFromQuaternion } from "./transform_utils";
-import { DEFAULT_TRAIL_PREVIEW, type EngineTrailPreviewSettings } from "./engine_trail";
+import { DEFAULT_TRAIL_PREVIEW, engineShapePoints, withEngineShapePoints, type EngineTrailPreviewSettings } from "./engine_trail";
 import { Info, AlertTriangle, FolderOpen, FilePlus } from "lucide-react";
 import "./App.css";
 
@@ -173,6 +173,10 @@ function App() {
   const [showBoneLines, setShowBoneLines] = useState(true);
   // Engine trail simulation preview (engine shapes); viewer only, never saved.
   const [trailPreview, setTrailPreview] = useState<EngineTrailPreviewSettings>(DEFAULT_TRAIL_PREVIEW);
+  // Point selected on an engine shape (viewport pick or inspector row); only meaningful for that shape.
+  const [shapePoint, setShapePoint] = useState<{ shape: string; index: number } | null>(null);
+  const activeShapePoint =
+    shapePoint && selectedNode?.type === "engine_shape" && selectedNode.name === shapePoint.shape ? shapePoint : null;
   const [renderMode, setRenderMode] = useState<"untextured" | "textured" | "shaded" | "wireframe" | "shaded_team" | "textured_team">("shaded");
   const [teamColor, setTeamColor] = useState("#4278a3");
   const [stripeColor, setStripeColor] = useState("#e5d94c");
@@ -1356,6 +1360,20 @@ function App() {
                 loopPlayback={loopPlayback}
                 targetBoxes={targetBoxes}
                 trailPreview={trailPreview}
+                selectedShapePoint={activeShapePoint}
+                onSelectShapePoint={setShapePoint}
+                onShapePointChange={(shapeName, index, pos) => {
+                  const cur = modelRef.current;
+                  if (!cur) return;
+                  commitModel({
+                    ...cur,
+                    engine_shapes: cur.engine_shapes.map((s) => {
+                      if (s.name !== shapeName) return s;
+                      const pts = engineShapePoints(s).map((p, i) => (i === index ? { x: pos.x, y: pos.y, z: pos.z } : p));
+                      return withEngineShapePoints(s, pts);
+                    }),
+                  });
+                }}
               />
             </div>
           ) : (
@@ -1556,6 +1574,11 @@ function App() {
           setStatusMsg={setStatusMsg}
           trailPreview={trailPreview}
           onTrailPreviewChange={setTrailPreview}
+          selectedShapePoint={activeShapePoint ? activeShapePoint.index : null}
+          onSelectShapePoint={(index) => {
+            if (index === null) setShapePoint(null);
+            else if (selectedNode?.type === "engine_shape") setShapePoint({ shape: selectedNode.name, index });
+          }}
         />
       </div>
 

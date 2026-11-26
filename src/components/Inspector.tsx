@@ -37,6 +37,8 @@ interface InspectorProps {
   setStatusMsg?: React.Dispatch<React.SetStateAction<string>>;
   trailPreview?: EngineTrailPreviewSettings;
   onTrailPreviewChange?: (s: EngineTrailPreviewSettings) => void;
+  selectedShapePoint?: number | null;
+  onSelectShapePoint?: (index: number | null) => void;
 }
 
 const quatToEulerDegrees = (q: { x: number; y: number; z: number; w: number }) => {
@@ -829,6 +831,8 @@ export const Inspector: React.FC<InspectorProps> = ({
   setCoordinateSpace,
   trailPreview,
   onTrailPreviewChange,
+  selectedShapePoint,
+  onSelectShapePoint,
 }) => {
   const [pipelines, setPipelines] = useState<string[]>([]);
   const [renameWeaponName, setRenameWeaponName] = useState("");
@@ -2483,6 +2487,8 @@ export const Inspector: React.FC<InspectorProps> = ({
           onModelChange={onModelChange}
           trailPreview={trailPreview ?? DEFAULT_TRAIL_PREVIEW}
           onTrailPreviewChange={onTrailPreviewChange}
+          selectedPoint={selectedShapePoint}
+          onSelectPoint={onSelectShapePoint}
         />
       );
     }

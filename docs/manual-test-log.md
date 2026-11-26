@@ -1449,3 +1449,9 @@ Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`;
 - Edit a point / generate a polygon / scale to min dimension, save and reload: points persist (ETSH count = point count): [ ] NOT RUN (user)
 - Enable "Engine Trail Simulation" (Layers panel or shape inspector): ribbons stream behind the nozzles; straight and weave modes; width follows diameter x min dimension: [ ] NOT RUN (user)
 - Add Engine Shape on `EngineNozzle2` creates `EngineShape2` with 4 points: [ ] NOT RUN (user)
+
+## 2026-11-26 - Engine shape point dragging and wheel inputs
+- Automated: `npx tsc --noEmit`, `npm run build`; headless node check of `refreshShapeGroupGeometry`/`setShapePointHighlight` (outline, circle radius = min dimension, selection marker follow the dragged handle).
+- Select an engine shape, click one of its points in the viewport: white ring, gizmo on the point, table row highlighted: [ ] NOT RUN (user)
+- Drag the point: outline and circle follow live; release commits (inspector values change, Ctrl+Z undoes it): [ ] NOT RUN (user)
+- Mouse wheel over any number box in the engine shape inspector changes the value (Shift x10, Alt x0.1): [ ] NOT RUN (user)

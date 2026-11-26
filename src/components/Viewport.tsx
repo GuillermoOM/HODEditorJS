@@ -14,6 +14,7 @@ import {
   type EngineTrailPreviewSettings,
   type TrailNozzle,
 } from "../engine_trail";
+import { SHAPE_POINT_PREFIX, refreshShapeGroupGeometry, setShapePointHighlight } from "../engine_shape_handles";
 
 // HOD Types matching Rust backend
 export interface Vector3D {
@@ -253,6 +254,10 @@ interface ViewportProps {
   targetBoxes?: any[];
   /** Optional engine trail simulation (docs/ui-source-of-truth/06); preview only, nothing is saved. */
   trailPreview?: EngineTrailPreviewSettings;
+  /** Selected point of the selected engine shape (draggable in the viewport). */
+  selectedShapePoint?: { shape: string; index: number } | null;
+  onSelectShapePoint?: (sel: { shape: string; index: number } | null) => void;
+  onShapePointChange?: (shapeName: string, index: number, pos: Vector3D) => void;
 }
 
 export const Viewport: React.FC<ViewportProps> = ({
@@ -280,6 +285,9 @@ export const Viewport: React.FC<ViewportProps> = ({
   loopPlayback,
   targetBoxes,
   trailPreview,
+  selectedShapePoint,
+  onSelectShapePoint,
+  onShapePointChange,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const transformControlsRef = useRef<TransformControls | null>(null);
@@ -301,6 +309,12 @@ export const Viewport: React.FC<ViewportProps> = ({
   const engineTrailGroupRef = useRef<THREE.Group | null>(null);
   const trailPreviewRef = useRef(trailPreview);
   trailPreviewRef.current = trailPreview;
+  const selectedShapePointRef = useRef(selectedShapePoint ?? null);
+  selectedShapePointRef.current = selectedShapePoint ?? null;
+  const onSelectShapePointRef = useRef(onSelectShapePoint);
+  onSelectShapePointRef.current = onSelectShapePoint;
+  const onShapePointChangeRef = useRef(onShapePointChange);
+  onShapePointChangeRef.current = onShapePointChange;
   const teamColorRef = useRef(teamColor);
   teamColorRef.current = teamColor;
   const trailStateRef = useRef<{ sim: EngineTrailSim; mesh: THREE.Mesh; model: HODModel; version: number } | null>(null);
@@ -1007,10 +1021,37 @@ export const Viewport: React.FC<ViewportProps> = ({
         if (!start || e.button !== 0) return;
         if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
         if (transformControls.dragging || (transformControls as any).axis) return;
-        const group = jointsGroupRef.current;
-        if (!group || !group.visible) return;
         const rect = renderer.domElement.getBoundingClientRect();
         const tmp = new THREE.Vector3();
+
+        // Engine shape points of the SELECTED shape come first (they sit right at the nozzle joint).
+        const selNode = selectedNodeRef.current;
+        if (selNode?.type === "engine_shape") {
+          const shapeGroup = engineShapesGroupRef.current?.children.find(
+            (c) => c.name.toLowerCase() === `engine_shape:${selNode.name}`.toLowerCase()
+          );
+          if (shapeGroup && shapeGroup.visible) {
+            shapeGroup.updateMatrixWorld(true);
+            let bestPt: { index: number; d: number } | null = null;
+            for (const h of shapeGroup.children) {
+              if (!h.name.startsWith("shapepoint:")) continue;
+              h.getWorldPosition(tmp).project(camera);
+              if (tmp.z < -1 || tmp.z > 1) continue;
+              const sx = (tmp.x * 0.5 + 0.5) * rect.width + rect.left;
+              const sy = (-tmp.y * 0.5 + 0.5) * rect.height + rect.top;
+              const d = Math.hypot(sx - e.clientX, sy - e.clientY);
+              if (d > PICK_RADIUS_PX) continue;
+              if (!bestPt || d < bestPt.d) bestPt = { index: parseInt(h.name.slice("shapepoint:".length), 10), d };
+            }
+            if (bestPt) {
+              onSelectShapePointRef.current?.({ shape: selNode.name, index: bestPt.index });
+              return;
+            }
+          }
+        }
+
+        const group = jointsGroupRef.current;
+        if (!group || !group.visible) return;
         let best: { name: string; d: number; z: number } | null = null;
         for (const obj of group.children) {
           if (!obj.name.startsWith("joint:") || !obj.visible) continue;
@@ -1043,6 +1084,15 @@ export const Viewport: React.FC<ViewportProps> = ({
         if (transformControls.object && activeNode) {
           const obj = transformControls.object;
           obj.updateMatrix();
+
+          // A dragged engine shape point: its handle's local position is the point (the shape group carries the nozzle frame).
+          if (obj.name.startsWith("shapepoint:")) {
+            if (activeNode.type === "engine_shape") {
+              const index = parseInt(obj.name.slice("shapepoint:".length), 10);
+              onShapePointChangeRef.current?.(activeNode.name, index, { x: obj.position.x, y: obj.position.y, z: obj.position.z });
+            }
+            return;
+          }
           
           const localPos = getLocalPosition(obj, activeNode.type, activeNode.name);
           
@@ -1109,6 +1159,11 @@ export const Viewport: React.FC<ViewportProps> = ({
       // We no longer trigger re-renders during active drag, because it rebuilds 
       // the scene and destroys the target object causing TransformControls to crash.
       transformControls.addEventListener("objectChange", () => {
+        const obj = transformControls.object;
+        if (obj && obj.name.startsWith("shapepoint:") && obj.parent) {
+          refreshShapeGroupGeometry(obj.parent);
+          return;
+        }
         // Optional: you could update local React state for Inspector preview here 
         // without causing a global model change, but for now we just let the 3D 
         // viewport update itself until the drag ends.
@@ -1442,9 +1497,10 @@ export const Viewport: React.FC<ViewportProps> = ({
   // Update transform mode (translate/rotate/scale)
   useEffect(() => {
     if (transformControlsRef.current) {
-      transformControlsRef.current.setMode(transformMode);
+      // A selected engine shape point can only be moved.
+      transformControlsRef.current.setMode(selectedShapePoint ? "translate" : transformMode);
     }
-  }, [transformMode]);
+  }, [transformMode, selectedShapePoint]);
 
   // Update gizmo coordinate space (local = node axes, global = world axes)
   useEffect(() => {
@@ -2187,30 +2243,56 @@ export const Viewport: React.FC<ViewportProps> = ({
           outlineGeo,
           new THREE.LineBasicMaterial({ color: "#b86bff", transparent: true, opacity: 0.9, depthTest: false })
         );
+        outline.name = "shape-outline";
         outline.renderOrder = 3;
+        outline.frustumCulled = false;
         group.add(outline);
         const pointsObj = new THREE.Points(
           outlineGeo.clone(),
           new THREE.PointsMaterial({ color: "#ffd166", size: 6, sizeAttenuation: false, depthTest: false })
         );
+        pointsObj.name = "shape-points";
         pointsObj.renderOrder = 4;
+        pointsObj.frustumCulled = false;
         group.add(pointsObj);
-        const stats = engineShapeStats(pts);
-        if (stats.minDistance > 1e-4) {
-          const ring: number[] = [];
-          for (let i = 0; i < 48; i++) {
-            const a = (i / 48) * Math.PI * 2;
-            ring.push(Math.cos(a) * stats.minDistance, Math.sin(a) * stats.minDistance, 0);
-          }
-          const ringGeo = new THREE.BufferGeometry();
-          ringGeo.setAttribute("position", new THREE.Float32BufferAttribute(ring, 3));
-          const circle = new THREE.LineLoop(
-            ringGeo,
-            new THREE.LineBasicMaterial({ color: "#4dd2ff", transparent: true, opacity: 0.8, depthTest: false })
-          );
-          circle.renderOrder = 3;
-          group.add(circle);
+
+        // Unit circle scaled to the min dimension (smallest sqrt(x^2 + y^2)).
+        const ring: number[] = [];
+        for (let i = 0; i < 48; i++) {
+          const a = (i / 48) * Math.PI * 2;
+          ring.push(Math.cos(a), Math.sin(a), 0);
         }
+        const ringGeo = new THREE.BufferGeometry();
+        ringGeo.setAttribute("position", new THREE.Float32BufferAttribute(ring, 3));
+        const circle = new THREE.LineLoop(
+          ringGeo,
+          new THREE.LineBasicMaterial({ color: "#4dd2ff", transparent: true, opacity: 0.8, depthTest: false })
+        );
+        circle.name = "shape-circle";
+        circle.renderOrder = 3;
+        circle.frustumCulled = false;
+        group.add(circle);
+
+        // Highlight for the selected point.
+        const markerGeo = new THREE.BufferGeometry();
+        markerGeo.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0], 3));
+        const marker = new THREE.Points(
+          markerGeo,
+          new THREE.PointsMaterial({ color: "#ffffff", size: 13, sizeAttenuation: false, depthTest: false })
+        );
+        marker.name = "shape-selected";
+        marker.renderOrder = 5;
+        marker.frustumCulled = false;
+        marker.visible = false;
+        group.add(marker);
+
+        pts.forEach((p, i) => {
+          const handle = new THREE.Object3D();
+          handle.name = `${SHAPE_POINT_PREFIX}${i}`;
+          handle.position.set(p.x, p.y, p.z);
+          group.add(handle);
+        });
+        refreshShapeGroupGeometry(group);
         return group;
       };
 
@@ -2734,6 +2816,11 @@ export const Viewport: React.FC<ViewportProps> = ({
 
     transformControls.detach();
 
+    // Engine shape point highlights only show while their shape is the selected node.
+    if (selectedNode?.type !== "engine_shape") {
+      engineShapesGroupRef.current?.children.forEach((c) => setShapePointHighlight(c, null));
+    }
+
     // Nav light range spheres (the `distance` wireframes) render only for the selected nav light.
     const selectedNavKey = selectedNode?.type === "navlight" ? `navlight:${selectedNode.name}`.toLowerCase() : null;
     navLightsGroupRef.current?.children.forEach((nl) => {
@@ -2758,6 +2845,25 @@ export const Viewport: React.FC<ViewportProps> = ({
       }
 
       let targetObj: THREE.Object3D | undefined;
+
+      // Engine shape: highlight the selected point and, when one is selected, drag that point instead of the whole shape.
+      if (selectedNode.type === "engine_shape") {
+        const shapeGroup = engineShapesGroupRef.current?.children.find(
+          (c) => c.name.toLowerCase() === `engine_shape:${selectedNode.name}`.toLowerCase()
+        );
+        engineShapesGroupRef.current?.children.forEach((c) => {
+          if (c !== shapeGroup) setShapePointHighlight(c, null);
+        });
+        if (shapeGroup) {
+          const pointIdx = selectedShapePoint && selectedShapePoint.shape === selectedNode.name ? selectedShapePoint.index : null;
+          const handle = setShapePointHighlight(shapeGroup, pointIdx);
+          if (handle && shapeGroup.visible) {
+            transformControls.setMode("translate");
+            transformControls.attach(handle);
+            return;
+          }
+        }
+      }
 
       if (selectedNode.type === "joint" || selectedNode.type === "engine_nozzle") {
         targetObj = jointsGroup.children.find(c => c.name.toLowerCase() === `joint:${selectedNode.name}`.toLowerCase());
@@ -2819,7 +2925,7 @@ export const Viewport: React.FC<ViewportProps> = ({
         targetObj.add(selectionAxesHelperRef.current);
       }
     }
-  }, [selectedNode, model, visibleMeshes]);
+  }, [selectedNode, model, visibleMeshes, selectedShapePoint]);
 
   return (
     <div className="viewport-container" style={{ position: "relative" }}>

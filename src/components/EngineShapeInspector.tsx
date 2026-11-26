@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Flame, Plus, Trash2, Copy, Play } from "lucide-react";
 import type { HODModel, Vector3D } from "./Viewport";
+import { NumericInput } from "./Inspector";
 import {
   ENGINE_TRAIL_DEFAULTS,
   TYPICAL_TRAIL_PARAMS,
@@ -20,6 +21,9 @@ interface Props {
   onModelChange?: (m: HODModel) => void;
   trailPreview: EngineTrailPreviewSettings;
   onTrailPreviewChange?: (s: EngineTrailPreviewSettings) => void;
+  /** Index of the point selected in the viewport / table (null = none). */
+  selectedPoint?: number | null;
+  onSelectPoint?: (index: number | null) => void;
 }
 
 const labelStyle: React.CSSProperties = { fontSize: "11px", color: "var(--text-secondary)", fontWeight: 500, marginBottom: "6px" };
@@ -41,12 +45,34 @@ const numStyle: React.CSSProperties = {
 };
 const smallBtn: React.CSSProperties = { height: "28px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" };
 
+const round4 = (n: number) => Math.round(n * 10000) / 10000;
+
+/** Mouse-wheel stepping for NumericInput: wheel up/down = +/- step, Shift = x10, Alt = x0.1. */
+const wheelStep =
+  (apply: (v: number) => void, step: number, min?: number) =>
+  (e: React.WheelEvent<HTMLInputElement>) => {
+    const mult = e.shiftKey ? 10 : e.altKey ? 0.1 : 1;
+    const dir = e.deltaY < 0 ? 1 : -1;
+    const cur = parseFloat(e.currentTarget.value) || 0;
+    let v = round4(cur + dir * step * mult);
+    if (min !== undefined) v = Math.max(min, v);
+    apply(v);
+  };
+
 const fmt = (n: number) => (Number.isFinite(n) ? (Math.round(n * 1000) / 1000).toString() : "-");
 
 const issueColor = (level: "error" | "warn" | "info") =>
   level === "error" ? "#ff6b6b" : level === "warn" ? "#ffb347" : "var(--text-muted)";
 
-export const EngineShapeInspector: React.FC<Props> = ({ model, shapeName, onModelChange, trailPreview, onTrailPreviewChange }) => {
+export const EngineShapeInspector: React.FC<Props> = ({
+  model,
+  shapeName,
+  onModelChange,
+  trailPreview,
+  onTrailPreviewChange,
+  selectedPoint = null,
+  onSelectPoint,
+}) => {
   const [polyCount, setPolyCount] = useState(6);
   const [polyRadius, setPolyRadius] = useState(1);
   const [targetMin, setTargetMin] = useState<string>("");
@@ -96,14 +122,14 @@ export const EngineShapeInspector: React.FC<Props> = ({ model, shapeName, onMode
   const paramInput = (key: keyof EngineTrailParams, label: string, step: number, title: string) => (
     <label key={key} title={title} style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "10px", color: "var(--text-muted)" }}>
       {label}
-      <input
-        type="number"
-        step={step}
-        value={params[key]}
-        onChange={(e) => {
-          const v = parseFloat(e.target.value);
-          if (Number.isFinite(v)) setParams({ [key]: v } as Partial<EngineTrailParams>);
+      <NumericInput
+        value={round4(params[key])}
+        step={String(step)}
+        onChange={(v) => {
+          const n = parseFloat(v);
+          if (Number.isFinite(n)) setParams({ [key]: n } as Partial<EngineTrailParams>);
         }}
+        onWheel={wheelStep((n) => setParams({ [key]: n } as Partial<EngineTrailParams>), step, 0)}
         style={numStyle}
       />
     </label>
@@ -199,26 +225,46 @@ export const EngineShapeInspector: React.FC<Props> = ({ model, shapeName, onMode
           {points.map((p, i) => {
             const d = Math.hypot(p.x, p.y);
             const isMin = stats.count > 0 && Math.abs(d - stats.minDistance) < 1e-6;
+            const isSel = selectedPoint === i;
             return (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "18px 1fr 1fr 1fr 26px", gap: "4px", alignItems: "center" }}>
-                <span style={{ fontSize: "10px", color: isMin ? "#4dd2ff" : "var(--text-muted)" }} title={isMin ? "Closest point (min dimension)" : ""}>
+              <div
+                key={i}
+                onFocusCapture={() => onSelectPoint?.(i)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "18px 1fr 1fr 1fr 26px",
+                  gap: "4px",
+                  alignItems: "center",
+                  padding: "2px",
+                  borderRadius: "3px",
+                  background: isSel ? "rgba(77, 210, 255, 0.15)" : "transparent",
+                  outline: isSel ? "1px solid rgba(77, 210, 255, 0.5)" : "none",
+                }}
+              >
+                <span
+                  style={{ fontSize: "10px", cursor: "pointer", color: isMin ? "#4dd2ff" : "var(--text-muted)" }}
+                  title={isMin ? "Closest point (min dimension). Click to select it in the viewport." : "Click to select it in the viewport."}
+                  onClick={() => onSelectPoint?.(i)}
+                >
                   {i + 1}
                 </span>
                 {(["x", "y", "z"] as const).map((axis) => (
-                  <input
+                  <NumericInput
                     key={axis}
-                    type="number"
-                    step={0.05}
-                    value={Math.round(p[axis] * 10000) / 10000}
-                    onChange={(e) => setPoint(i, axis, e.target.value)}
+                    value={round4(p[axis])}
+                    step="0.05"
+                    onChange={(v) => setPoint(i, axis, v)}
+                    onWheel={wheelStep((n) => commitPoints(points.map((q, idx) => (idx === i ? { ...q, [axis]: n } : q))), 0.05)}
                     style={{ ...numStyle, opacity: axis === "z" ? 0.6 : 1 }}
-                    title={axis === "z" ? "z is not used by the engine" : undefined}
                   />
                 ))}
                 <button
                   style={{ ...smallBtn, height: "26px", padding: 0 }}
                   title="Remove point"
-                  onClick={() => commitPoints(points.filter((_, idx) => idx !== i))}
+                  onClick={() => {
+                    if (selectedPoint !== null) onSelectPoint?.(null);
+                    commitPoints(points.filter((_, idx) => idx !== i));
+                  }}
                 >
                   <Trash2 size={12} />
                 </button>
@@ -234,11 +280,26 @@ export const EngineShapeInspector: React.FC<Props> = ({ model, shapeName, onMode
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "6px", alignItems: "end" }}>
             <label style={{ fontSize: "10px", color: "var(--text-muted)" }}>
               Polygon points
-              <input type="number" min={3} max={32} value={polyCount} onChange={(e) => setPolyCount(Math.max(3, parseInt(e.target.value, 10) || 3))} style={numStyle} />
+              <NumericInput
+                value={polyCount}
+                step="1"
+                min="3"
+                max="32"
+                onChange={(v) => setPolyCount(Math.min(32, Math.max(3, parseInt(v, 10) || 3)))}
+                onWheel={wheelStep((n) => setPolyCount(Math.min(32, Math.max(3, Math.round(n)))), 1, 3)}
+                style={numStyle}
+              />
             </label>
             <label style={{ fontSize: "10px", color: "var(--text-muted)" }}>
               Radius
-              <input type="number" step={0.05} min={0.01} value={polyRadius} onChange={(e) => setPolyRadius(parseFloat(e.target.value) || 1)} style={numStyle} />
+              <NumericInput
+                value={round4(polyRadius)}
+                step="0.05"
+                min="0.01"
+                onChange={(v) => setPolyRadius(Math.max(0.01, parseFloat(v) || 1))}
+                onWheel={wheelStep((n) => setPolyRadius(Math.max(0.01, n)), 0.05, 0.01)}
+                style={numStyle}
+              />
             </label>
             <button style={smallBtn} onClick={() => commitPoints(regularPolygonPoints(polyCount, polyRadius))}>
               Generate
@@ -247,9 +308,16 @@ export const EngineShapeInspector: React.FC<Props> = ({ model, shapeName, onMode
           <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "6px", alignItems: "end" }}>
             <label style={{ fontSize: "10px", color: "var(--text-muted)" }}>
               Scale points so the min dimension is
-              <input type="number" step={0.05} min={0.01} placeholder={fmt(stats.minDistance)} value={targetMin} onChange={(e) => setTargetMin(e.target.value)} style={numStyle} />
+              <NumericInput
+                value={targetMin === "" ? round4(stats.minDistance) : round4(parseFloat(targetMin) || 0)}
+                step="0.05"
+                min="0.01"
+                onChange={(v) => setTargetMin(v)}
+                onWheel={wheelStep((n) => setTargetMin(String(Math.max(0.01, n))), 0.05, 0.01)}
+                style={numStyle}
+              />
             </label>
-            <button style={smallBtn} onClick={scaleToMin} disabled={!targetMin}>
+            <button style={smallBtn} onClick={scaleToMin} disabled={!targetMin || Math.abs((parseFloat(targetMin) || 0) - stats.minDistance) < 1e-6}>
               Apply
             </button>
           </div>
@@ -275,15 +343,15 @@ export const EngineShapeInspector: React.FC<Props> = ({ model, shapeName, onMode
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
             <label style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "10px", color: "var(--text-muted)" }}>
               Speed (units/s)
-              <input
-                type="number"
-                step={10}
-                min={0}
-                value={trailPreview.speed}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value);
-                  if (Number.isFinite(v)) onTrailPreviewChange?.({ ...trailPreview, speed: Math.max(0, v) });
+              <NumericInput
+                value={round4(trailPreview.speed)}
+                step="10"
+                min="0"
+                onChange={(v) => {
+                  const n = parseFloat(v);
+                  if (Number.isFinite(n)) onTrailPreviewChange?.({ ...trailPreview, speed: Math.max(0, n) });
                 }}
+                onWheel={wheelStep((n) => onTrailPreviewChange?.({ ...trailPreview, speed: Math.max(0, n) }), 10, 0)}
                 style={numStyle}
               />
             </label>
