@@ -1,6 +1,6 @@
 use crate::animation::{companion_mad_candidates, parse_keyf_chunk, parse_mad_bytes};
 use crate::iff::{ChunkType, IffChunk};
-use crate::math::{compose_transform_matrix, euler_to_quaternion, evaluate_curve};
+use crate::math::{compose_joint_matrix, compose_transform_matrix, euler_to_quaternion, evaluate_curve};
 use crate::model_methods::normalize_collision_meshes;
 use crate::texture_codec::{
     compressed_texture_mip_size, decompress_dxt1, decompress_dxt3, decompress_dxt5,
@@ -2504,11 +2504,11 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
                 sz = 0.0;
             }
 
-            // HIER sx/sy/sz are bounds/angles (always 0, +-pi/2, +-pi, ~0.52 in vanilla), never a scale:
-            // keep them in `joint.scale` for a lossless save but build the matrix with unit scale so
-            // attached meshes, child joints and markers are not stretched (hgn_attackbomber weapon mounts
-            // were 26.1 long instead of 16.6, vgr_probe_prox fins 17.7 instead of 5.6).
-            let local_transform = compose_transform_matrix(
+            // HIER sx/sy/sz are angles, never a scale (always 0, +-pi/2, +-pi, ~0.52 in vanilla): keep them in
+            // `joint.scale` for a lossless save, but compose them as an extra rotation (see
+            // `compose_joint_matrix`) instead of scaling attached meshes/joints (hgn_attackbomber weapon mounts
+            // were 26.1 long instead of 16.6 and sat under the hull instead of at the wings).
+            let local_transform = compose_joint_matrix(
                 Vector3 {
                     x: px,
                     y: py,
@@ -2520,9 +2520,9 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
                     z: rz,
                 },
                 Vector3 {
-                    x: 1.0,
-                    y: 1.0,
-                    z: 1.0,
+                    x: sx,
+                    y: sy,
+                    z: sz,
                 },
             );
 

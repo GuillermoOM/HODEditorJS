@@ -296,8 +296,30 @@ export function applyRotationEdit(
 }
 
 /** Converts a matrix rotation into the radians XYZ values stored in HODJoint.rotation. */
-export function matrixRotationToHodRadians(matrix: Matrix4D): { x: number; y: number; z: number } {
-  return eulerDegreesToRadians(getEulerRotation(matrix.m));
+export function matrixRotationToHodRadians(
+  matrix: Matrix4D,
+  bounds?: { x: number; y: number; z: number } | null
+): { x: number; y: number; z: number } {
+  const bx = bounds?.x ?? 0, by = bounds?.y ?? 0, bz = bounds?.z ?? 0;
+  if (Math.abs(bx) < 1e-4 && Math.abs(by) < 1e-4 && Math.abs(bz) < 1e-4) {
+    return eulerDegreesToRadians(getEulerRotation(matrix.m));
+  }
+  // HIER bounds are an extra rotation applied before the joint rotation (matrix = Bounds * Rotation in the
+  // row-vector layout used by Rust): strip it so `joint.rotation` keeps the file's meaning and the bounds
+  // are not applied twice after the next save/load.
+  const cx = Math.cos(bx), sx = Math.sin(bx), cy = Math.cos(by), sy = Math.sin(by), cz = Math.cos(bz), sz = Math.sin(bz);
+  const mul = (a: number[][], b: number[][]) =>
+    a.map((row, i) => b[0].map((_, j) => row.reduce((acc, _v, k) => acc + a[i][k] * b[k][j], 0)));
+  const rx = [[1, 0, 0], [0, cx, sx], [0, -sx, cx]];
+  const ry = [[cy, 0, -sy], [0, 1, 0], [sy, 0, cy]];
+  const rz = [[cz, sz, 0], [-sz, cz, 0], [0, 0, 1]];
+  const bm = mul(mul(rx, ry), rz);
+  const bmInv = bm[0].map((_, j) => bm.map((row) => row[j])); // transpose = inverse for a rotation
+  const m3 = matrix.m.slice(0, 3).map((row) => row.slice(0, 3));
+  const rm = mul(bmInv, m3);
+  const m = matrix.m.map((row) => [...row]);
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) m[i][j] = rm[i][j];
+  return eulerDegreesToRadians(getEulerRotation(m));
 }
 
 export { IDENTITY_MATRIX };

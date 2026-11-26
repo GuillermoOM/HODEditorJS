@@ -776,7 +776,7 @@ function App() {
             ...joint,
             local_transform: { m },
             position: pos,
-            rotation: matrixRotationToHodRadians({ m }),
+            rotation: matrixRotationToHodRadians({ m }, joint.scale),
           };
         }
         return joint;
@@ -806,7 +806,7 @@ function App() {
             ...joint,
             local_transform: { m },
             position: pos,
-            rotation: matrixRotationToHodRadians({ m }),
+            rotation: matrixRotationToHodRadians({ m }, joint.scale),
           };
         }
         return joint;
@@ -842,7 +842,7 @@ function App() {
             ...joint,
             local_transform: { m },
             position: pos,
-            rotation: matrixRotationToHodRadians({ m }),
+            rotation: matrixRotationToHodRadians({ m }, joint.scale),
           };
         }
         return joint;

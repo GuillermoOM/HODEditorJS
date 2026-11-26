@@ -244,7 +244,7 @@ export function WeaponGroupInspector({
           ...j,
           local_transform: result.matrix,
           position: result.position,
-          rotation: matrixRotationToHodRadians(result.matrix),
+          rotation: matrixRotationToHodRadians(result.matrix, j.scale),
         };
       }
       return j;

@@ -67,6 +67,31 @@ pub fn compose_transform_matrix(pos: Vector3, rot: Vector3, scale: Vector3) -> M
     Matrix4 { m: final_rot }
 }
 
+/// HOD 2.0 joint matrix. The three floats after the rotation in the HIER record (`bounds`, stored in
+/// `HODJoint.scale`) are angles, not scale: applying them as an extra Euler rotation (before the joint's
+/// own rotation) orients engine glows out of the stern on 191/195 vanilla glow meshes and puts
+/// `hgn_attackbomber`'s wing weapon pods where the game shows them. Zero bounds give the plain
+/// position+rotation matrix.
+pub fn compose_joint_matrix(pos: Vector3, rot: Vector3, bounds: Vector3) -> Matrix4 {
+    let zero = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
+    let one = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
+    let rm = compose_transform_matrix(zero.clone(), rot, one.clone()).m;
+    let bm = compose_transform_matrix(zero, bounds, one).m;
+    let mut out = [[0.0f32; 4]; 4];
+    for i in 0..3 {
+        for j in 0..3 {
+            for k in 0..3 {
+                out[i][j] += bm[i][k] * rm[k][j];
+            }
+        }
+    }
+    out[3][0] = pos.x;
+    out[3][1] = pos.y;
+    out[3][2] = pos.z;
+    out[3][3] = 1.0;
+    Matrix4 { m: out }
+}
+
 pub fn decompose_matrix(matrix: Matrix4) -> (Vector3, Vector3, Vector3) {
     let m = matrix.m;
     let pos = Vector3 {

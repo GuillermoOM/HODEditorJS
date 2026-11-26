@@ -1200,7 +1200,7 @@ export const Inspector: React.FC<InspectorProps> = ({
               ...j,
               local_transform: result.matrix,
               position: result.position,
-              rotation: matrixRotationToHodRadians(result.matrix),
+              rotation: matrixRotationToHodRadians(result.matrix, j.scale),
             };
           }
           return j;
@@ -1441,7 +1441,7 @@ export const Inspector: React.FC<InspectorProps> = ({
               ...j,
               local_transform: result.matrix,
               position: result.position,
-              rotation: matrixRotationToHodRadians(result.matrix),
+              rotation: matrixRotationToHodRadians(result.matrix, j.scale),
             };
           }
           return j;
@@ -1659,7 +1659,7 @@ export const Inspector: React.FC<InspectorProps> = ({
               ...joint,
               local_transform: result.matrix,
               position: result.position,
-              rotation: matrixRotationToHodRadians(result.matrix),
+              rotation: matrixRotationToHodRadians(result.matrix, joint.scale),
             };
           });
           onModelChange?.({ ...model, joints: newJoints });
