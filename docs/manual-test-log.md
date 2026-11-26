@@ -1441,4 +1441,4 @@ Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`;
 
 ## 2026-11-26 - MAD writer channel set (vgr_probe_prox fins)
 - Automated: parser unit test `mad_writer_skips_channels_equal_to_joint_rest_value`; probe on the pristine original `vgr_probe_prox` writes the same channel set as the original MAD.
-- In game: load the ORIGINAL `vgr_probe_prox.hod`, save, play Open/Close: lower fins rotate like the original instead of pointing down: [ ] NOT RUN (user)
+- In game: load the ORIGINAL `vgr_probe_prox.hod`, save, play Open/Close: lower fins rotate like the original instead of pointing down: [x] PASSED (user, 2026-11-26: "it all seems correct now")
