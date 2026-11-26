@@ -1969,6 +1969,9 @@ export const Viewport: React.FC<ViewportProps> = ({
             });
             const rangeMesh = new THREE.Mesh(rangeGeo, rangeMat);
             rangeMesh.renderOrder = 19;
+            // Editor aid shown only while this nav light is selected (see the selection effect).
+            rangeMesh.userData.navRange = true;
+            rangeMesh.visible = false;
             navMesh.add(rangeMesh);
           }
 
@@ -2527,6 +2530,15 @@ export const Viewport: React.FC<ViewportProps> = ({
     if (!transformControls || !scene || !jointsGroup || !markersGroup) return;
 
     transformControls.detach();
+
+    // Nav light range spheres (the `distance` wireframes) render only for the selected nav light.
+    const selectedNavKey = selectedNode?.type === "navlight" ? `navlight:${selectedNode.name}`.toLowerCase() : null;
+    navLightsGroupRef.current?.children.forEach((nl) => {
+      const show = selectedNavKey !== null && nl.name.toLowerCase() === selectedNavKey;
+      nl.children.forEach((c) => {
+        if (c.userData?.navRange) c.visible = show;
+      });
+    });
 
     // Force Three.js to immediately compute absolute world positions/matrices
     scene.updateMatrixWorld(true);
