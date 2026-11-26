@@ -1438,3 +1438,7 @@ Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`;
 ## 2026-11-26 - HIER bounds as rotation (user feedback)
 - `hgn_attackbomber`: wing weapon pods now match the game (verified by the user). `vgr_probe_prox`: correct at rest, but the lower fins stretched during the Open animation (fixed in the follow-up commit; awaiting re-test).
 
+
+## 2026-11-26 - MAD writer channel set (vgr_probe_prox fins)
+- Automated: parser unit test `mad_writer_skips_channels_equal_to_joint_rest_value`; probe on the pristine original `vgr_probe_prox` writes the same channel set as the original MAD.
+- In game: load the ORIGINAL `vgr_probe_prox.hod`, save, play Open/Close: lower fins rotate like the original instead of pointing down: [ ] NOT RUN (user)

@@ -553,6 +553,39 @@ pub fn serialize_mad_companion(model: &HODModel) -> Result<Vec<u8>, String> {
                 }
             }
 
+            // Retail's AnimJointMad replaces only the channels a track has a curve
+            // for; a channel without a curve keeps the joint's own value. The
+            // parser fills missing channels with the joint's rest value, so a
+            // channel that never leaves that value must NOT be written back:
+            // writing it would change which channels the engine overrides (a
+            // constant rotateZ would replace the joint's whole second-triple
+            // orientation, which made vgr_probe_prox fins point down in game).
+            let joint_obj = model
+                .joints
+                .iter()
+                .find(|j| j.name.eq_ignore_ascii_case(&track.joint_name));
+            let rest_pos = joint_obj
+                .and_then(|j| j.position.clone())
+                .unwrap_or(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
+            let rest_rot = joint_obj
+                .and_then(|j| j.rotation.clone())
+                .unwrap_or(Vector3 { x: 0.0, y: 0.0, z: 0.0 });
+            let mut rest_scale = joint_obj
+                .and_then(|j| j.scale.clone())
+                .unwrap_or(Vector3 { x: 1.0, y: 1.0, z: 1.0 });
+            if rest_scale.x.abs() < 0.0001 {
+                rest_scale.x = 1.0;
+            }
+            if rest_scale.y.abs() < 0.0001 {
+                rest_scale.y = 1.0;
+            }
+            if rest_scale.z.abs() < 0.0001 {
+                rest_scale.z = 1.0;
+            }
+            let differs = |vals: &[(f64, f64)], rest: f32| -> bool {
+                vals.iter().any(|(_, v)| (v - rest as f64).abs() > 1e-4)
+            };
+
             let mut add_channel = |suffix: &str, values: Vec<(f64, f64)>| {
                 let curve_name = format!("{}_{}", track.joint_name, suffix);
                 let name_pos = get_stri_pos(&curve_name);
@@ -602,9 +635,15 @@ pub fn serialize_mad_companion(model: &HODModel) -> Result<Vec<u8>, String> {
                         tz_vals.push((kf.time, pos.z as f64));
                     }
                 }
-                add_channel("translateX", tx_vals);
-                add_channel("translateY", ty_vals);
-                add_channel("translateZ", tz_vals);
+                if differs(&tx_vals, rest_pos.x) {
+                    add_channel("translateX", tx_vals);
+                }
+                if differs(&ty_vals, rest_pos.y) {
+                    add_channel("translateY", ty_vals);
+                }
+                if differs(&tz_vals, rest_pos.z) {
+                    add_channel("translateZ", tz_vals);
+                }
             }
 
             if has_rot {
@@ -627,9 +666,15 @@ pub fn serialize_mad_companion(model: &HODModel) -> Result<Vec<u8>, String> {
                     ry_vals.push((kf.time, euler.y as f64));
                     rz_vals.push((kf.time, euler.z as f64));
                 }
-                add_channel("rotateX", rx_vals);
-                add_channel("rotateY", ry_vals);
-                add_channel("rotateZ", rz_vals);
+                if differs(&rx_vals, rest_rot.x) {
+                    add_channel("rotateX", rx_vals);
+                }
+                if differs(&ry_vals, rest_rot.y) {
+                    add_channel("rotateY", ry_vals);
+                }
+                if differs(&rz_vals, rest_rot.z) {
+                    add_channel("rotateZ", rz_vals);
+                }
             }
 
             if has_scale {
@@ -643,11 +688,21 @@ pub fn serialize_mad_companion(model: &HODModel) -> Result<Vec<u8>, String> {
                         sz_vals.push((kf.time, sc.z as f64));
                     }
                 }
-                add_channel("scaleX", sx_vals);
-                add_channel("scaleY", sy_vals);
-                add_channel("scaleZ", sz_vals);
+                if differs(&sx_vals, rest_scale.x) {
+                    add_channel("scaleX", sx_vals);
+                }
+                if differs(&sy_vals, rest_scale.y) {
+                    add_channel("scaleY", sy_vals);
+                }
+                if differs(&sz_vals, rest_scale.z) {
+                    add_channel("scaleZ", sz_vals);
+                }
             }
 
+            if curve_indices.is_empty() {
+                // Nothing animated on this joint: omit the track entirely.
+                continue;
+            }
             temp_tracks.push(TempTrack {
                 joint_name_pos,
                 curve_indices,
@@ -783,6 +838,66 @@ pub fn serialize_mad_companion(model: &HODModel) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bare_model(joints: Vec<HODJoint>, animations: Vec<HODAnimation>) -> HODModel {
+        let mut model = HODModel::new();
+        model.joints = joints;
+        model.animations = animations;
+        model
+    }
+
+    /// Only channels that leave the joint's rest value are written, so a joint with a
+    /// second (bounds) Euler triple is not given curves for channels the original MAD
+    /// lacked (retail replaces the joint's rotation from the curves it has).
+    #[test]
+    fn mad_writer_skips_channels_equal_to_joint_rest_value() {
+        let v = |x: f32, y: f32, z: f32| Vector3 { x, y, z };
+        let joint = HODJoint {
+            name: "fin_xRot".into(),
+            parent_name: None,
+            local_transform: crate::types::Matrix4 {
+                m: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+            position: Some(v(0.0, 0.0, 0.0)),
+            rotation: Some(v(0.0, 0.0, -3.14159)),
+            scale: Some(v(0.0, 0.0, 3.14159)),
+        };
+        let kf = |t: f64, rx: f32| HODKeyframe {
+            time: t,
+            position: Some(v(0.0, 0.0, 0.0)),
+            rotation: Some(euler_to_quaternion(&v(rx, 0.0, -3.14159))),
+            rotation_euler: Some(v(rx, 0.0, -3.14159)),
+            scale: Some(v(1.0, 1.0, 3.14159)),
+        };
+        let anim = HODAnimation {
+            name: "Open".into(),
+            duration: 2.0,
+            tracks: vec![HODAnimationTrack {
+                joint_name: "fin_xRot".into(),
+                keyframes: vec![kf(0.0, 0.0), kf(1.0, 0.8), kf(2.0, 0.0)],
+            }],
+        };
+        let model = bare_model(vec![joint], vec![anim]);
+        let bytes = serialize_mad_companion(&model).unwrap();
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        assert!(text.contains("fin_xRot_rotateX"));
+        for absent in [
+            "rotateY", "rotateZ", "translateX", "translateY", "translateZ", "scaleX", "scaleY",
+            "scaleZ",
+        ] {
+            assert!(!text.contains(absent), "{absent} should not be written");
+        }
+        let back = parse_mad_bytes(&bytes, &model.joints).unwrap();
+        let k = &back[0].tracks[0].keyframes;
+        assert_eq!(k.len(), 3);
+        assert!((k[1].rotation_euler.as_ref().unwrap().x - 0.8).abs() < 1e-5);
+        assert!((k[1].rotation_euler.as_ref().unwrap().z + 3.14159).abs() < 1e-5);
+    }
 
     #[test]
     fn animation_curve_evaluation_is_linear() {
