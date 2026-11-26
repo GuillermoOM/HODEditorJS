@@ -9,6 +9,7 @@ import {
   HODAnimationTrack,
   HODKeyframe,
 } from "./Viewport";
+import { stripBoundsFromQuaternion } from "../transform_utils";
 
 interface AnimationDockProps {
   model: HODModel | null;
@@ -92,6 +93,8 @@ export const AnimationDock: React.FC<AnimationDockProps> = ({
     const scale = new THREE.Vector3();
     matrix.decompose(pos, quat, scale);
 
+    const quatNoBounds = stripBoundsFromQuaternion(quat, joint.scale);
+    quat.copy(quatNoBounds);
     const euler = new THREE.Euler().setFromQuaternion(quat, "YXZ");
     const euler_vec = { x: euler.x, y: euler.y, z: euler.z };
 

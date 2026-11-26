@@ -323,3 +323,19 @@ export function matrixRotationToHodRadians(
 }
 
 export { IDENTITY_MATRIX };
+
+/**
+ * HIER bounds are an extra rotation applied before the joint rotation (parse.rs compose_joint_matrix), so a
+ * quaternion read from a joint's matrix/gizmo carries it. Keyframe rotations replace the joint rotation and the
+ * viewer re-applies the bounds on playback, so strip them (q * inverse(boundsQuat)) before storing a keyframe.
+ */
+export function stripBoundsFromQuaternion(
+  q: THREE.Quaternion,
+  bounds?: { x: number; y: number; z: number } | null
+): THREE.Quaternion {
+  if (!bounds || (Math.abs(bounds.x) < 1e-4 && Math.abs(bounds.y) < 1e-4 && Math.abs(bounds.z) < 1e-4)) {
+    return q.clone();
+  }
+  const bq = new THREE.Quaternion().setFromEuler(new THREE.Euler(bounds.x, bounds.y, bounds.z, "ZYX"));
+  return q.clone().multiply(bq.invert());
+}

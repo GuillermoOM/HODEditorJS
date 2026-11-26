@@ -471,6 +471,15 @@ export const Viewport: React.FC<ViewportProps> = ({
           );
         }
 
+        // HIER bounds are an extra rotation applied before the joint rotation (see parse.rs compose_joint_matrix).
+        // A keyframe rotation replaces the base rotation, so the bounds rotation must be re-applied or the
+        // joint loses it (and the MAD's own scale channel, which merely mirrors the bounds, must not scale).
+        const bounds = joint.scale;
+        const hasBounds = !!bounds && (Math.abs(bounds.x) > 1e-4 || Math.abs(bounds.y) > 1e-4 || Math.abs(bounds.z) > 1e-4);
+        const boundsQuat = hasBounds
+          ? new THREE.Quaternion().setFromEuler(new THREE.Euler(bounds!.x, bounds!.y, bounds!.z, "ZYX"))
+          : null;
+
         const quat = baseQuat.clone();
         if (t1.rotation_euler && t2.rotation_euler) {
           const rx = THREE.MathUtils.lerp(t1.rotation_euler.x, t2.rotation_euler.x, alpha);
@@ -484,15 +493,13 @@ export const Viewport: React.FC<ViewportProps> = ({
           q1.slerp(q2, alpha).normalize();
           quat.copy(q1);
         }
-
-        const scale = baseScale.clone();
-        if (t1.scale && t2.scale) {
-          scale.set(
-            THREE.MathUtils.lerp(t1.scale.x, t2.scale.x, alpha),
-            THREE.MathUtils.lerp(t1.scale.y, t2.scale.y, alpha),
-            THREE.MathUtils.lerp(t1.scale.z, t2.scale.z, alpha)
-          );
+        if (boundsQuat && ((t1.rotation_euler && t2.rotation_euler) || (t1.rotation && t2.rotation))) {
+          quat.multiply(boundsQuat);
         }
+
+        // Vanilla MAD scale channels are constant 1 (the only exception, vgr_probe_prox's lower fins, repeats
+        // the joint's bounds and the game does not stretch them), so keyframe scale never scales the joint.
+        const scale = baseScale.clone();
 
         localMatrix = new THREE.Matrix4().compose(pos, quat, scale);
       }

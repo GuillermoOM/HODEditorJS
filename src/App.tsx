@@ -8,7 +8,8 @@ import { AnimationDock } from "./components/AnimationDock";
 import { SetupWizard } from "./components/SetupWizard";
 import { SettingsModal } from "./components/SettingsModal";
 import { updateDynamicShaderSlots } from "./texture_utils";
-import { CoordinateSpace, matrixRotationToHodRadians } from "./transform_utils";
+import * as THREE from "three";
+import { CoordinateSpace, matrixRotationToHodRadians, stripBoundsFromQuaternion } from "./transform_utils";
 import { Info, AlertTriangle, FolderOpen, FilePlus } from "lucide-react";
 import "./App.css";
 
@@ -886,11 +887,21 @@ function App() {
           if (track.joint_name.toLowerCase() === jointName.toLowerCase()) {
             const updatedKfs = track.keyframes.map((kf, i) => {
               if (i === kfIdx) {
+                // The dragged joint object carries the HIER bounds rotation; keyframes store the rotation without it.
+                let kfQuat = localQuat || kf.rotation;
+                let kfEuler = localEuler || kf.rotation_euler;
+                const kfJoint = model.joints.find((j) => j.name.toLowerCase() === jointName.toLowerCase());
+                if (localQuat && kfJoint?.scale) {
+                  const q = stripBoundsFromQuaternion(new THREE.Quaternion(localQuat.x, localQuat.y, localQuat.z, localQuat.w), kfJoint.scale);
+                  const e = new THREE.Euler().setFromQuaternion(q, "YXZ");
+                  kfQuat = { x: q.x, y: q.y, z: q.z, w: q.w };
+                  kfEuler = { x: e.x, y: e.y, z: e.z };
+                }
                 return { 
                   ...kf, 
                   position: pos, 
-                  rotation: localQuat || kf.rotation, 
-                  rotation_euler: localEuler || kf.rotation_euler 
+                  rotation: kfQuat, 
+                  rotation_euler: kfEuler 
                 };
               }
               return kf;

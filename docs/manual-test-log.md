@@ -1435,3 +1435,6 @@ Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`;
 ## 2026-11-26 - Engine glow preview (verified by the user)
 - Viewer: glows ignore joint HIER bounds as scale, use the retail-like faint additive shell (30-unit fade), and orient with the nozzle's HIER triple as a second rotation. User confirmed engine glows now look correct (vgr_battlecruiser, no longer oversized or pointing toward the bow).
 
+## 2026-11-26 - HIER bounds as rotation (user feedback)
+- `hgn_attackbomber`: wing weapon pods now match the game (verified by the user). `vgr_probe_prox`: correct at rest, but the lower fins stretched during the Open animation (fixed in the follow-up commit; awaiting re-test).
+
