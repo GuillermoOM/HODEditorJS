@@ -1428,7 +1428,6 @@ Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`;
 2. Fire weapons at the sides of the resaved orion: shots hit the visible hull: [ ] NOT RUN (user)
 3. Battle-scar decals still follow the hull (SCAR after COLD, both from the same pool order): [ ] NOT RUN (user)
 
-## 2026-11-26 - Tight collision generation (pending user in-game verification)
+## 2026-11-26 - Tight collision generation (verified in game by the user)
 - Automated: `cargo test --manifest-path parser/Cargo.toml` (50 lib, 1 collision_pool, 3 scar_vanilla pass), `verify_lossless` deltas unchanged, `npm run build` passes. Comparison against 288 vanilla ships: median collision volume ratio 0.98, bbox ratio 1.00.
-- Manual in-game test NOT yet done: regenerate collision from mesh on ter_orion and vgr_battlecruiser-like ships, save, load in game, fire weapons at the sides.
-
+- In-game (user, 2026-11-26): all checks passed: regenerated/resaved ter_orion and a large ship (shots hit the visible hull, no crash), frigate scars follow the hull, scar decals on tai_researchstation/ter_elysium.
