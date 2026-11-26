@@ -1206,32 +1206,6 @@ pub(crate) fn build_cold_chunk(cm: &HODCollisionMesh) -> Result<IffChunk, String
     })
 }
 
-/// DTRM sub-chunks the parser keeps raw and the serializer never generates from the model.
-const UNMODELED_DTRM_IDS: [&str; 5] = ["SCAR", "BNDV", "BSRM", "PATH", "PNTS"];
-
-/// Reads the original file's `FORM DTRM` and returns its unmodeled sub-chunks (SCAR, BNDV, ...).
-fn original_unmodeled_dtrm_chunks(original_bytes: &[u8]) -> Vec<crate::iff::IffChunk> {
-    use crate::iff::IffChunk;
-    let mut out = Vec::new();
-    if original_bytes.is_empty() {
-        return out;
-    }
-    let mut cursor = Cursor::new(original_bytes);
-    while cursor.position() < original_bytes.len() as u64 {
-        let Ok(chunk) = IffChunk::read_chunk(&mut cursor) else {
-            break;
-        };
-        if chunk.id == "DTRM" {
-            for child in &chunk.children {
-                if UNMODELED_DTRM_IDS.contains(&child.id.as_str()) {
-                    out.push(child.clone());
-                }
-            }
-        }
-    }
-    out
-}
-
 pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result<Vec<u8>, String> {
     use crate::iff::{ChunkType, IffChunk};
     use crate::xpress;
@@ -2130,24 +2104,6 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
             if ["SCAR", "BNDV", "ETSH"].contains(&chunk.id.as_str()) {
                 dtrm_children.push(chunk.clone());
             }
-        }
-        // `preserved_chunks` is #[serde(skip)], so a model that came back from the UI over
-        // Tauri IPC has none. Recover the DTRM sub-chunks the parser does not model from the
-        // original file, otherwise they are silently dropped on save (GitHub issue #8).
-        // KDOP/COLD are deliberately NOT recovered: collision data is regenerated on every save.
-        let mut recovered = Vec::new();
-        let already: Vec<String> = dtrm_children.iter().map(|c| c.id.clone()).collect();
-        for chunk in original_unmodeled_dtrm_chunks(original_bytes) {
-            if !already.contains(&chunk.id) {
-                recovered.push(chunk.id.clone());
-                dtrm_children.push(chunk);
-            }
-        }
-        if !recovered.is_empty() {
-            println!(
-                "[RUST] Carried over unmodeled DTRM sub-chunks from the original file: {}",
-                recovered.join(", ")
-            );
         }
     }
 
@@ -3259,62 +3215,6 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
 mod tests {
     use super::*;
     use crate::parse::parse_stat_params;
-
-    /// DTRM sub-chunk (id, data length) pairs of every `FORM DTRM` in `bytes`.
-    fn dtrm_children_summary(bytes: &[u8]) -> Vec<(String, usize)> {
-        let mut cursor = Cursor::new(bytes);
-        let mut out = Vec::new();
-        while cursor.position() < bytes.len() as u64 {
-            let Ok(chunk) = crate::iff::IffChunk::read_chunk(&mut cursor) else {
-                break;
-            };
-            if chunk.id == "DTRM" {
-                out.extend(chunk.children.iter().map(|c| (c.id.clone(), c.data.len())));
-            }
-        }
-        out
-    }
-
-    /// Vanilla ship dir from the machine-local environment file (`HOD 2.0 (vanilla game)` entry).
-    fn vanilla_ship_dir() -> Option<std::path::PathBuf> {
-        let env_file = std::env::var("HODE_LOCAL_ENV")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.omo/local-environment.md"));
-        let text = std::fs::read_to_string(env_file).ok()?;
-        let line = text.lines().find(|l| l.contains("HOD 2.0 (vanilla game)"))?;
-        let path = line.split('`').nth(1)?;
-        Some(std::path::PathBuf::from(path))
-    }
-
-    /// GitHub issue #8: a model that crossed Tauri IPC has an empty `preserved_chunks`
-    /// (`#[serde(skip)]`), so SCAR used to vanish on save. Needs the vanilla
-    /// `hgn_destroyer.hod` (has a SCAR chunk) from the local environment file; skipped when absent.
-    #[test]
-    fn save_recovers_scar_bndv_from_original_when_preserved_chunks_empty() {
-        let Some(dir) = vanilla_ship_dir() else {
-            eprintln!("SKIPPED: no vanilla ship dir in the local environment file");
-            return;
-        };
-        let path = dir.join("hgn_destroyer/hgn_destroyer.hod");
-        let Ok(original) = std::fs::read(&path) else {
-            eprintln!("SKIPPED: fixture {} not present", path.display());
-            return;
-        };
-        let mut model = HODModel::parse(&original).unwrap();
-        model.preserved_chunks.clear(); // what the UI hands back over IPC
-
-        let out = generate_v2_from_model(&original, &model).unwrap();
-        let before = dtrm_children_summary(&original);
-        let after = dtrm_children_summary(&out);
-        assert!(before.iter().any(|(i, _)| i == "SCAR"), "fixture should contain SCAR");
-        for id in ["SCAR", "BNDV"] {
-            let want: Vec<_> = before.iter().filter(|(i, _)| i == id).collect();
-            let got: Vec<_> = after.iter().filter(|(i, _)| i == id).collect();
-            assert_eq!(want, got, "{} sub-chunks must survive save", id);
-        }
-        // KDOP is regenerated by design, exactly one must be written.
-        assert_eq!(after.iter().filter(|(i, _)| i == "KDOP").count(), before.iter().filter(|(i, _)| i == "KDOP").count());
-    }
 
     #[test]
     fn serialize_stat_params_roundtrip() {
