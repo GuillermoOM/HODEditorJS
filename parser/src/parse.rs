@@ -2504,6 +2504,10 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
                 sz = 0.0;
             }
 
+            // HIER sx/sy/sz are bounds/angles (always 0, +-pi/2, +-pi, ~0.52 in vanilla), never a scale:
+            // keep them in `joint.scale` for a lossless save but build the matrix with unit scale so
+            // attached meshes, child joints and markers are not stretched (hgn_attackbomber weapon mounts
+            // were 26.1 long instead of 16.6, vgr_probe_prox fins 17.7 instead of 5.6).
             let local_transform = compose_transform_matrix(
                 Vector3 {
                     x: px,
@@ -2516,9 +2520,9 @@ fn parse_joints(chunk: &IffChunk) -> Result<Vec<HODJoint>, String> {
                     z: rz,
                 },
                 Vector3 {
-                    x: sx,
-                    y: sy,
-                    z: sz,
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
                 },
             );
 
