@@ -1395,3 +1395,18 @@ Test hod: vanilla `hgn_destroyer.hod` (has a SCAR chunk; `testing/hgn_destroyer`
 1. Open vanilla `hgn_destroyer.hod`, save it, load it in game; no crash on load: [ ] NOT RUN (user)
 2. Damage the saved destroyer; battle-scar decals still appear on the hull: [ ] NOT RUN (user)
 3. Repeat with a ship whose SCAR is not on the largest mesh (`tai_researchstation`, `hgn_mothership`) and a multi-SCAR mod ship (`ter_elysium`): [ ] NOT RUN (user)
+
+---
+
+Timestamp: `26/11/2026` (SCAR follow-up: collision vertices 16 B -> 12 B in the mesh pool)
+Test hod: `hgn_assaultfrigate` (resaved by the user: SCAR decals visible but not following the hull, i.e. read from a shifted pool offset)
+
+### Automated pre-verification (agent)
+
+1. `cargo test --release`: lib 48 + `scar_vanilla` 3, including a check that the 12-byte COLD vertices directly precede the SCAR arrays in the saved mesh pool: [x] PASS
+2. `verify_lossless`: Pebble +136, Elysium +18356, Fenris -761139, Asteroid -5336580, DAE 140254 B, all re-parse: [x] PASS
+
+### Manual in-game checks
+
+1. Re-save vanilla `hgn_assaultfrigate.hod`, load in game, damage it; battle-scar decals follow the hull correctly: [ ] NOT RUN (user)
+2. Collision/repair/latching still behave (collision vertex layout changed): [ ] NOT RUN (user)

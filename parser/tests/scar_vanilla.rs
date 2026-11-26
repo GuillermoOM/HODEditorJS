@@ -148,6 +148,28 @@ fn ui_save_path_keeps_scar() {
     assert_eq!(scar.data, want.chunk, "saved SCAR chunk is the regenerated one");
     assert!(mesh.ends_with(&want.mesh_pool), "SCAR positions/normals are the mesh pool tail");
     assert!(face.ends_with(&want.face_pool), "SCAR triangles are the face pool tail");
+    // The engine reads COLD/TRIS vertices as bare 12-byte positions and the pool streams
+    // sequentially, so the collision vertices must sit directly before the SCAR arrays
+    // with no padding (a 16-byte position+w layout would shift the SCAR data).
+    let mut with_collision = ui_model.clone();
+    hwr_hod_parser::engine_nozzles::generate_collision_mesh(&mut with_collision);
+    let mut cold_bytes = Vec::new();
+    let mut cold_tris = 0usize;
+    for cm in &with_collision.collision_meshes {
+        for part in &cm.mesh.parts {
+            cold_tris += part.indices.len();
+            for v in &part.vertices {
+                for f in [v.position.x, v.position.y, v.position.z] {
+                    cold_bytes.extend_from_slice(&f.to_le_bytes());
+                }
+            }
+        }
+    }
+    assert!(!cold_bytes.is_empty(), "collision mesh expected");
+    let before_scar = &mesh[..mesh.len() - want.mesh_pool.len()];
+    assert!(before_scar.ends_with(&cold_bytes), "COLD vertices (12 B each) directly precede the SCAR arrays");
+    let face_before = &face[..face.len() - want.face_pool.len()];
+    assert!(face_before.len() >= cold_tris * 2);
     assert_eq!(l.nt * 12, want.face_pool.len());
     // SCAR must follow COLD in DTRM (pool streams are consumed in chunk order).
     let mut c = Cursor::new(&saved[..]);

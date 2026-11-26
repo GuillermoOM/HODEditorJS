@@ -1586,44 +1586,22 @@ pub fn generate_v2_from_model(original_bytes: &[u8], model: &HODModel) -> Result
 
         // Append collision mesh vertices to mesh stream
         for cm in &model.collision_meshes {
-            for part in &cm.mesh.parts {
+            // COLD/TRIS counts (build_cold_chunk) describe the first part only; append exactly that.
+            for part in cm.mesh.parts.iter().take(1) {
                 println!(
                     "[RUST]   Collision part: {} vertices, {} indices, mask=0x{:x}",
                     part.vertices.len(),
                     part.indices.len(),
                     part.vertex_mask
                 );
-                let mut vertex_stride = 0u32;
-                if (part.vertex_mask & 0x01) != 0 {
-                    vertex_stride += 16;
-                }
-                if (part.vertex_mask & 0x02) != 0 {
-                    vertex_stride += 16;
-                }
-                if (part.vertex_mask & 0x04) != 0 {
-                    vertex_stride += 4;
-                }
-                if (part.vertex_mask & 0x08) != 0 {
-                    vertex_stride += 8;
-                }
-                if (part.vertex_mask & 0x2000) != 0 {
-                    vertex_stride += 12;
-                }
-                if (part.vertex_mask & 0x4000) != 0 {
-                    vertex_stride += 12;
-                }
-                if vertex_stride == 0 {
-                    vertex_stride = 1;
-                }
-
+                // COLD/TRIS vertices are bare 12-byte vector3 positions in the mesh pool
+                // (engine `readTrianglesChunk` reads `vertexCount * 12` bytes). Do NOT use the
+                // 16-byte position+w BMSH vertex layout: streams are consumed sequentially, so
+                // any extra bytes would shift every later pool consumer (e.g. the SCAR arrays).
                 for v in &part.vertices {
-                    let _ = write_vertex(
-                        &mut decomp_mesh,
-                        v,
-                        part.vertex_mask,
-                        1400,
-                        vertex_stride,
-                    );
+                    decomp_mesh.extend_from_slice(&v.position.x.to_le_bytes());
+                    decomp_mesh.extend_from_slice(&v.position.y.to_le_bytes());
+                    decomp_mesh.extend_from_slice(&v.position.z.to_le_bytes());
                 }
                 // Align face pool to 2 bytes
                 if decomp_face.len() % 2 != 0 {
@@ -2576,33 +2554,12 @@ pub fn save_edits(original_bytes: &[u8], updated_model: &HODModel) -> Result<Vec
 
         // Append collision mesh vertices to mesh pool
         for cm in &updated_model.collision_meshes {
-            for part in &cm.mesh.parts {
+            for part in cm.mesh.parts.iter().take(1) {
+                // Bare 12-byte positions (see the collision append in generate_v2_from_model).
                 for v in &part.vertices {
-                    let _ = write_vertex(
-                        &mut new_mesh_pool,
-                        v,
-                        part.vertex_mask,
-                        1400,
-                        if (part.vertex_mask & 0x01) != 0 {
-                            16
-                        } else {
-                            0
-                        } + if (part.vertex_mask & 0x02) != 0 {
-                            16
-                        } else {
-                            0
-                        } + if (part.vertex_mask & 0x08) != 0 { 8 } else { 0 }
-                            + if (part.vertex_mask & 0x2000) != 0 {
-                                12
-                            } else {
-                                0
-                            }
-                            + if (part.vertex_mask & 0x4000) != 0 {
-                                12
-                            } else {
-                                0
-                            },
-                    );
+                    new_mesh_pool.extend_from_slice(&v.position.x.to_le_bytes());
+                    new_mesh_pool.extend_from_slice(&v.position.y.to_le_bytes());
+                    new_mesh_pool.extend_from_slice(&v.position.z.to_le_bytes());
                 }
                 for &idx in &part.indices {
                     let _ = new_face_pool.write_u16::<LittleEndian>(idx);
