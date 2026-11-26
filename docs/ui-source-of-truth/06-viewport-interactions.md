@@ -32,6 +32,16 @@ A single app-level toggle switches the viewport transform gizmo between **Global
 
 Left-click (press/release within 4 px) on the canvas selects the visible joint whose sphere is nearest the cursor in screen space, within 14 px, as `{type: "joint", name}`. Left button is unused by orbit (right/middle). Clicking empty space does not change selection; a pick is suppressed while a gizmo handle is hovered or dragged. Hidden joints (eye toggle) are not pickable. Source: `Viewport.tsx` `onPickDown`/`onPickUp`.
 
+## Nav Light Preview
+
+Source: `Viewport.tsx` (nav light build block + render-loop block). Based on the executable reading in the `hwrm-modern` repo (`docs/evidence/effects.md` §19, `renderNavLights` 0x0058A4BB).
+
+- Each NAVL is a Group (`navlight:<name>`, so selection/gizmo/animation code is unchanged) holding two camera-facing additive quads: the light's colour quad with edge = `size` world units (modelScale 0), and a white core quad of edge `level * 0.5`. Quads never go below ~7 px on screen (the game's ~5 px corner minimum).
+- Blink: `t = (clock + phase) * frequency`, `frac = t - floor(t)`; level 1 for `frac < 0.1`, then `1 - frac/0.25` until 0.25, else 0 (retail `.navs` styles; the style name is not read). `frequency 0` = constant on. One random clock seed per viewport.
+- `sprite_visible = false` lights draw no sprite. Editor aid: dark/invisible lights remain as a faint 12% ghost quad so the node can be found and selected. Depth test is off (lights show through the hull) unlike the game.
+- The wireframe sphere of radius `distance` is kept as the point-light radius indicator (in game `distance` only drives the point light, not sprite visibility).
+- Not matched: the retail `navlight.tga` texture (a soft radial gradient stands in), team-dependent draw predicate, `highEndOnly`, thrust-linked styles.
+
 ## Selection Coupling
 
 Viewport behavior follows `selectedNode` from app state. Selecting a tree row or viewport target should keep Inspector and Viewport synchronized.

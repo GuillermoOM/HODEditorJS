@@ -191,6 +191,29 @@ const isFiniteVector = (v: any): boolean => {
   );
 };
 
+// Nav light sprite helpers. NAV_STYLE = cumulative times of the retail `default` style (climb 0, hold 0.1, decay 0.15).
+const NAV_STYLE = { climb: 0, top: 0.1, decay: 0.25 };
+const NAV_QUAD_GEO = new THREE.PlaneGeometry(1, 1);
+const navTmpVec = new THREE.Vector3();
+const navTmpQuat = new THREE.Quaternion();
+let navLightTexture: THREE.CanvasTexture | null = null;
+/** Soft round glow standing in for retail `effect/textures/navlight.tga` (not available to the editor). */
+function getNavLightTexture(): THREE.CanvasTexture {
+  if (!navLightTexture) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d")!;
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.35, "rgba(255,255,255,0.6)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    navLightTexture = new THREE.CanvasTexture(c);
+  }
+  return navLightTexture;
+}
+
 interface ViewportProps {
   model: HODModel | null;
   selectedNode: { type: string; name: string } | null;
@@ -261,7 +284,17 @@ export const Viewport: React.FC<ViewportProps> = ({
   const targetBoxesGroupRef = useRef<THREE.Group | null>(null);
 
   const clockRef = useRef(new THREE.Clock());
-  const navLightsAnimateRef = useRef<{ mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; frequency: number; phase: number }[]>([]);
+  const navLightsAnimateRef = useRef<{
+    obj: THREE.Object3D;
+    color: THREE.Mesh;
+    core: THREE.Mesh;
+    colorMat: THREE.MeshBasicMaterial;
+    coreMat: THREE.MeshBasicMaterial;
+    size: number;
+    frequency: number;
+    phase: number;
+    spriteVisible: boolean;
+  }[]>([]);
   
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -306,6 +339,8 @@ export const Viewport: React.FC<ViewportProps> = ({
   // Latest selection setter for the long-lived canvas pick listener (set up once in the init effect).
   const setSelectedNodeRef = useRef(_setSelectedNode);
   setSelectedNodeRef.current = _setSelectedNode;
+  // Each ship's nav light clock starts at a random point in [0,1) in the game; one seed per viewport here.
+  const navClockSeedRef = useRef(Math.random());
   const selectedNodeRef = useRef(selectedNode);
   useEffect(() => {
     selectedNodeRef.current = selectedNode;
@@ -1036,17 +1071,39 @@ export const Viewport: React.FC<ViewportProps> = ({
           }
         }
 
-        // Pulsing NavLights
-        const time = clock.getElapsedTime();
-        navLightsAnimateRef.current.forEach(({ mesh, material, frequency, phase }) => {
-          if (frequency > 0) {
-            const pulse = Math.sin(time * frequency * Math.PI * 2 + phase) * 0.4 + 0.6;
-            material.opacity = pulse * 0.8;
-          } else {
-            material.opacity = 0.8;
-          }
-          mesh.scale.setScalar(1.0);
-        });
+        // NavLights: game-accurate sprites (docs/ui-source-of-truth/06; hwrm-modern docs/evidence/effects.md §19).
+        // Quad edge = light size in world units (modelScale 0), never under ~7 px on screen; a white core of
+        // level*0.5; blink envelope from the retail `.navs` timings (climb 0, hold 0.1, fall to 0.25 of the cycle).
+        // PERF/TRAP: keep this per-light work allocation-free; it runs every frame.
+        {
+          const clockT = clock.getElapsedTime() + navClockSeedRef.current;
+          const viewH = Math.max(1, renderer.domElement.clientHeight);
+          const pxToWorld = (2 * Math.tan((camera.fov * Math.PI) / 360)) / viewH;
+          const NAV_MIN_PX = 7;
+          navLightsAnimateRef.current.forEach((nl) => {
+            const { obj, color, core, colorMat, coreMat } = nl;
+            const frac0 = (clockT + nl.phase) * nl.frequency;
+            const frac = frac0 - Math.floor(frac0);
+            let level = 0;
+            if (frac < NAV_STYLE.top) level = NAV_STYLE.climb > frac ? frac / NAV_STYLE.climb : 1;
+            else if (frac < NAV_STYLE.decay) level = 1 - frac / NAV_STYLE.decay;
+            // Editor aid: lights that are dark or have no sprite stay faintly visible so the node can be found.
+            const live = nl.spriteVisible && level > 0;
+            const alpha = live ? level : 0.12;
+            colorMat.opacity = alpha;
+            coreMat.opacity = live ? level : 0;
+            core.visible = live;
+            obj.getWorldPosition(navTmpVec);
+            const dist = navTmpVec.distanceTo(camera.position);
+            const minWorld = NAV_MIN_PX * pxToWorld * dist;
+            color.scale.setScalar(Math.max(nl.size > 0 ? nl.size : 0.3, minWorld));
+            core.scale.setScalar(Math.max(live ? level * 0.5 : 0, minWorld * 0.5));
+            // Billboard: cancel the node's own rotation so the quads face the camera.
+            navTmpQuat.copy(obj.quaternion).invert().multiply(camera.quaternion);
+            color.quaternion.copy(navTmpQuat);
+            core.quaternion.copy(navTmpQuat);
+          });
+        }
 
         // Evaluate LERP/SLERP keyframe tracks
         if (modelRef.current) {
@@ -1856,19 +1913,32 @@ export const Viewport: React.FC<ViewportProps> = ({
         model.nav_lights.forEach((nav) => {
           const color = new THREE.Color(nav.color.x, nav.color.y, nav.color.z);
           
-          // Render the actual sprite size as a small solid pulsing sphere
-          const spriteRadius = (nav.size && nav.size > 0) ? (nav.size * 0.25) : 0.15;
-          const navGeo = new THREE.SphereGeometry(spriteRadius, 16, 16);
-          const navMat = new THREE.MeshBasicMaterial({
-            color: color,
+          // Game draws a camera-facing quad of edge `size` plus a white core (see render loop for sizing/blink).
+          const colorMat = new THREE.MeshBasicMaterial({
+            color,
+            map: getNavLightTexture(),
             transparent: true,
-            opacity: 0.8,
+            opacity: 1,
+            blending: THREE.AdditiveBlending,
             depthTest: false,
             depthWrite: false,
           });
-           const navMesh = new THREE.Mesh(navGeo, navMat);
+          const coreMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            map: getNavLightTexture(),
+            transparent: true,
+            opacity: 1,
+            blending: THREE.AdditiveBlending,
+            depthTest: false,
+            depthWrite: false,
+          });
+          const navMesh = new THREE.Group();
+          const colorQuad = new THREE.Mesh(NAV_QUAD_GEO, colorMat);
+          const coreQuad = new THREE.Mesh(NAV_QUAD_GEO, coreMat);
+          colorQuad.renderOrder = 20;
+          coreQuad.renderOrder = 21;
+          navMesh.add(colorQuad, coreQuad);
           navMesh.name = `navlight:${nav.name}`;
-          navMesh.renderOrder = 20;
           navMesh.userData = {
             parentJointName: nav.name,
             baseMatrix: new THREE.Matrix4(),
@@ -1901,10 +1971,15 @@ export const Viewport: React.FC<ViewportProps> = ({
           }
 
           navLightsAnimateRef.current.push({
-            mesh: navMesh,
-            material: navMat,
+            obj: navMesh,
+            color: colorQuad,
+            core: coreQuad,
+            colorMat,
+            coreMat,
+            size: nav.size,
             frequency: typeof nav.frequency === "number" ? nav.frequency : 0.0,
             phase: typeof nav.phase === "number" ? nav.phase : 0.0,
+            spriteVisible: !!nav.sprite_visible,
           });
         });
       }
