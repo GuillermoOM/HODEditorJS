@@ -7,6 +7,8 @@ import { parseTextureGroups, SHADER_SLOTS, KNOWN_TYPES, getExpectedSlots, findTe
 import { parseMtl, resolveDiffuseTexture } from "../mtl_utils";
 import { Info, Move, Navigation, Layers, Radio, Activity, Shield, Flame, RefreshCw, Palette, Download, Upload, Wrench, Plus, Eye, EyeOff, Box, Image, Trash2, FlipVertical } from "lucide-react";
 import { WeaponGroupInspector } from "./WeaponGroupInspector";
+import { EngineShapeInspector } from "./EngineShapeInspector";
+import { DEFAULT_TRAIL_PREVIEW, regularPolygonPoints, suggestEngineShapeName, withEngineShapePoints, type EngineTrailPreviewSettings } from "../engine_trail";
 import {
   CoordinateSpace,
   getDisplayTransform,
@@ -33,6 +35,8 @@ interface InspectorProps {
   onToggleVisibility?: (meshKey: string) => void;
   setIsLoading?: React.Dispatch<React.SetStateAction<boolean>>;
   setStatusMsg?: React.Dispatch<React.SetStateAction<string>>;
+  trailPreview?: EngineTrailPreviewSettings;
+  onTrailPreviewChange?: (s: EngineTrailPreviewSettings) => void;
 }
 
 const quatToEulerDegrees = (q: { x: number; y: number; z: number; w: number }) => {
@@ -823,6 +827,8 @@ export const Inspector: React.FC<InspectorProps> = ({
   setStatusMsg,
   coordinateSpace = "local",
   setCoordinateSpace,
+  trailPreview,
+  onTrailPreviewChange,
 }) => {
   const [pipelines, setPipelines] = useState<string[]>([]);
   const [renameWeaponName, setRenameWeaponName] = useState("");
@@ -1410,7 +1416,12 @@ export const Inspector: React.FC<InspectorProps> = ({
           const newGlow = { name: `glow_${joint.name}`, parent_name: joint.name, lod: 0, mesh: { name: `glow_${joint.name}`, parent_name: joint.name, lod: 0, parts: [] } };
           onModelChange?.({ ...model, engine_glows: [...(model.engine_glows || []), newGlow] });
         } else if (type === "shape") {
-          const newShape = { name: `shape_${joint.name}`, parent_name: joint.name, mesh: { name: `shape_${joint.name}`, parent_name: joint.name, lod: 0, parts: [] } };
+          // ETSH: the nozzle is picked by the name's last digit (EngineShape1 -> EngineNozzle1); start with a square cross-section.
+          const shapeName = suggestEngineShapeName(model, joint.name);
+          const newShape = withEngineShapePoints(
+            { name: shapeName, parent_name: joint.name, mesh: { name: shapeName, parent_name: joint.name, lod: 0, parts: [] } },
+            regularPolygonPoints(4, 1)
+          );
           onModelChange?.({ ...model, engine_shapes: [...(model.engine_shapes || []), newShape] });
         }
       };
@@ -2465,145 +2476,14 @@ export const Inspector: React.FC<InspectorProps> = ({
     }
 
     if (selectedNode.type === "engine_shape") {
-      const shape = model.engine_shapes?.find(s => s.name === selectedNode.name);
-      if (!shape) return <div style={{ color: "var(--text-muted)", textAlign: "center" }}>Engine Shape not found</div>;
-      const totalVerts = shape.mesh.parts.reduce((sum, p) => sum + p.vertices.length, 0);
-
-      const handleImportEngineShapeOBJ = async () => {
-        try {
-          const fileContent = await invoke<string | null>("load_text_file", { filters: ["obj"] });
-          if (!fileContent) return;
-          setIsLoading?.(true); setStatusMsg?.("Importing Engine Shape OBJ...");
-          setTimeout(async () => {
-            try {
-              const { OBJLoader } = await import("three/examples/jsm/loaders/OBJLoader.js");
-              const objGroup = new OBJLoader().parse(fileContent);
-              const newParts: any[] = [];
-              objGroup.traverse((child: any) => {
-                if (child.isMesh) {
-                  const geo = (child as THREE.Mesh).geometry;
-                  if (geo?.attributes.position) {
-                    const posAttr = geo.attributes.position;
-                    const vertices: any[] = []; const indices: number[] = [];
-                    for (let i = 0; i < posAttr.count; i++) {
-                      vertices.push({
-                        position: { x: posAttr.getX(i), y: posAttr.getY(i), z: posAttr.getZ(i) },
-                        normal: geo.attributes.normal ? { x: geo.attributes.normal.getX(i), y: geo.attributes.normal.getY(i), z: geo.attributes.normal.getZ(i) } : { x: 0, y: 1, z: 0 },
-                        tangent: { x: 1, y: 0, z: 0 }, binormal: { x: 0, y: 0, z: 1 },
-                        uv: geo.attributes.uv ? { u: geo.attributes.uv.getX(i), v: 1 - geo.attributes.uv.getY(i) } : { u: 0, v: 0 },
-                        color: 0xFFFFFFFF, skinning_data: null,
-                      });
-                    }
-                    if (geo.index) {
-                      const idxArr = geo.index.array;
-                      for (let i = 0; i < idxArr.length; i++) indices.push(idxArr[i]);
-                    } else {
-                      for (let i = 0; i < posAttr.count; i++) indices.push(i);
-                    }
-                    newParts.push({ material_index: 0, vertex_mask: 0x01, vertices, indices });
-                  }
-                }
-              });
-              if (newParts.length === 0) { alert("No geometry found in the OBJ file."); setIsLoading?.(false); return; }
-              const updatedShapes = model.engine_shapes.map(s => s.name === shape.name ? { ...s, mesh: { ...s.mesh, parts: newParts } } : s);
-              onModelChange?.({ ...model, engine_shapes: updatedShapes });
-              setIsLoading?.(false); alert(`Engine Shape mesh imported! Parts: ${newParts.length}`);
-            } catch (e: any) { console.error(e); setIsLoading?.(false); alert(`Import failed: ${e.toString()}`); }
-          }, 100);
-        } catch (e: any) { console.error(e); alert(`Import dialog failed: ${e.toString()}`); }
-      };
-
-      const handleExportEngineShapeOBJ = async () => {
-        try {
-          setIsLoading?.(true);
-          setStatusMsg?.("Exporting Shape OBJ...");
-          const { OBJExporter } = await import("three/examples/jsm/exporters/OBJExporter.js");
-          const exporter = new OBJExporter();
-          const group = new THREE.Group();
-          group.name = shape.name;
-          shape.mesh.parts.forEach((part: any, pIdx: number) => {
-            const geometry = new THREE.BufferGeometry();
-            const vertices: number[] = [];
-            part.vertices.forEach((v: any) => vertices.push(v.position.x, v.position.y, v.position.z));
-            geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-            geometry.setIndex(part.indices);
-            const meshObj = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
-            meshObj.name = `${shape.name}_part_${pIdx}`;
-            group.add(meshObj);
-          });
-          const objResult = exporter.parse(group);
-          await invoke<string | null>("save_text_file", { defaultName: `${shape.name}.obj`, filters: ["obj"], contents: objResult });
-          setIsLoading?.(false);
-          invoke("log_event", { level: "INFO", message: `Exported Engine Shape OBJ: ${shape.name}` }).catch(console.error);
-        } catch (e) {
-          console.error(e);
-          setIsLoading?.(false);
-          alert("Failed to export Shape OBJ.");
-        }
-      };
-
-      const totalTris = shape.mesh.parts.reduce((sum, p) => sum + p.indices.length, 0) / 3;
       return (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.15em", color: "var(--text-muted)", marginBottom: "4px" }}>
-              <Flame size={12} style={{ color: "var(--accent-cyan)" }} />
-              <span>Selected Engine Shape</span>
-            </div>
-            <div style={{ fontSize: "16px", fontWeight: "600", color: "var(--accent-cyan)", wordBreak: "break-all" }}>
-              {selectedNode.name}
-            </div>
-          </div>
-          <hr style={{ border: "none", borderTop: "1px solid var(--border-color)", margin: 0 }} />
-          <div>
-            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "4px" }}>Parent Joint</div>
-            <div style={{ background: "rgba(255,255,255,0.03)", padding: "8px 10px", borderRadius: "4px", fontSize: "12px", border: "1px solid var(--border-color)" }}>
-              {shape.parent_name}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "8px" }}>Mesh Statistics</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "rgba(22, 160, 255, 0.03)", border: "1px solid var(--border-color)", borderRadius: "4px", padding: "12px" }}>
-              <div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>TRIANGLES</div>
-                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalTris}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginBottom: "2px" }}>VERTICES</div>
-                <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)" }}>{totalVerts}</div>
-              </div>
-            </div>
-          </div>
-          
-                  <div style={{ display: "flex", gap: "8px" }}>
-          <button onClick={handleImportEngineShapeOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
-            <Download size={14} style={{ color: "var(--accent-cyan)" }} /> Import OBJ
-          </button>
-          <button onClick={handleExportEngineShapeOBJ} style={{ height: "32px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", flex: 1 }}>
-            <Upload size={14} style={{ color: "var(--accent-cyan)" }} /> Export OBJ
-          </button>
-        </div>
-
-          {model.materials?.length > 0 && shape.mesh?.parts?.length > 0 && (
-            <div>
-              <label style={{ display: "block", fontSize: "11px", color: "var(--text-secondary)", fontWeight: "500", marginBottom: "6px" }}>Material Assignment</label>
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px", background: "rgba(0,0,0,0.15)", padding: "8px", borderRadius: "4px" }}>
-                {shape.mesh.parts.map((part, pIdx) => (
-                  <div key={pIdx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                    <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Part {pIdx}</span>
-                    <select value={part.material_index} onChange={(e) => {
-                      const newMatIdx = parseInt(e.target.value, 10);
-                      onModelChange?.({ ...model, engine_shapes: model.engine_shapes.map(s => s.name === shape.name ? { ...s, mesh: { ...s.mesh, parts: s.mesh.parts.map((p, i) => i === pIdx ? { ...p, material_index: newMatIdx } : p) } } : s) });
-                    }} style={{ width: "160px", height: "26px", padding: "2px 6px", fontSize: "11px", background: "#050a12", border: "1px solid var(--border-color)", color: "white" }}>
-                      {model.materials.map((mat, mIdx) => (<option key={mIdx} value={mIdx}>{mat.name}</option>))}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-        </div>
+        <EngineShapeInspector
+          model={model}
+          shapeName={selectedNode.name}
+          onModelChange={onModelChange}
+          trailPreview={trailPreview ?? DEFAULT_TRAIL_PREVIEW}
+          onTrailPreviewChange={onTrailPreviewChange}
+        />
       );
     }
 

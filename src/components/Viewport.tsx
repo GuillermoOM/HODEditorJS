@@ -3,6 +3,17 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  EngineTrailSim,
+  createRibbonGeometry,
+  createRibbonMaterial,
+  engineShapePoints,
+  engineShapeNozzleNumber,
+  engineShapeStats,
+  uploadRibbon,
+  type EngineTrailPreviewSettings,
+  type TrailNozzle,
+} from "../engine_trail";
 
 // HOD Types matching Rust backend
 export interface Vector3D {
@@ -240,6 +251,8 @@ interface ViewportProps {
   playbackSpeed: number;
   loopPlayback: boolean;
   targetBoxes?: any[];
+  /** Optional engine trail simulation (docs/ui-source-of-truth/06); preview only, nothing is saved. */
+  trailPreview?: EngineTrailPreviewSettings;
 }
 
 export const Viewport: React.FC<ViewportProps> = ({
@@ -266,6 +279,7 @@ export const Viewport: React.FC<ViewportProps> = ({
   playbackSpeed,
   loopPlayback,
   targetBoxes,
+  trailPreview,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const transformControlsRef = useRef<TransformControls | null>(null);
@@ -284,6 +298,13 @@ export const Viewport: React.FC<ViewportProps> = ({
   const engineGlowsGroupRef = useRef<THREE.Group | null>(null);
   const engineShapesGroupRef = useRef<THREE.Group | null>(null);
   const targetBoxesGroupRef = useRef<THREE.Group | null>(null);
+  const engineTrailGroupRef = useRef<THREE.Group | null>(null);
+  const trailPreviewRef = useRef(trailPreview);
+  trailPreviewRef.current = trailPreview;
+  const teamColorRef = useRef(teamColor);
+  teamColorRef.current = teamColor;
+  const trailStateRef = useRef<{ sim: EngineTrailSim; mesh: THREE.Mesh; model: HODModel; version: number } | null>(null);
+  const trailClockRef = useRef(new THREE.Clock());
 
   const clockRef = useRef(new THREE.Clock());
   const navLightsAnimateRef = useRef<{
@@ -748,6 +769,72 @@ export const Viewport: React.FC<ViewportProps> = ({
     base: new THREE.Matrix4(),
   });
 
+  // Engine trail simulation (docs/evidence/effects.md section 15). Runs only while the preview is enabled; the ribbon is
+  // built in the simulated ship's world frame and the mesh carries the inverse ship matrix, so the model stays put.
+  const updateTrailPreview = (camera: THREE.PerspectiveCamera) => {
+    const group = engineTrailGroupRef.current;
+    const dt = trailClockRef.current.getDelta();
+    if (!group) return;
+    const settings = trailPreviewRef.current;
+    const currentModel = modelRef.current;
+    const state = trailStateRef.current;
+    const clear = () => {
+      if (!trailStateRef.current) return;
+      const st = trailStateRef.current;
+      group.remove(st.mesh);
+      st.mesh.geometry.dispose();
+      (st.mesh.material as THREE.Material).dispose();
+      trailStateRef.current = null;
+    };
+    if (!settings || !settings.enabled || !currentModel) {
+      clear();
+      return;
+    }
+    let st = state;
+    if (!st || st.model !== currentModel || st.version !== sceneVersionRef.current) {
+      clear();
+      const nozzles: TrailNozzle[] = [];
+      const seen = new Set<number>();
+      for (const shape of currentModel.engine_shapes || []) {
+        const pts = engineShapePoints(shape);
+        const n = engineShapeNozzleNumber(shape.name);
+        if (pts.length === 0 || n === null || seen.has(n)) continue;
+        const jointName =
+          currentModel.joints.find((j) => j.name.toLowerCase() === `enginenozzle${n}`)?.name ??
+          currentModel.joints.find((j) => j.name.toLowerCase() === shape.parent_name.toLowerCase())?.name;
+        if (!jointName) continue;
+        seen.add(n);
+        nozzles.push({
+          offset: new THREE.Vector3().setFromMatrixPosition(getJointGlobalMatrix(jointName)),
+          minDimension: engineShapeStats(pts).minDistance,
+        });
+      }
+      if (nozzles.length === 0) return;
+      const color = new THREE.Color(teamColorRef.current);
+      const hsl = { h: 0, s: 0, l: 0 };
+      color.getHSL(hsl);
+      color.setHSL(hsl.h, Math.max(hsl.s, 0.6), Math.max(hsl.l, 0.55));
+      const sim = new EngineTrailSim(nozzles, settings.params, settings.speed, settings.maneuver);
+      const mesh = new THREE.Mesh(createRibbonGeometry(), createRibbonMaterial(color));
+      mesh.frustumCulled = false;
+      mesh.matrixAutoUpdate = false;
+      mesh.renderOrder = 6;
+      group.add(mesh);
+      st = { sim, mesh, model: currentModel, version: sceneVersionRef.current };
+      trailStateRef.current = st;
+    }
+    st.sim.params = settings.params;
+    st.sim.speed = settings.speed;
+    st.sim.maneuver = settings.maneuver;
+    st.sim.step(dt);
+    const shipMatrix = st.sim.shipMatrix();
+    const eye = camera.position.clone().applyMatrix4(shipMatrix);
+    st.sim.build(eye);
+    uploadRibbon(st.mesh.geometry, st.sim);
+    st.mesh.matrix.copy(shipMatrix).invert();
+    st.mesh.matrixWorldNeedsUpdate = true;
+  };
+
   // Helper to resolve helper world position to local position of parent joint
   const getLocalPosition = (obj: THREE.Object3D, selectedType: string, selectedName: string): Vector3D => {
     const currentModel = modelRef.current;
@@ -1037,6 +1124,7 @@ export const Viewport: React.FC<ViewportProps> = ({
       const engineGlowsGroup = new THREE.Group();
       const engineShapesGroup = new THREE.Group();
       const targetBoxesGroup = new THREE.Group();
+      const engineTrailGroup = new THREE.Group();
       
       scene.add(meshesGroup);
       scene.add(jointsGroup);
@@ -1048,7 +1136,9 @@ export const Viewport: React.FC<ViewportProps> = ({
       scene.add(engineGlowsGroup);
       scene.add(engineShapesGroup);
       scene.add(targetBoxesGroup);
+      scene.add(engineTrailGroup);
 
+      engineTrailGroupRef.current = engineTrailGroup;
       meshesGroupRef.current = meshesGroup;
       jointsGroupRef.current = jointsGroup;
       markersGroupRef.current = markersGroup;
@@ -1161,6 +1251,8 @@ export const Viewport: React.FC<ViewportProps> = ({
             setCurrentTime(currTime);
           }
         }
+
+        updateTrailPreview(camera);
 
         renderer.render(scene, camera);
       };
@@ -2081,6 +2173,47 @@ export const Viewport: React.FC<ViewportProps> = ({
         });
       }
 
+      // Engine shapes are not meshes: ETSH holds the nozzle's cross-section points, and the engine only keeps the closest
+      // one (minDimension) to size the engine trail ribbon. Draw the points, their outline and the min-dimension circle.
+      const createEngineShapeOutline = (shape: HODEngineShape): THREE.Group => {
+        const group = new THREE.Group();
+        const pts = engineShapePoints(shape);
+        if (pts.length === 0) return group;
+        const flat: number[] = [];
+        pts.forEach((p) => flat.push(p.x, p.y, p.z));
+        const outlineGeo = new THREE.BufferGeometry();
+        outlineGeo.setAttribute("position", new THREE.Float32BufferAttribute(flat, 3));
+        const outline = new THREE.LineLoop(
+          outlineGeo,
+          new THREE.LineBasicMaterial({ color: "#b86bff", transparent: true, opacity: 0.9, depthTest: false })
+        );
+        outline.renderOrder = 3;
+        group.add(outline);
+        const pointsObj = new THREE.Points(
+          outlineGeo.clone(),
+          new THREE.PointsMaterial({ color: "#ffd166", size: 6, sizeAttenuation: false, depthTest: false })
+        );
+        pointsObj.renderOrder = 4;
+        group.add(pointsObj);
+        const stats = engineShapeStats(pts);
+        if (stats.minDistance > 1e-4) {
+          const ring: number[] = [];
+          for (let i = 0; i < 48; i++) {
+            const a = (i / 48) * Math.PI * 2;
+            ring.push(Math.cos(a) * stats.minDistance, Math.sin(a) * stats.minDistance, 0);
+          }
+          const ringGeo = new THREE.BufferGeometry();
+          ringGeo.setAttribute("position", new THREE.Float32BufferAttribute(ring, 3));
+          const circle = new THREE.LineLoop(
+            ringGeo,
+            new THREE.LineBasicMaterial({ color: "#4dd2ff", transparent: true, opacity: 0.8, depthTest: false })
+          );
+          circle.renderOrder = 3;
+          group.add(circle);
+        }
+        return group;
+      };
+
       const createThreeMeshGroup = (mesh: HODMesh, defaultColor: string, opacity: number): THREE.Group => {
         const group = new THREE.Group();
         mesh.parts.forEach((part) => {
@@ -2330,7 +2463,7 @@ export const Viewport: React.FC<ViewportProps> = ({
           const parentScale = new THREE.Vector3();
           safeDecompose(frame.unitGlobal, parentPos, parentQuat, parentScale);
 
-          const shapeGroup = createThreeMeshGroup(shape.mesh, "#7209b7", 0.4);
+          const shapeGroup = createEngineShapeOutline(shape);
           shapeGroup.name = `engine_shape:${shape.name}`;
           shapeGroup.position.copy(parentPos);
           shapeGroup.quaternion.copy(parentQuat);

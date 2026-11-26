@@ -1442,3 +1442,10 @@ Test hod: `ter_orion` (original `HWRM_FSFC/source/ship/ter_orion/ter_orion.hod`;
 ## 2026-11-26 - MAD writer channel set (vgr_probe_prox fins)
 - Automated: parser unit test `mad_writer_skips_channels_equal_to_joint_rest_value`; probe on the pristine original `vgr_probe_prox` writes the same channel set as the original MAD.
 - In game: load the ORIGINAL `vgr_probe_prox.hod`, save, play Open/Close: lower fins rotate like the original instead of pointing down: [x] PASSED (user, 2026-11-26: "it all seems correct now")
+
+## 2026-11-26 - Engine shape editor and trail simulation
+- Automated: `npx tsc --noEmit`, `npm run build`; headless esbuild+node run of `EngineTrailSim` (straight flight ribbon length = speed x linger, half width = diameter x min dimension, weave stays finite).
+- In app (user): select an engine shape on a small craft (e.g. `vgr_probe_prox` has none; use `hgn_scout`, `hgn_interceptor`): outline/markers/circle appear at the nozzle instead of triangles: [ ] NOT RUN (user)
+- Edit a point / generate a polygon / scale to min dimension, save and reload: points persist (ETSH count = point count): [ ] NOT RUN (user)
+- Enable "Engine Trail Simulation" (Layers panel or shape inspector): ribbons stream behind the nozzles; straight and weave modes; width follows diameter x min dimension: [ ] NOT RUN (user)
+- Add Engine Shape on `EngineNozzle2` creates `EngineShape2` with 4 points: [ ] NOT RUN (user)

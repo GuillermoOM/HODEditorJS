@@ -10,6 +10,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { updateDynamicShaderSlots } from "./texture_utils";
 import * as THREE from "three";
 import { CoordinateSpace, matrixRotationToHodRadians, stripBoundsFromQuaternion } from "./transform_utils";
+import { DEFAULT_TRAIL_PREVIEW, type EngineTrailPreviewSettings } from "./engine_trail";
 import { Info, AlertTriangle, FolderOpen, FilePlus } from "lucide-react";
 import "./App.css";
 
@@ -170,6 +171,8 @@ function App() {
 
   // Big Data Settings and Toggling states
   const [showBoneLines, setShowBoneLines] = useState(true);
+  // Engine trail simulation preview (engine shapes); viewer only, never saved.
+  const [trailPreview, setTrailPreview] = useState<EngineTrailPreviewSettings>(DEFAULT_TRAIL_PREVIEW);
   const [renderMode, setRenderMode] = useState<"untextured" | "textured" | "shaded" | "wireframe" | "shaded_team" | "textured_team">("shaded");
   const [teamColor, setTeamColor] = useState("#4278a3");
   const [stripeColor, setStripeColor] = useState("#e5d94c");
@@ -1266,6 +1269,15 @@ function App() {
                   />
                   <span>Node Hierarchy Lines</span>
                 </label>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "10px", fontSize: "12px", color: "var(--text-primary)", cursor: "pointer", userSelect: "none", width: "100%" }}>
+                  <input
+                    type="checkbox"
+                    checked={trailPreview.enabled}
+                    onChange={(e) => setTrailPreview((prev) => ({ ...prev, enabled: e.target.checked }))}
+                    style={{ width: "auto", height: "auto", margin: 0, cursor: "pointer" }}
+                  />
+                  <span title="Simulates the engine trail ribbons that engine shapes size (small craft). Preview only.">Engine Trail Simulation</span>
+                </label>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px", borderTop: "1px solid var(--border-color)", paddingTop: "8px" }}>
                   <div style={{ fontSize: "10px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--accent-cyan)", marginBottom: "2px" }}>
@@ -1343,6 +1355,7 @@ function App() {
                 playbackSpeed={playbackSpeed}
                 loopPlayback={loopPlayback}
                 targetBoxes={targetBoxes}
+                trailPreview={trailPreview}
               />
             </div>
           ) : (
@@ -1541,6 +1554,8 @@ function App() {
           onToggleVisibility={handleToggleVisibility}
           setIsLoading={setIsLoading}
           setStatusMsg={setStatusMsg}
+          trailPreview={trailPreview}
+          onTrailPreviewChange={setTrailPreview}
         />
       </div>
 

@@ -61,6 +61,9 @@ Collision mesh parent access may be optional in imported/malformed data; UI code
 
 Collision creation/removal controls belong to the COL/collision flow, not engine glow, engine nozzle, engine shape, or generic joint inspectors.
 
+## Engine Shape Inspector
+`EngineShapeInspector.tsx`. An engine shape is a list of cross-section points, not a mesh (no OBJ import/export, no material assignment). Shows the nozzle chosen by the name's last digit (`EngineShape1` -> `EngineNozzle1`), the parent joint (with a one-click "Set parent" fix), trail size stats (point count, min dimension = the only value the engine uses, largest distance, ribbon half width = simulated `diameter × minDimension`), validation messages (`validateEngineShape`: name without digit 1-9, missing `EngineNozzle<n>` joint, parent mismatch, duplicate target, no points, closest point on the axis, z unused, only used when the `.ship` calls `setEngineTrail`), an editable point table (x, y, z; add/remove), tools (regular polygon generator, scale to a target min dimension, copy points to all other shapes) and the Trail Simulation panel (enable, speed, straight/weave, `linger/diameter/bulge/uscroll/ufactor`, presets "Typical small craft" and "Engine defaults"). The Add Engine Shape action on an engine nozzle creates `EngineShape<digit>` (digit of the nozzle, else the first free 1-9) with a 4-point square of radius 1. Saving writes the first mesh part's vertices as the ETSH point list.
+
 ## Mesh Editing And OBJ Flow
 
 Mesh inspector supports editing mesh name, LOD, parent, and materials according to current code. OBJ import/export controls are exposed from Inspector and route through app/Tauri callbacks.
